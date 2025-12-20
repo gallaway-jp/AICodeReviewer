@@ -249,6 +249,21 @@ def collect_review_issues(target_files, review_type: str, client, lang: str) -> 
 def interactive_review_confirmation(issues: List[ReviewIssue], client, review_type: str, lang: str) -> List[ReviewIssue]:
     """Interactive process to confirm and resolve each review issue"""
     
+    def get_valid_choice(prompt: str, valid_options: List[str]) -> str:
+        """Get validated user input"""
+        while True:
+            try:
+                choice = input(prompt).strip()
+                if choice in valid_options:
+                    return choice
+                print(f"Invalid choice. Please select from: {', '.join(valid_options)}")
+            except KeyboardInterrupt:
+                print("\nOperation cancelled by user.")
+                return "cancel"
+            except EOFError:
+                print("\nInput stream ended. Operation cancelled.")
+                return "cancel"
+    
     for i, issue in enumerate(issues, 1):
         print(f"\n{'='*80}")
         print(f"ISSUE {i}/{len(issues)}")
@@ -267,59 +282,78 @@ def interactive_review_confirmation(issues: List[ReviewIssue], client, review_ty
             print(f"  3. AI FIX - Let AI fix the code")
             print(f"  4. VIEW CODE - Show full file content")
             
-            try:
-                choice = input("Choose action (1-4): ").strip()
-                
-                if choice == "1":
-                    # RESOLVED - verify the issue is actually resolved
-                    if verify_issue_resolved(issue, client, review_type, lang):
-                        issue.status = "resolved"
-                        issue.resolved_at = datetime.now()
-                        print("✅ Issue marked as resolved!")
-                    else:
-                        print("❌ Issue verification failed. Issue may not be fully resolved.")
-                        
-                elif choice == "2":
-                    # IGNORE - require reason
-                    reason = input("Enter reason for ignoring this issue: ").strip()
-                    if reason:
-                        issue.status = "ignored"
-                        issue.resolution_reason = reason
-                        issue.resolved_at = datetime.now()
-                        print("✅ Issue ignored with reason provided.")
-                    else:
-                        print("❌ Reason is required to ignore an issue.")
-                        
-                elif choice == "3":
-                    # AI FIX - apply AI-generated fix
-                    fix_result = apply_ai_fix(issue, client, review_type, lang)
-                    if fix_result:
-                        issue.status = "ai_fixed"
-                        issue.ai_fix_applied = fix_result
-                        issue.resolved_at = datetime.now()
-                        print("✅ AI fix applied successfully!")
-                    else:
-                        print("❌ AI fix could not be applied.")
-                        
-                elif choice == "4":
-                    # VIEW CODE - show full file content
-                    try:
-                        with open(issue.file_path, "r", encoding="utf-8", errors="ignore") as f:
-                            full_content = f.read()
-                        print(f"\nFull file content ({issue.file_path}):")
-                        print(f"{'-'*50}")
-                        print(full_content)
-                        print(f"{'-'*50}")
-                    except Exception as e:
-                        print(f"Error reading file: {e}")
-                        
-                else:
-                    print("Invalid choice. Please select 1-4.")
-                    
-            except KeyboardInterrupt:
-                print("\nOperation cancelled by user.")
+            choice = get_valid_choice("Choose action (1-4): ", ["1", "2", "3", "4"])
+            if choice == "cancel":
                 break
-    
+            
+            if choice == "1":
+                # RESOLVED - verify the issue is actually resolved
+                if verify_issue_resolved(issue, client, review_type, lang):
+                    issue.status = "resolved"
+                    issue.resolved_at = datetime.now()
+                    print("✅ Issue marked as resolved!")
+                else:
+                    print("❌ Issue verification failed. Issue may not be fully resolved.")
+                    
+            elif choice == "2":
+                # IGNORE - require reason
+                reason = input("Enter reason for ignoring this issue: ").strip()
+                if reason and len(reason) >= 3:  # Minimum 3 characters for a valid reason
+                    issue.status = "ignored"
+                    issue.resolution_reason = reason
+                    issue.resolved_at = datetime.now()
+                    print("✅ Issue ignored with reason provided.")
+                else:
+                    print("❌ Reason must be at least 3 characters long.")
+                    
+            elif choice == "3":
+                # AI FIX - apply AI-generated fix with confirmation
+                fix_result = apply_ai_fix(issue, client, review_type, lang)
+                if fix_result:
+                    print("\n🤖 AI suggests the following fix:")
+                    print("=" * 50)
+                    print(fix_result)
+                    print("=" * 50)
+                    
+                    confirm = get_valid_choice("Apply this AI fix? (y/n): ", ["y", "n", "yes", "no"])
+                    if confirm.lower() in ["y", "yes"]:
+                        # Create backup before applying
+                        backup_path = f"{issue.file_path}.backup"
+                        try:
+                            import shutil
+                            shutil.copy2(issue.file_path, backup_path)
+                            print(f"📁 Backup created: {backup_path}")
+                            
+                            # Apply the fix
+                            with open(issue.file_path, "w", encoding="utf-8") as f:
+                                f.write(fix_result)
+                            
+                            issue.status = "ai_fixed"
+                            issue.ai_fix_applied = fix_result
+                            issue.resolved_at = datetime.now()
+                            print("✅ AI fix applied successfully!")
+                        except Exception as e:
+                            print(f"❌ Error applying fix: {e}")
+                    else:
+                        print("❌ AI fix cancelled by user.")
+                else:
+                    print("❌ AI fix could not be generated.")
+                    
+            elif choice == "4":
+                # VIEW CODE - show full file content
+                try:
+                    with open(issue.file_path, "r", encoding="utf-8", errors="ignore") as f:
+                        full_content = f.read()
+                    print(f"\nFull file content ({issue.file_path}):")
+                    print(f"{'-'*50}")
+                    print(full_content)
+                    print(f"{'-'*50}")
+                except Exception as e:
+                    print(f"Error reading file: {e}")
+                    
+            else:
+                print("Invalid choice. Please select 1-4.")
+                    
     return issues
 
 
@@ -350,7 +384,7 @@ def verify_issue_resolved(issue: ReviewIssue, client, review_type: str, lang: st
 
 
 def apply_ai_fix(issue: ReviewIssue, client, review_type: str, lang: str) -> Optional[str]:
-    """Apply an AI-generated fix to resolve the issue"""
+    """Generate an AI fix for the issue (does not apply it)"""
     try:
         with open(issue.file_path, "r", encoding="utf-8", errors="ignore") as f:
             current_code = f.read()
@@ -370,21 +404,15 @@ Return ONLY the complete corrected code, no explanations or markdown.
 """
         
         # Use the bedrock client to get the fix
-        # Note: This assumes the BedrockClient has a method to handle custom prompts
-        # For now, we'll use a simplified approach
         fix_result = client.get_review(fix_prompt, review_type="fix", lang=lang)
         
         if fix_result and not fix_result.startswith("Error:"):
-            # Apply the fix to the file
-            with open(issue.file_path, "w", encoding="utf-8") as f:
-                f.write(fix_result)
-            
             return fix_result
         
         return None
         
     except Exception as e:
-        print(f"Error applying AI fix: {e}")
+        print(f"Error generating AI fix: {e}")
         return None
 
 
@@ -434,7 +462,27 @@ def generate_review_report(report: ReviewReport, output_file: str = None) -> str
                 f.write(f"  Resolution: {issue['resolution_reason']}\n")
             f.write(f"  AI Feedback: {issue['ai_feedback'][:200]}...\n")
     
-    return output_file
+def cleanup_old_backups(project_path: str, max_age_hours: int = 24):
+    """Clean up old backup files to prevent disk space issues"""
+    import glob
+    import time
+    
+    try:
+        backup_pattern = os.path.join(project_path, "**", "*.backup")
+        backup_files = glob.glob(backup_pattern, recursive=True)
+        
+        current_time = time.time()
+        max_age_seconds = max_age_hours * 3600
+        
+        for backup_file in backup_files:
+            if os.path.getmtime(backup_file) < current_time - max_age_seconds:
+                try:
+                    os.remove(backup_file)
+                    print(f"🗑️ Cleaned up old backup: {backup_file}")
+                except OSError:
+                    pass  # Ignore if can't delete
+    except Exception:
+        pass  # Don't fail if cleanup doesn't work
 
 
 def main():
@@ -494,6 +542,9 @@ def main():
 
     profile = get_profile_name()
     client = BedrockClient(profile)
+
+    # Clean up old backup files
+    cleanup_old_backups(args.path)
 
     scope_desc = "entire project" if args.scope == 'project' else f"changes ({args.diff_file or args.commits})"
     print(f"Scanning {args.path} - Scope: {scope_desc} (Output Language: {target_lang})...")

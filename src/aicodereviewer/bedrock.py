@@ -1,5 +1,6 @@
 # src/aicodereviewer/bedrock.py
 import boto3
+import time
 from botocore.exceptions import ClientError, ProfileNotFound, TokenRetrievalError
 
 class BedrockClient:
@@ -9,6 +10,9 @@ class BedrockClient:
             self.session = boto3.Session(profile_name=profile_name, region_name=region)
             self.client = self.session.client("bedrock-runtime")
             self.model_id = "anthropic.claude-3-5-sonnet-20240620-v1:0"
+            # Rate limiting: max 10 requests per minute
+            self.last_request_time = 0
+            self.min_request_interval = 6  # seconds
         except ProfileNotFound:
             raise Exception(f"AWSプロファイル '{profile_name}' が見つかりません。")
 
@@ -16,6 +20,13 @@ class BedrockClient:
         """
         Runs a review with a specific persona and language instruction.
         """
+        # Rate limiting
+        current_time = time.time()
+        time_since_last_request = current_time - self.last_request_time
+        if time_since_last_request < self.min_request_interval:
+            sleep_time = self.min_request_interval - time_since_last_request
+            time.sleep(sleep_time)
+        
         try:
             # セッションが有効か確認するために呼び出し
             response = self.client.converse(
@@ -27,7 +38,7 @@ class BedrockClient:
             raise Exception("AWSログインの期限が切れています。'aws sso login --profile <プロファイル名>' を実行してください。")
 
         prompts = {
-            "security": "You are a Security Auditor. Analyze code for vulnerabilities.",
+            "security": "You are a Senior Security Auditor and Penetration Tester. Conduct a comprehensive security analysis focusing on:\n\nCRITICAL VULNERABILITIES:\n- Injection attacks (SQL, NoSQL, Command, LDAP, XPath)\n- Broken Authentication & Session Management\n- Cross-Site Scripting (XSS) vulnerabilities\n- Insecure Direct Object References\n- Security Misconfigurations\n- Sensitive Data Exposure\n- Missing Function Level Access Control\n- Cross-Site Request Forgery (CSRF)\n- Known Vulnerable Components\n- Unvalidated Redirects & Forwards\n\nCODE SECURITY PATTERNS:\n- Input validation and sanitization\n- Authentication and authorization mechanisms\n- Session management security\n- Error handling that doesn't leak sensitive information\n- Secure password storage (proper hashing)\n- HTTPS/TLS usage and certificate validation\n- Secure random number generation\n- File upload security\n- API security (rate limiting, authentication)\n\nLANGUAGE-SPECIFIC CONCERNS:\n- Buffer overflows and memory safety (C/C++/Rust)\n- Type safety and injection prevention\n- Framework-specific vulnerabilities\n- Third-party library security\n\nProvide specific recommendations with severity levels (Critical/High/Medium/Low) and actionable fixes.",
             "performance": "You are a Performance Engineer. Optimize efficiency and resources.",
             "best_practices": "You are a Lead Developer. Review for clean code and SOLID principles.",
             "maintainability": "You are a Code Maintenance Expert. Analyze code for readability, maintainability, and long-term sustainability.",
@@ -65,6 +76,7 @@ class BedrockClient:
                 system=[{"text": system_msg}],
                 inferenceConfig={"maxTokens": 2000, "temperature": 0.1}
             )
+            self.last_request_time = time.time()  # Update timestamp after successful request
             return response["output"]["message"]["content"][0]["text"]
         except Exception as e:
             return f"Error: {str(e)}"

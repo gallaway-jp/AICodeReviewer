@@ -39,7 +39,7 @@ dist\AICodeReviewer.exe /path/to/your/project
 - `--diff-file FILE`: Path to diff file (TortoiseSVN/TortoiseGit format) when using diff scope
 - `--commits RANGE`: Commit range for diff generation (e.g., `HEAD~1..HEAD`) when using diff scope
 - `--type`: Review type (default: best_practices)
-  - `security`: Analyze code for vulnerabilities
+  - `security`: Comprehensive security analysis covering OWASP Top 10 vulnerabilities and additional security risks including injection attacks, authentication issues, XSS, CSRF, insecure configurations, and secure coding practices with severity levels
   - `performance`: Optimize efficiency and resources
   - `best_practices`: Review for clean code and SOLID principles
   - `maintainability`: Analyze code for readability and long-term sustainability
