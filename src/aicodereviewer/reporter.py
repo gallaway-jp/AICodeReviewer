@@ -1,11 +1,38 @@
 # src/aicodereviewer/reporter.py
+"""
+Report generation and formatting for code review results.
+
+This module handles the creation of comprehensive review reports in both
+JSON format (for programmatic access) and human-readable text format
+(for easy review and sharing).
+
+Functions:
+    generate_review_report: Create and save detailed review reports
+"""
 import json
 
 from .models import ReviewReport
 
 
 def generate_review_report(report: ReviewReport, output_file: str = None) -> str:
-    """Generate and save a review report"""
+    """
+    Generate and save comprehensive review reports in JSON and text formats.
+
+    Creates two output files:
+    1. JSON file with complete structured data for programmatic access
+    2. Human-readable summary text file with key findings and statistics
+
+    Args:
+        report (ReviewReport): The complete review report to save
+        output_file (str, optional): Custom output filename. If None, generates
+                                   timestamped filename automatically.
+
+    Returns:
+        str: Path to the generated JSON report file
+
+    Note:
+        Also creates a corresponding '_summary.txt' file with human-readable content.
+    """
     if not output_file:
         timestamp = report.generated_at.strftime("%Y%m%d_%H%M%S")
         output_file = f"review_report_{timestamp}.json"

@@ -1,4 +1,14 @@
 # src/aicodereviewer/bedrock.py
+"""
+AWS Bedrock AI client for code review and fix generation.
+
+This module provides a robust client for interacting with Anthropic Claude
+via AWS Bedrock, with comprehensive rate limiting, error handling, and
+connection validation for reliable AI-powered code analysis.
+
+Classes:
+    BedrockClient: Main client for AI code review operations
+"""
 import boto3
 import time
 from botocore.exceptions import ClientError, ProfileNotFound, TokenRetrievalError
@@ -6,8 +16,33 @@ from botocore.config import Config
 
 from .config import config
 
+
 class BedrockClient:
+    """
+    AWS Bedrock client for AI-powered code review and fixes.
+
+    Handles authentication, rate limiting, connection validation, and
+    provides specialized prompts for different types of code analysis.
+
+    Attributes:
+        session: boto3 session with configured profile
+        client: bedrock-runtime client instance
+        model_id: Claude model identifier
+        min_request_interval: Minimum seconds between requests
+        max_requests_per_minute: Rate limit for requests per minute
+    """
+
     def __init__(self, profile_name, region="us-east-1"):
+        """
+        Initialize Bedrock client with AWS profile and performance settings.
+
+        Args:
+            profile_name (str): AWS profile name for authentication
+            region (str): AWS region (default: us-east-1)
+
+        Raises:
+            Exception: If AWS profile is not found
+        """
         try:
             # Create session with optimized config
             self.session = boto3.Session(profile_name=profile_name, region_name=region)
@@ -31,7 +66,12 @@ class BedrockClient:
             raise Exception(f"AWSプロファイル '{profile_name}' が見つかりません。")
 
     def _check_rate_limit(self):
-        """Check and enforce rate limits"""
+        """
+        Check and enforce rate limiting to prevent API throttling.
+
+        Implements both per-minute request limits and minimum intervals
+        between requests to ensure compliance with AWS Bedrock limits.
+        """
         current_time = time.time()
 
         # Reset counter if window has passed
@@ -55,7 +95,12 @@ class BedrockClient:
             time.sleep(sleep_time)
 
     def _validate_connection(self):
-        """Validate AWS connection with minimal request"""
+        """
+        Validate AWS connection and authentication with minimal test request.
+
+        Raises:
+            Exception: If authentication fails or connection is invalid
+        """
         try:
             self.client.converse(
                 modelId=self.model_id,
@@ -67,7 +112,18 @@ class BedrockClient:
 
     def get_review(self, code_content, review_type="security", lang="en"):
         """
-        Runs a review with a specific persona and language instruction.
+        Perform AI-powered code review with specialized prompts.
+
+        Supports multiple review types with expert personas and language options.
+        Includes comprehensive error handling and automatic retry on throttling.
+
+        Args:
+            code_content (str): Code to review
+            review_type (str): Type of review ('security', 'performance', etc.)
+            lang (str): Response language ('en' or 'ja')
+
+        Returns:
+            str: AI review feedback or error message
         """
         # Rate limiting
         self._check_rate_limit()

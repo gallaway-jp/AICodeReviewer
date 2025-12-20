@@ -1,4 +1,19 @@
 # src/aicodereviewer/main.py
+"""
+Main entry point for AICodeReviewer.
+
+This module provides the command-line interface and orchestrates the complete
+code review workflow including file scanning, issue collection, interactive
+review, and report generation.
+
+The workflow follows these steps:
+1. Parse command-line arguments
+2. Validate scope and authentication
+3. Scan project files or parse diffs
+4. Collect review issues from AI analysis
+5. Interactive review confirmation
+6. Generate and save reports
+"""
 import argparse
 from datetime import datetime
 
@@ -13,6 +28,15 @@ from .models import ReviewReport
 
 
 def main():
+    """
+    Main entry point for AICodeReviewer.
+
+    Parses command-line arguments, sets up AWS authentication, scans the codebase,
+    performs AI-powered code review, and generates comprehensive reports.
+
+    Command-line options support different review scopes (project vs diff),
+    review types (security, performance, etc.), and output formats.
+    """
     parser = argparse.ArgumentParser(description="AICodeReviewer - Multi-language AI Review")
 
     # Profile management options
@@ -43,7 +67,7 @@ def main():
 
     args = parser.parse_args()
 
-    # Handle profile management commands
+    # Handle profile management commands first
     if args.set_profile:
         set_profile_name(args.set_profile)
         return
@@ -51,28 +75,30 @@ def main():
         clear_profile()
         return
 
-    # Validate scope and diff options
+    # Validate scope and diff options for diff-based reviews
     if args.scope == 'diff':
         if not args.diff_file and not args.commits:
             parser.error("--diff-file or --commits is required when using --scope diff")
         if args.diff_file and args.commits:
             parser.error("Cannot specify both --diff-file and --commits")
 
-    # Require path for code review
+    # Require path for code review operations
     if not args.path:
         parser.error("path is required for code review (or use --set-profile or --clear-profile)")
 
-    # Determine final language
+    # Determine final language for AI responses
     target_lang = args.lang
     if target_lang == 'default':
         target_lang = get_system_language()
 
+    # Initialize AWS Bedrock client with configured profile
     profile = get_profile_name()
     client = BedrockClient(profile)
 
-    # Clean up old backup files
+    # Clean up old backup files to manage disk space
     cleanup_old_backups(args.path)
 
+    # Display scan configuration and start file discovery
     scope_desc = "entire project" if args.scope == 'project' else f"changes ({args.diff_file or args.commits})"
     print(f"Scanning {args.path} - Scope: {scope_desc} (Output Language: {target_lang})...")
     target_files = scan_project_with_scope(args.path, args.scope, args.diff_file, args.commits)
@@ -86,7 +112,7 @@ def main():
     estimated_time = num_files * 8  # Rough estimate: 8 seconds per file (6s API + 2s overhead)
     print(f"Found {num_files} files to review (estimated time: {estimated_time // 60}m {estimated_time % 60}s)")
 
-    # Collect all review issues
+    # Collect all review issues from AI analysis
     print(f"\nCollecting review issues from {num_files} files...")
     issues = collect_review_issues(target_files, args.type, client, target_lang)
 
@@ -96,10 +122,10 @@ def main():
 
     print(f"\nFound {len(issues)} review issues. Starting interactive confirmation...")
 
-    # Interactive review confirmation
+    # Interactive review confirmation and potential fixes
     resolved_issues = interactive_review_confirmation(issues, client, args.type, target_lang)
 
-    # Create review report
+    # Create comprehensive review report
     diff_source = args.diff_file or args.commits if args.scope == 'diff' else None
     report = ReviewReport(
         project_path=args.path,
@@ -112,7 +138,7 @@ def main():
         diff_source=diff_source
     )
 
-    # Generate and save report
+    # Generate and save report files
     output_file = generate_review_report(report, args.output)
     print(f"\n✅ Review complete! Report saved to: {output_file}")
     print(f"   Summary: {output_file.replace('.json', '_summary.txt')}")

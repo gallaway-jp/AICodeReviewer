@@ -1,4 +1,14 @@
 # src/aicodereviewer/fixer.py
+"""
+AI-powered code fix generation.
+
+This module handles the generation of automated code fixes using AI analysis.
+It includes size validation, focused prompts, and error handling to ensure
+safe and effective fix generation.
+
+Functions:
+    apply_ai_fix: Generate AI-powered fixes for code issues
+"""
 import os
 from typing import Optional
 from botocore.exceptions import ClientError
@@ -8,7 +18,26 @@ from .config import config
 
 
 def apply_ai_fix(issue: ReviewIssue, client, review_type: str, lang: str) -> Optional[str]:
-    """Generate an AI fix for the issue (does not apply it)"""
+    """
+    Generate an AI-powered fix for a code review issue.
+
+    Creates a focused prompt for the AI to generate a complete corrected version
+    of the code. Includes multiple size and content validations to prevent
+    issues with large files or excessive API usage.
+
+    Args:
+        issue (ReviewIssue): The issue to generate a fix for
+        client: AI review client instance
+        review_type (str): Type of review the issue came from
+        lang (str): Language for AI responses ('en' or 'ja')
+
+    Returns:
+        Optional[str]: The fixed code as a string, or None if fix generation failed
+
+    Note:
+        This function only generates the fix - it does not apply it to the file.
+        Size limits prevent processing of very large files to avoid API issues.
+    """
     try:
         # Check file size before processing
         file_size = os.path.getsize(issue.file_path)

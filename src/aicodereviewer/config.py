@@ -1,13 +1,39 @@
 # src/aicodereviewer/config.py
+"""
+Configuration management for AICodeReviewer.
+
+This module provides centralized configuration management with default values,
+file-based overrides, and automatic type conversion for application settings.
+
+Classes:
+    Config: Main configuration manager with performance and processing settings
+"""
 import configparser
 import os
 from pathlib import Path
 from typing import Dict, Any
 
+
 class Config:
-    """Configuration manager for AICodeReviewer"""
+    """
+    Configuration manager for AICodeReviewer application settings.
+
+    Manages performance limits, API settings, and processing parameters with
+    support for configuration files and automatic type conversion.
+
+    Configuration sections:
+        performance: File size limits, API rate limiting, timeouts
+        processing: Batch processing and parallel execution settings
+        logging: Log levels and performance monitoring
+    """
 
     def __init__(self):
+        """
+        Initialize configuration with defaults and load user config file.
+
+        Looks for config.ini in the project root directory and merges
+        user settings with default values.
+        """
         self.config = configparser.ConfigParser()
         self.config_path = Path(__file__).parent.parent / "config.ini"
 
@@ -19,7 +45,12 @@ class Config:
             self.config.read(self.config_path)
 
     def _set_defaults(self):
-        """Set default configuration values"""
+        """
+        Set default configuration values for all sections.
+
+        Defines sensible defaults for performance limits, API settings,
+        and processing parameters to ensure stable operation.
+        """
         self.config.add_section('performance')
         self.config.set('performance', 'max_file_size_mb', '10')
         self.config.set('performance', 'max_fix_file_size_mb', '5')
@@ -40,7 +71,26 @@ class Config:
         self.config.set('logging', 'enable_performance_logging', 'true')
 
     def get(self, section: str, key: str, fallback: Any = None) -> Any:
-        """Get configuration value with type conversion"""
+        """
+        Get configuration value with automatic type conversion.
+
+        Retrieves configuration values and converts them to appropriate types
+        based on the setting name and section.
+
+        Args:
+            section (str): Configuration section name
+            key (str): Configuration key name
+            fallback (Any): Value to return if key not found
+
+        Returns:
+            Any: Configuration value with appropriate type conversion
+
+        Type conversions:
+            - Size values ending in '_mb': converted to bytes
+            - Time/duration values: converted to float
+            - Integer values: converted to int
+            - Boolean values: converted to bool
+        """
         try:
             value = self.config.get(section, key)
             # Type conversion based on defaults
@@ -63,6 +113,7 @@ class Config:
             return value
         except (configparser.NoSectionError, configparser.NoOptionError):
             return fallback
+
 
 # Global config instance
 config = Config()

@@ -1,4 +1,16 @@
 # src/aicodereviewer/reviewer.py
+"""
+Code review issue collection and verification.
+
+This module handles the core review process including file content reading,
+AI-powered issue detection, and resolution verification with performance
+optimizations like file caching and size limits.
+
+Functions:
+    _read_file_content: Cached file reading with size validation
+    collect_review_issues: Main function to gather issues from files
+    verify_issue_resolved: Check if previously identified issues are fixed
+"""
 import os
 from pathlib import Path
 from typing import List, Dict, Any
@@ -11,7 +23,18 @@ _file_content_cache = {}
 
 
 def _read_file_content(file_path: Path) -> str:
-    """Read file content with caching and size limits."""
+    """
+    Read file content with caching and size limits.
+
+    Implements performance optimizations including content caching to avoid
+    re-reading files and size limits to prevent memory issues with large files.
+
+    Args:
+        file_path (Path): Path to the file to read
+
+    Returns:
+        str: File content as string, or empty string if file is too large or unreadable
+    """
     cache_key = str(file_path)
 
     # Check cache first
@@ -43,7 +66,22 @@ def _read_file_content(file_path: Path) -> str:
 
 
 def collect_review_issues(target_files: List[Any], review_type: str, client, lang: str) -> List[ReviewIssue]:
-    """Collect all review issues from files without immediate output"""
+    """
+    Collect all review issues from target files using AI analysis.
+
+    Processes each file through the AI review client to identify code quality
+    issues. Handles both project-wide scans and diff-based reviews.
+
+    Args:
+        target_files (List[Any]): Files to review - either Path objects (project scope)
+                                or dicts with path/content (diff scope)
+        review_type (str): Type of review to perform (e.g., 'security', 'performance')
+        client: AI review client instance
+        lang (str): Language for AI responses ('en' or 'ja')
+
+    Returns:
+        List[ReviewIssue]: List of identified review issues
+    """
     issues = []
 
     for file_info in target_files:
@@ -87,7 +125,21 @@ def collect_review_issues(target_files: List[Any], review_type: str, client, lan
 
 
 def verify_issue_resolved(issue: ReviewIssue, client, review_type: str, lang: str) -> bool:
-    """Verify that a previously identified issue has been resolved"""
+    """
+    Verify that a previously identified issue has been resolved.
+
+    Re-analyzes the current code to check if the issue still exists.
+    Uses heuristic comparison of feedback length and content.
+
+    Args:
+        issue (ReviewIssue): The issue to verify
+        client: AI review client instance
+        review_type (str): Type of review performed
+        lang (str): Language for AI responses
+
+    Returns:
+        bool: True if issue appears to be resolved, False otherwise
+    """
     try:
         with open(issue.file_path, "r", encoding="utf-8", errors="ignore") as f:
             current_code = f.read()

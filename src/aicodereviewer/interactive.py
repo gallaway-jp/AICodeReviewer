@@ -1,4 +1,15 @@
 # src/aicodereviewer/interactive.py
+"""
+Interactive user interface for code review confirmation and resolution.
+
+This module provides the interactive workflow for users to review AI-identified
+issues, mark them as resolved, apply AI fixes, or ignore them with reasons.
+Includes file backup functionality and comprehensive user input validation.
+
+Functions:
+    get_valid_choice: Get validated user input with error handling
+    interactive_review_confirmation: Main interactive review workflow
+"""
 import shutil
 from datetime import datetime
 from typing import List
@@ -9,7 +20,19 @@ from .fixer import apply_ai_fix
 
 
 def get_valid_choice(prompt: str, valid_options: List[str]) -> str:
-    """Get validated user input"""
+    """
+    Get validated user input with comprehensive error handling.
+
+    Continuously prompts user until valid input is provided or operation
+    is cancelled via keyboard interrupt.
+
+    Args:
+        prompt (str): The prompt message to display to user
+        valid_options (List[str]): List of valid input options
+
+    Returns:
+        str: User's validated choice, or "cancel" if operation cancelled
+    """
     while True:
         try:
             choice = input(prompt).strip()
@@ -25,8 +48,26 @@ def get_valid_choice(prompt: str, valid_options: List[str]) -> str:
 
 
 def interactive_review_confirmation(issues: List[ReviewIssue], client, review_type: str, lang: str) -> List[ReviewIssue]:
-    """Interactive process to confirm and resolve each review issue"""
+    """
+    Interactive workflow for confirming and resolving code review issues.
 
+    Presents each issue to the user with options to:
+    - Mark as resolved (with verification)
+    - Ignore with reason
+    - Apply AI-generated fix
+    - View full file content
+
+    Includes automatic backup creation before applying fixes.
+
+    Args:
+        issues (List[ReviewIssue]): List of issues to review
+        client: AI review client instance
+        review_type (str): Type of review being performed
+        lang (str): Language for AI responses
+
+    Returns:
+        List[ReviewIssue]: Updated issues with user resolutions applied
+    """
     for i, issue in enumerate(issues, 1):
         print(f"\n{'='*80}")
         print(f"ISSUE {i}/{len(issues)}")
