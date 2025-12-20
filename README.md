@@ -55,6 +55,27 @@ dist\AICodeReviewer.exe /path/to/your/project
 - `--lang`: Output language - `en` (English), `ja` (Japanese), or `default` (auto-detect system language)
 - `--set-profile PROFILE`: Set or change the AWS profile name
 - `--clear-profile`: Remove the stored AWS profile from keyring
+- `--output FILE`: Output file path for the review report (JSON format, default: auto-generated timestamped file)
+
+## Interactive Review Workflow
+
+AICodeReviewer now features an interactive review process that requires you to actively confirm each AI-identified issue before generating a final report. For each issue found, you have four options:
+
+1. **RESOLVED** - Mark the issue as resolved (program will verify the fix)
+2. **IGNORE** - Ignore the issue (requires providing a reason)
+3. **AI FIX** - Let AI automatically fix the code issue
+4. **VIEW CODE** - Display the full file content for context
+
+The program will not generate a final report until all issues have been addressed through one of these actions. This ensures thorough review and prevents overlooking important issues.
+
+### Report Generation
+
+After completing the interactive review, AICodeReviewer generates two output files:
+
+- **JSON Report** (`review_report_YYYYMMDD_HHMMSS.json`): Complete structured data including all issues, resolutions, and metadata
+- **Summary Report** (`review_report_YYYYMMDD_HHMMSS_summary.txt`): Human-readable summary with issue counts and details
+
+You can specify a custom output filename using the `--output` option.
 
 Examples:
 ```bash
@@ -72,6 +93,9 @@ python -m aicodereviewer . --scope diff --commits HEAD~1..HEAD --type maintainab
 
 # Review recent changes in a pull request style
 python -m aicodereviewer . --scope diff --commits main..feature-branch --type testing
+
+# Generate a custom-named report
+python -m aicodereviewer . --type best_practices --output my_review_report.json
 ```
 
 ## Building Windows Executable

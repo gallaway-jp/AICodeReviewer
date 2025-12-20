@@ -39,7 +39,8 @@ class BedrockClient:
             "error_handling": "You are a Reliability Engineer. Analyze error handling, exception management, and fault tolerance.",
             "complexity": "You are a Code Analyst. Evaluate code complexity, cyclomatic complexity, and suggest simplifications.",
             "architecture": "You are a Software Architect. Review code structure, design patterns, and architectural decisions.",
-            "license": "You are a License Compliance Specialist. Review third-party library usage, check for appropriate licenses, ensure license compatibility, and verify proper attribution."
+            "license": "You are a License Compliance Specialist. Review third-party library usage, check for appropriate licenses, ensure license compatibility, and verify proper attribution.",
+            "fix": "You are an expert code fixer. Fix the code issues identified in the feedback. Return only the corrected code without explanations."
         }
 
         base_prompt = prompts.get(review_type, prompts["best_practices"])

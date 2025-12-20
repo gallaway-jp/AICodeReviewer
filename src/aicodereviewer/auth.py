@@ -1,5 +1,6 @@
 # src/aicodereviewer/auth.py
 import keyring
+import locale
 
 SERVICE_NAME = "AICodeReviewer"
 
@@ -50,3 +51,13 @@ def clear_profile():
         print("AWSプロファイルを削除しました。")
     except Exception as e:
         print(f"プロファイル削除エラー: {e}")
+
+def get_system_language():
+    """Detects if the system language is Japanese, defaults to English."""
+    try:
+        lang, _ = locale.getdefaultlocale()
+        if lang and lang.startswith('ja'):
+            return 'ja'
+    except:
+        pass
+    return 'en'
