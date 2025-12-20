@@ -1,8 +1,45 @@
 # src/aicodereviewer/reviewer.py
+import os
 from pathlib import Path
 from typing import List, Dict, Any
 
 from .models import ReviewIssue
+from .config import config
+
+# Cache for file contents to avoid re-reading large files
+_file_content_cache = {}
+
+
+def _read_file_content(file_path: Path) -> str:
+    """Read file content with caching and size limits."""
+    cache_key = str(file_path)
+
+    # Check cache first
+    if cache_key in _file_content_cache:
+        return _file_content_cache[cache_key]
+
+    try:
+        # Check file size before reading
+        file_size = os.path.getsize(file_path)
+        max_size = config.get('performance', 'max_file_size_mb')
+        if file_size > max_size:
+            print(f"Warning: Skipping large file {file_path} ({file_size} bytes > {max_size} bytes)")
+            return ""
+
+        # Read file efficiently
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+
+        # Cache the content (limit cache size)
+        cache_limit = config.get('performance', 'file_cache_size')
+        if len(_file_content_cache) < cache_limit:
+            _file_content_cache[cache_key] = content
+
+        return content
+
+    except (OSError, UnicodeDecodeError) as e:
+        print(f"Error reading file {file_path}: {e}")
+        return ""
 
 
 def collect_review_issues(target_files: List[Any], review_type: str, client, lang: str) -> List[ReviewIssue]:
@@ -18,12 +55,10 @@ def collect_review_issues(target_files: List[Any], review_type: str, client, lan
         else:
             # Project scope - file_info is a Path object
             file_path = file_info
-            try:
-                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                    code = f.read()
-                display_name = str(file_path)
-            except Exception as e:
-                print(f"Error reading file {file_path}: {e}")
+            code = _read_file_content(file_path)
+            display_name = str(file_path)
+
+            if not code:  # Skip empty or unreadable files
                 continue
 
         print(f"Analyzing {display_name}...")
@@ -32,7 +67,6 @@ def collect_review_issues(target_files: List[Any], review_type: str, client, lan
             feedback = client.get_review(code, review_type=review_type, lang=lang)
 
             # Parse AI feedback into structured issues
-            # This is a simplified parsing - in practice, you'd want more sophisticated parsing
             if feedback and not feedback.startswith("Error:"):
                 # Create a review issue from the feedback
                 issue = ReviewIssue(

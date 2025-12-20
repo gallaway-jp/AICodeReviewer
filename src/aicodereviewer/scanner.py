@@ -12,75 +12,68 @@ def scan_project(directory: str) -> List[Path]:
     # Supports: Python, JavaScript/TypeScript, Java, C/C++, C#, Go, Ruby, PHP, Rust, Swift, Kotlin, Objective-C
     # Frameworks: React (.jsx, .tsx), Laravel (.blade.php)
     # Web: HTML, CSS, Sass, Less, Vue, Svelte, Astro, JSON, XML, YAML
-    valid_extensions = {
+    valid_extensions = frozenset({
         '.py', '.js', '.ts', '.java', '.cpp', '.c', '.cs',
         '.go', '.rb', '.php', '.rs', '.swift', '.kt', '.m', '.h', '.mm',
         '.blade.php', '.jsx', '.tsx', '.html', '.css', '.scss', '.sass',
         '.less', '.vue', '.svelte', '.astro', '.json', '.xml', '.yaml', '.yml'
-    }
-    files = []
-    ignore_dirs = {'.git', '.venv', '__pycache__', 'node_modules', 'bin', 'obj', 'dist'}
+    })
+    ignore_dirs = frozenset({'.git', '.venv', '__pycache__', 'node_modules', 'bin', 'obj', 'dist'})
 
+    files = []
     for root, dirs, filenames in os.walk(directory):
+        # Filter directories in-place for efficiency
         dirs[:] = [d for d in dirs if d not in ignore_dirs]
-        for f in filenames:
-            ext = Path(f).suffix.lower()
-            if ext in valid_extensions:
-                files.append(Path(root) / f)
+        for filename in filenames:
+            if Path(filename).suffix.lower() in valid_extensions:
+                files.append(Path(root) / filename)
     return files
 
 
 def parse_diff_file(diff_content: str) -> List[Dict[str, str]]:
     """Parse diff content and return list of changed files with their content."""
     files = []
-    current_file = None
-    current_content = []
-
-    lines = diff_content.split('\n')
+    lines = diff_content.splitlines()  # More efficient than split('\n')
     i = 0
+    n = len(lines)
 
-    while i < len(lines):
+    while i < n:
         line = lines[i]
 
         # Check for file header (unified diff format)
         if line.startswith('+++ '):
-            # Save previous file if exists
-            if current_file and current_content:
-                files.append({
-                    'filename': current_file,
-                    'content': '\n'.join(current_content)
-                })
-
             # Extract filename from +++ b/path/to/file
             match = re.match(r'\+\+\+ [ab]/(.+)', line)
             if match:
-                current_file = match.group(1)
-                current_content = []
+                filename = match.group(1)
+                content_lines = []
 
-        # Check for diff hunks
-        elif line.startswith('@@') and current_file:
-            # Skip hunk header, start collecting content
-            i += 1
-            while i < len(lines) and not (lines[i].startswith('+++') or lines[i].startswith('---') or lines[i].startswith('@@')):
-                line = lines[i]
-                if line.startswith('+'):
-                    # Added line
-                    current_content.append(line[1:])  # Remove the + prefix
-                elif line.startswith(' '):
-                    # Context line
-                    current_content.append(line[1:])  # Remove the space prefix
-                # Skip removed lines (start with -)
+                # Skip to next hunk or end
                 i += 1
-            continue
+                while i < n:
+                    hunk_line = lines[i]
+                    if hunk_line.startswith('@@'):
+                        # Process hunk content
+                        i += 1
+                        while i < n:
+                            content_line = lines[i]
+                            if content_line.startswith(('+++', '---', '@@')):
+                                break
+                            elif content_line.startswith(('+', ' ')):
+                                # Added or context line
+                                content_lines.append(content_line[1:])  # Remove prefix
+                            # Skip removed lines (start with -)
+                            i += 1
+                        break
+                    i += 1
 
-        i += 1
-
-    # Save the last file
-    if current_file and current_content:
-        files.append({
-            'filename': current_file,
-            'content': '\n'.join(current_content)
-        })
+                if content_lines:  # Only add if there's actual content
+                    files.append({
+                        'filename': filename,
+                        'content': '\n'.join(content_lines)
+                    })
+        else:
+            i += 1
 
     return files
 

@@ -109,11 +109,51 @@ To create a standalone Windows executable:
 
 2. The executable will be created in the `dist` folder as `AICodeReviewer.exe`
 
-## Requirements
+## Performance Optimizations
 
-- Python 3.8+
-- AWS CLI configured with SSO profile
-- Access to Amazon Bedrock (Claude 3.5 Sonnet model)
+AICodeReviewer includes several performance optimizations to handle large codebases efficiently:
+
+### Resource Management
+- **File Size Limits**: Automatically skips files larger than 10MB to prevent memory issues
+- **Content Length Limits**: Restricts API requests to 100KB to stay within model limits
+- **File Caching**: Caches up to 100 recently read files to avoid redundant I/O operations
+- **Memory Monitoring**: Tracks memory usage during operations (optional)
+
+### API Efficiency
+- **Rate Limiting**: Maintains 6-second intervals between API calls (10 requests/minute max)
+- **Connection Pooling**: Reuses AWS connections with automatic retry logic
+- **Request Batching**: Optimized prompt sizes to maximize API efficiency
+- **Error Handling**: Graceful handling of API timeouts and throttling
+
+### Processing Optimizations
+- **Efficient File Scanning**: Uses `os.walk()` with filtered directory pruning
+- **Optimized Diff Parsing**: Streamlined parsing logic for large diff files
+- **Parallel Processing Ready**: Architecture supports future parallel file processing
+
+### Configuration
+
+Performance settings can be customized in `config.ini`:
+
+```ini
+[performance]
+max_file_size_mb = 10          # Maximum file size to process
+max_fix_file_size_mb = 5       # Maximum file size for AI fixes
+file_cache_size = 100          # Number of files to cache in memory
+min_request_interval_seconds = 6.0  # API rate limiting
+max_requests_per_minute = 10   # API request limit per minute
+max_content_length = 100000    # Maximum content length for API
+max_fix_content_length = 50000 # Maximum content for fix operations
+
+[logging]
+enable_performance_logging = true  # Enable performance monitoring
+```
+
+### Performance Tips
+
+1. **Large Codebases**: Use `--scope diff` to review only changed files instead of entire projects
+2. **File Types**: The scanner automatically excludes common build/dependency directories
+3. **Memory Usage**: Monitor memory usage with `enable_performance_logging = true`
+4. **API Limits**: The tool automatically handles AWS Bedrock rate limits and retries
 
 ## Development
 

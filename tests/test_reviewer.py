@@ -23,7 +23,8 @@ class TestCollectReviewIssues:
 
         target_files = [mock_file]
 
-        with patch('builtins.open', MagicMock()) as mock_open:
+        with patch('builtins.open', MagicMock()) as mock_open, \
+             patch('os.path.getsize', return_value=1000):
             mock_open.return_value.__enter__.return_value.read.return_value = "print('test code')"
             issues = collect_review_issues(target_files, "security", mock_client, "en")
 
@@ -61,7 +62,8 @@ class TestCollectReviewIssues:
 
         target_files = [Path("/path/to/test.py")]
 
-        with patch('builtins.open', MagicMock()) as mock_open:
+        with patch('builtins.open', MagicMock()) as mock_open, \
+             patch('os.path.getsize', return_value=1000):
             mock_open.return_value.__enter__.return_value.read.return_value = "print('test')"
             issues = collect_review_issues(target_files, "security", mock_client, "en")
 

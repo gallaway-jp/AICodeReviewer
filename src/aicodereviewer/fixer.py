@@ -1,37 +1,53 @@
 # src/aicodereviewer/fixer.py
+import os
 from typing import Optional
+from botocore.exceptions import ClientError
 
 from .models import ReviewIssue
+from .config import config
 
 
 def apply_ai_fix(issue: ReviewIssue, client, review_type: str, lang: str) -> Optional[str]:
     """Generate an AI fix for the issue (does not apply it)"""
     try:
+        # Check file size before processing
+        file_size = os.path.getsize(issue.file_path)
+        max_fix_size = config.get('performance', 'max_fix_file_size_mb')
+        if file_size > max_fix_size:
+            print(f"Warning: File too large for AI fix: {issue.file_path} ({file_size} bytes > {max_fix_size} bytes)")
+            return None
+
         with open(issue.file_path, "r", encoding="utf-8", errors="ignore") as f:
             current_code = f.read()
 
-        # Create a prompt for the AI to generate a fix
-        fix_prompt = f"""
-You are an expert code fixer. The following code has an issue that needs to be resolved:
+        # Skip if file is empty or too large for the model
+        max_fix_content = config.get('performance', 'max_fix_content_length')
+        if not current_code or len(current_code) > max_fix_content:
+            print(f"Warning: File content too large for AI processing: {issue.file_path} ({len(current_code)} chars > {max_fix_content})")
+            return None
+
+        # Create a more focused prompt for the AI to generate a fix
+        fix_prompt = f"""You are an expert code fixer. Fix this specific issue in the code:
 
 ISSUE TYPE: {review_type}
-ORIGINAL FEEDBACK: {issue.ai_feedback}
+FEEDBACK: {issue.ai_feedback}
 
-CURRENT CODE:
+CODE TO FIX:
 {current_code}
 
-Please provide the FIXED version of the entire file that resolves this issue.
-Return ONLY the complete corrected code, no explanations or markdown.
-"""
+Return ONLY the complete corrected code, no explanations or markdown."""
 
         # Use the bedrock client to get the fix
         fix_result = client.get_review(fix_prompt, review_type="fix", lang=lang)
 
         if fix_result and not fix_result.startswith("Error:"):
-            return fix_result
+            return fix_result.strip()  # Remove extra whitespace
 
         return None
 
+    except (OSError, UnicodeDecodeError, ClientError) as e:
+        print(f"Error generating AI fix: {e}")
+        return None
     except Exception as e:
         print(f"Error generating AI fix: {e}")
         return None

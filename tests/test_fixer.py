@@ -25,7 +25,8 @@ class TestApplyAIFix:
             ai_feedback="This function is insecure"
         )
 
-        with patch('builtins.open', MagicMock()) as mock_open:
+        with patch('builtins.open', MagicMock()) as mock_open, \
+             patch('os.path.getsize', return_value=1000):
             mock_open.return_value.__enter__.return_value.read.return_value = "def broken_function(): pass"
             result = apply_ai_fix(issue, mock_client, "security", "en")
 
@@ -45,7 +46,8 @@ class TestApplyAIFix:
             ai_feedback="feedback"
         )
 
-        with patch('builtins.open', MagicMock()) as mock_open:
+        with patch('builtins.open', MagicMock()) as mock_open, \
+             patch('os.path.getsize', return_value=1000):
             mock_open.return_value.__enter__.return_value.read.return_value = "code"
             result = apply_ai_fix(issue, mock_client, "security", "en")
 
@@ -83,7 +85,8 @@ class TestApplyAIFix:
             ai_feedback="feedback"
         )
 
-        with patch('builtins.open', MagicMock()) as mock_open:
+        with patch('builtins.open', MagicMock()) as mock_open, \
+             patch('os.path.getsize', return_value=1000):
             mock_open.return_value.__enter__.return_value.read.return_value = "code"
             result = apply_ai_fix(issue, mock_client, "security", "en")
 

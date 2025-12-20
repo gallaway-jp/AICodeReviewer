@@ -81,8 +81,13 @@ def main():
         print("No files found to review.")
         return
 
+    # Estimate processing time and show progress
+    num_files = len(target_files)
+    estimated_time = num_files * 8  # Rough estimate: 8 seconds per file (6s API + 2s overhead)
+    print(f"Found {num_files} files to review (estimated time: {estimated_time // 60}m {estimated_time % 60}s)")
+
     # Collect all review issues
-    print(f"\nCollecting review issues from {len(target_files)} files...")
+    print(f"\nCollecting review issues from {num_files} files...")
     issues = collect_review_issues(target_files, args.type, client, target_lang)
 
     if not issues:
