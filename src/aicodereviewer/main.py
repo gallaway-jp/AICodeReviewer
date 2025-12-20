@@ -37,7 +37,7 @@ def scan_project(directory):
 def main():
     parser = argparse.ArgumentParser(description="AICodeReviewer - Multi-language AI Review")
     parser.add_argument("path", help="Path to the project folder")
-    parser.add_argument("--type", choices=['security', 'performance', 'best_practices', 'maintainability', 'documentation', 'testing', 'accessibility', 'scalability', 'compatibility', 'error_handling', 'complexity', 'architecture'], 
+    parser.add_argument("--type", choices=['security', 'performance', 'best_practices', 'maintainability', 'documentation', 'testing', 'accessibility', 'scalability', 'compatibility', 'error_handling', 'complexity', 'architecture', 'license'], 
                         default='best_practices')
     # Manual language override
     parser.add_argument("--lang", choices=['en', 'ja', 'default'], default='default',

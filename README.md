@@ -48,6 +48,7 @@ dist\AICodeReviewer.exe /path/to/your/project
   - `error_handling`: Analyze error handling and fault tolerance
   - `complexity`: Evaluate code complexity and suggest simplifications
   - `architecture`: Review code structure and design patterns
+  - `license`: Review third-party library usage and license compliance
 - `--lang`: Output language - `en` (English), `ja` (Japanese), or `default` (auto-detect system language)
 
 Examples:
