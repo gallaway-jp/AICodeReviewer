@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Python: module src.aicodereviewer.bedrock</title>
+</head><body>
+
+<table class="heading">
+<tr class="heading-text decor">
+<td class="title">&nbsp;<br><strong class="title"><a href="src.html" class="white">src</a>.<a href="src.aicodereviewer.html" class="white">aicodereviewer</a>.bedrock</strong></td>
+<td class="extra"><a href=".">index</a><br><a href="file:d%3A%5Cdevelopment%5Cpython%5Caicodereviewer%5Csrc%5Caicodereviewer%5Cbedrock.py">d:\development\python\aicodereviewer\src\aicodereviewer\bedrock.py</a></td></tr></table>
+    <p><span class="code">AWS&nbsp;Bedrock&nbsp;AI&nbsp;client&nbsp;for&nbsp;code&nbsp;review&nbsp;and&nbsp;fix&nbsp;generation.<br>
+&nbsp;<br>
+This&nbsp;module&nbsp;provides&nbsp;a&nbsp;robust&nbsp;client&nbsp;for&nbsp;interacting&nbsp;with&nbsp;Anthropic&nbsp;Claude<br>
+via&nbsp;AWS&nbsp;Bedrock,&nbsp;with&nbsp;comprehensive&nbsp;rate&nbsp;limiting,&nbsp;error&nbsp;handling,&nbsp;and<br>
+connection&nbsp;validation&nbsp;for&nbsp;reliable&nbsp;AI-powered&nbsp;code&nbsp;analysis.<br>
+&nbsp;<br>
+Classes:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<a href="#BedrockClient">BedrockClient</a>:&nbsp;Main&nbsp;client&nbsp;for&nbsp;AI&nbsp;code&nbsp;review&nbsp;operations</span></p>
+<p>
+<table class="section">
+<tr class="decor pkg-content-decor heading-text">
+<td class="section-title" colspan=3>&nbsp;<br><strong class="bigsection">Modules</strong></td></tr>
+    
+<tr><td class="decor pkg-content-decor"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></td><td>&nbsp;</td>
+<td class="singlecolumn"><table><tr><td class="multicolumn"><a href="boto3.html">boto3</a><br>
+</td><td class="multicolumn"><a href="time.html">time</a><br>
+</td><td class="multicolumn"></td><td class="multicolumn"></td></tr></table></td></tr></table><p>
+<table class="section">
+<tr class="decor index-decor heading-text">
+<td class="section-title" colspan=3>&nbsp;<br><strong class="bigsection">Classes</strong></td></tr>
+    
+<tr><td class="decor index-decor"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></td><td>&nbsp;</td>
+<td class="singlecolumn"><dl>
+<dt class="heading-text"><a href="builtins.html#object">builtins.object</a>
+</dt><dd>
+<dl>
+<dt class="heading-text"><a href="src.aicodereviewer.bedrock.html#BedrockClient">BedrockClient</a>
+</dt></dl>
+</dd>
+</dl>
+ <p>
+<table class="section">
+<tr class="decor title-decor heading-text">
+<td class="section-title" colspan=3>&nbsp;<br><a name="BedrockClient">class <strong>BedrockClient</strong></a>(<a href="builtins.html#object">builtins.object</a>)</td></tr>
+    
+<tr><td class="decor title-decor" rowspan=2><span class="code">&nbsp;&nbsp;&nbsp;</span></td>
+<td class="decor title-decor" colspan=2><span class="code"><a href="#BedrockClient">BedrockClient</a>(profile_name,&nbsp;region='us-east-1')<br>
+&nbsp;<br>
+AWS&nbsp;Bedrock&nbsp;client&nbsp;for&nbsp;AI-powered&nbsp;code&nbsp;review&nbsp;and&nbsp;fixes.<br>
+&nbsp;<br>
+Handles&nbsp;authentication,&nbsp;rate&nbsp;limiting,&nbsp;connection&nbsp;validation,&nbsp;and<br>
+provides&nbsp;specialized&nbsp;prompts&nbsp;for&nbsp;different&nbsp;types&nbsp;of&nbsp;code&nbsp;analysis.<br>
+&nbsp;<br>
+Attributes:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;session:&nbsp;boto3&nbsp;session&nbsp;with&nbsp;configured&nbsp;profile<br>
+&nbsp;&nbsp;&nbsp;&nbsp;client:&nbsp;bedrock-runtime&nbsp;client&nbsp;instance<br>
+&nbsp;&nbsp;&nbsp;&nbsp;model_id:&nbsp;Claude&nbsp;model&nbsp;identifier<br>
+&nbsp;&nbsp;&nbsp;&nbsp;min_request_interval:&nbsp;Minimum&nbsp;seconds&nbsp;between&nbsp;requests<br>
+&nbsp;&nbsp;&nbsp;&nbsp;max_requests_per_minute:&nbsp;Rate&nbsp;limit&nbsp;for&nbsp;requests&nbsp;per&nbsp;minute<br>&nbsp;</span></td></tr>
+<tr><td>&nbsp;</td>
+<td class="singlecolumn">Methods defined here:<br>
+<dl><dt><a name="BedrockClient-__init__"><strong>__init__</strong></a>(self, profile_name, region='us-east-1')</dt><dd><span class="code">Initialize&nbsp;Bedrock&nbsp;client&nbsp;with&nbsp;AWS&nbsp;profile&nbsp;and&nbsp;performance&nbsp;settings.<br>
+&nbsp;<br>
+Args:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;profile_name&nbsp;(str):&nbsp;AWS&nbsp;profile&nbsp;name&nbsp;for&nbsp;authentication<br>
+&nbsp;&nbsp;&nbsp;&nbsp;region&nbsp;(str):&nbsp;AWS&nbsp;region&nbsp;(default:&nbsp;us-east-1)<br>
+&nbsp;<br>
+Raises:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;Exception:&nbsp;If&nbsp;AWS&nbsp;profile&nbsp;is&nbsp;not&nbsp;found</span></dd></dl>
+
+<dl><dt><a name="BedrockClient-get_review"><strong>get_review</strong></a>(self, code_content, review_type='security', lang='en')</dt><dd><span class="code">Perform&nbsp;AI-powered&nbsp;code&nbsp;review&nbsp;with&nbsp;specialized&nbsp;prompts.<br>
+&nbsp;<br>
+Supports&nbsp;multiple&nbsp;review&nbsp;types&nbsp;with&nbsp;expert&nbsp;personas&nbsp;and&nbsp;language&nbsp;options.<br>
+Includes&nbsp;comprehensive&nbsp;error&nbsp;handling&nbsp;and&nbsp;automatic&nbsp;retry&nbsp;on&nbsp;throttling.<br>
+&nbsp;<br>
+Args:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;code_content&nbsp;(str):&nbsp;Code&nbsp;to&nbsp;review<br>
+&nbsp;&nbsp;&nbsp;&nbsp;review_type&nbsp;(str):&nbsp;Type&nbsp;of&nbsp;review&nbsp;('security',&nbsp;'performance',&nbsp;etc.)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;lang&nbsp;(str):&nbsp;Response&nbsp;language&nbsp;('en'&nbsp;or&nbsp;'ja')<br>
+&nbsp;<br>
+Returns:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;str:&nbsp;AI&nbsp;review&nbsp;feedback&nbsp;or&nbsp;error&nbsp;message</span></dd></dl>
+
+<hr>
+Data descriptors defined here:<br>
+<dl><dt><strong>__dict__</strong></dt>
+<dd><span class="code">dictionary&nbsp;for&nbsp;instance&nbsp;variables</span></dd>
+</dl>
+<dl><dt><strong>__weakref__</strong></dt>
+<dd><span class="code">list&nbsp;of&nbsp;weak&nbsp;references&nbsp;to&nbsp;the&nbsp;object</span></dd>
+</dl>
+</td></tr></table></td></tr></table><p>
+<table class="section">
+<tr class="decor data-decor heading-text">
+<td class="section-title" colspan=3>&nbsp;<br><strong class="bigsection">Data</strong></td></tr>
+    
+<tr><td class="decor data-decor"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></td><td>&nbsp;</td>
+<td class="singlecolumn"><strong>config</strong> = &lt;src.aicodereviewer.config.Config object&gt;</td></tr></table>
+</body></html>

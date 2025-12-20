@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Python: module src.aicodereviewer.backup</title>
+</head><body>
+
+<table class="heading">
+<tr class="heading-text decor">
+<td class="title">&nbsp;<br><strong class="title"><a href="src.html" class="white">src</a>.<a href="src.aicodereviewer.html" class="white">aicodereviewer</a>.backup</strong></td>
+<td class="extra"><a href=".">index</a><br><a href="file:d%3A%5Cdevelopment%5Cpython%5Caicodereviewer%5Csrc%5Caicodereviewer%5Cbackup.py">d:\development\python\aicodereviewer\src\aicodereviewer\backup.py</a></td></tr></table>
+    <p><span class="code">Backup&nbsp;file&nbsp;management&nbsp;and&nbsp;cleanup&nbsp;utilities.<br>
+&nbsp;<br>
+This&nbsp;module&nbsp;handles&nbsp;automatic&nbsp;cleanup&nbsp;of&nbsp;backup&nbsp;files&nbsp;created&nbsp;during<br>
+AI&nbsp;fix&nbsp;operations&nbsp;to&nbsp;prevent&nbsp;disk&nbsp;space&nbsp;accumulation&nbsp;over&nbsp;time.<br>
+&nbsp;<br>
+Functions:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;cleanup_old_backups:&nbsp;Remove&nbsp;backup&nbsp;files&nbsp;older&nbsp;than&nbsp;specified&nbsp;age</span></p>
+<p>
+<table class="section">
+<tr class="decor pkg-content-decor heading-text">
+<td class="section-title" colspan=3>&nbsp;<br><strong class="bigsection">Modules</strong></td></tr>
+    
+<tr><td class="decor pkg-content-decor"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></td><td>&nbsp;</td>
+<td class="singlecolumn"><table><tr><td class="multicolumn"><a href="glob.html">glob</a><br>
+</td><td class="multicolumn"><a href="os.html">os</a><br>
+</td><td class="multicolumn"><a href="time.html">time</a><br>
+</td><td class="multicolumn"></td></tr></table></td></tr></table><p>
+<table class="section">
+<tr class="decor functions-decor heading-text">
+<td class="section-title" colspan=3>&nbsp;<br><strong class="bigsection">Functions</strong></td></tr>
+    
+<tr><td class="decor functions-decor"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></td><td>&nbsp;</td>
+<td class="singlecolumn"><dl><dt><a name="-cleanup_old_backups"><strong>cleanup_old_backups</strong></a>(project_path: str, max_age_hours: int = 24)</dt><dd><span class="code">Clean&nbsp;up&nbsp;old&nbsp;backup&nbsp;files&nbsp;to&nbsp;manage&nbsp;disk&nbsp;space&nbsp;usage.<br>
+&nbsp;<br>
+Automatically&nbsp;removes&nbsp;.backup&nbsp;files&nbsp;that&nbsp;are&nbsp;older&nbsp;than&nbsp;the&nbsp;specified<br>
+maximum&nbsp;age.&nbsp;This&nbsp;prevents&nbsp;accumulation&nbsp;of&nbsp;backup&nbsp;files&nbsp;from&nbsp;AI&nbsp;fix<br>
+operations&nbsp;while&nbsp;preserving&nbsp;recent&nbsp;backups&nbsp;for&nbsp;safety.<br>
+&nbsp;<br>
+Args:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;project_path&nbsp;(str):&nbsp;Root&nbsp;directory&nbsp;to&nbsp;search&nbsp;for&nbsp;backup&nbsp;files<br>
+&nbsp;&nbsp;&nbsp;&nbsp;max_age_hours&nbsp;(int):&nbsp;Maximum&nbsp;age&nbsp;in&nbsp;hours&nbsp;for&nbsp;backup&nbsp;files&nbsp;(default:&nbsp;24)<br>
+&nbsp;<br>
+Note:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;Uses&nbsp;glob&nbsp;pattern&nbsp;matching&nbsp;to&nbsp;find&nbsp;all&nbsp;.backup&nbsp;files&nbsp;recursively.<br>
+&nbsp;&nbsp;&nbsp;&nbsp;Silently&nbsp;ignores&nbsp;deletion&nbsp;errors&nbsp;to&nbsp;avoid&nbsp;interrupting&nbsp;main&nbsp;workflow.</span></dd></dl>
+</td></tr></table>
+</body></html>

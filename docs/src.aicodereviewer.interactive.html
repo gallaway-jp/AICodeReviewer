@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Python: module src.aicodereviewer.interactive</title>
+</head><body>
+
+<table class="heading">
+<tr class="heading-text decor">
+<td class="title">&nbsp;<br><strong class="title"><a href="src.html" class="white">src</a>.<a href="src.aicodereviewer.html" class="white">aicodereviewer</a>.interactive</strong></td>
+<td class="extra"><a href=".">index</a><br><a href="file:d%3A%5Cdevelopment%5Cpython%5Caicodereviewer%5Csrc%5Caicodereviewer%5Cinteractive.py">d:\development\python\aicodereviewer\src\aicodereviewer\interactive.py</a></td></tr></table>
+    <p><span class="code">Interactive&nbsp;user&nbsp;interface&nbsp;for&nbsp;code&nbsp;review&nbsp;confirmation&nbsp;and&nbsp;resolution.<br>
+&nbsp;<br>
+This&nbsp;module&nbsp;provides&nbsp;the&nbsp;interactive&nbsp;workflow&nbsp;for&nbsp;users&nbsp;to&nbsp;review&nbsp;AI-identified<br>
+issues,&nbsp;mark&nbsp;them&nbsp;as&nbsp;resolved,&nbsp;apply&nbsp;AI&nbsp;fixes,&nbsp;or&nbsp;ignore&nbsp;them&nbsp;with&nbsp;reasons.<br>
+Includes&nbsp;file&nbsp;backup&nbsp;functionality&nbsp;and&nbsp;comprehensive&nbsp;user&nbsp;input&nbsp;validation.<br>
+&nbsp;<br>
+Functions:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;get_valid_choice:&nbsp;Get&nbsp;validated&nbsp;user&nbsp;input&nbsp;with&nbsp;error&nbsp;handling<br>
+&nbsp;&nbsp;&nbsp;&nbsp;interactive_review_confirmation:&nbsp;Main&nbsp;interactive&nbsp;review&nbsp;workflow</span></p>
+<p>
+<table class="section">
+<tr class="decor pkg-content-decor heading-text">
+<td class="section-title" colspan=3>&nbsp;<br><strong class="bigsection">Modules</strong></td></tr>
+    
+<tr><td class="decor pkg-content-decor"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></td><td>&nbsp;</td>
+<td class="singlecolumn"><table><tr><td class="multicolumn"><a href="shutil.html">shutil</a><br>
+</td><td class="multicolumn"></td><td class="multicolumn"></td><td class="multicolumn"></td></tr></table></td></tr></table><p>
+<table class="section">
+<tr class="decor functions-decor heading-text">
+<td class="section-title" colspan=3>&nbsp;<br><strong class="bigsection">Functions</strong></td></tr>
+    
+<tr><td class="decor functions-decor"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></td><td>&nbsp;</td>
+<td class="singlecolumn"><dl><dt><a name="-get_valid_choice"><strong>get_valid_choice</strong></a>(prompt: str, valid_options: List[str]) -&gt; str</dt><dd><span class="code">Get&nbsp;validated&nbsp;user&nbsp;input&nbsp;with&nbsp;comprehensive&nbsp;error&nbsp;handling.<br>
+&nbsp;<br>
+Continuously&nbsp;prompts&nbsp;user&nbsp;until&nbsp;valid&nbsp;input&nbsp;is&nbsp;provided&nbsp;or&nbsp;operation<br>
+is&nbsp;cancelled&nbsp;via&nbsp;keyboard&nbsp;interrupt.<br>
+&nbsp;<br>
+Args:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;prompt&nbsp;(str):&nbsp;The&nbsp;prompt&nbsp;message&nbsp;to&nbsp;display&nbsp;to&nbsp;user<br>
+&nbsp;&nbsp;&nbsp;&nbsp;valid_options&nbsp;(List[str]):&nbsp;List&nbsp;of&nbsp;valid&nbsp;input&nbsp;options<br>
+&nbsp;<br>
+Returns:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;str:&nbsp;User's&nbsp;validated&nbsp;choice,&nbsp;or&nbsp;"cancel"&nbsp;if&nbsp;operation&nbsp;cancelled</span></dd></dl>
+ <dl><dt><a name="-interactive_review_confirmation"><strong>interactive_review_confirmation</strong></a>(
+    issues: List[src.aicodereviewer.models.ReviewIssue],
+    client,
+    review_type: str,
+    lang: str
+) -&gt; List[src.aicodereviewer.models.ReviewIssue]</dt><dd><span class="code">Interactive&nbsp;workflow&nbsp;for&nbsp;confirming&nbsp;and&nbsp;resolving&nbsp;code&nbsp;review&nbsp;issues.<br>
+&nbsp;<br>
+Presents&nbsp;each&nbsp;issue&nbsp;to&nbsp;the&nbsp;user&nbsp;with&nbsp;options&nbsp;to:<br>
+-&nbsp;Mark&nbsp;as&nbsp;resolved&nbsp;(with&nbsp;verification)<br>
+-&nbsp;Ignore&nbsp;with&nbsp;reason<br>
+-&nbsp;Apply&nbsp;AI-generated&nbsp;fix<br>
+-&nbsp;View&nbsp;full&nbsp;file&nbsp;content<br>
+&nbsp;<br>
+Includes&nbsp;automatic&nbsp;backup&nbsp;creation&nbsp;before&nbsp;applying&nbsp;fixes.<br>
+&nbsp;<br>
+Args:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;issues&nbsp;(List[ReviewIssue]):&nbsp;List&nbsp;of&nbsp;issues&nbsp;to&nbsp;review<br>
+&nbsp;&nbsp;&nbsp;&nbsp;client:&nbsp;AI&nbsp;review&nbsp;client&nbsp;instance<br>
+&nbsp;&nbsp;&nbsp;&nbsp;review_type&nbsp;(str):&nbsp;Type&nbsp;of&nbsp;review&nbsp;being&nbsp;performed<br>
+&nbsp;&nbsp;&nbsp;&nbsp;lang&nbsp;(str):&nbsp;Language&nbsp;for&nbsp;AI&nbsp;responses<br>
+&nbsp;<br>
+Returns:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;List[ReviewIssue]:&nbsp;Updated&nbsp;issues&nbsp;with&nbsp;user&nbsp;resolutions&nbsp;applied</span></dd></dl>
+</td></tr></table><p>
+<table class="section">
+<tr class="decor data-decor heading-text">
+<td class="section-title" colspan=3>&nbsp;<br><strong class="bigsection">Data</strong></td></tr>
+    
+<tr><td class="decor data-decor"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></td><td>&nbsp;</td>
+<td class="singlecolumn"><strong>List</strong> = typing.List</td></tr></table>
+</body></html>

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Python: module src.aicodereviewer.reporter</title>
+</head><body>
+
+<table class="heading">
+<tr class="heading-text decor">
+<td class="title">&nbsp;<br><strong class="title"><a href="src.html" class="white">src</a>.<a href="src.aicodereviewer.html" class="white">aicodereviewer</a>.reporter</strong></td>
+<td class="extra"><a href=".">index</a><br><a href="file:d%3A%5Cdevelopment%5Cpython%5Caicodereviewer%5Csrc%5Caicodereviewer%5Creporter.py">d:\development\python\aicodereviewer\src\aicodereviewer\reporter.py</a></td></tr></table>
+    <p><span class="code">Report&nbsp;generation&nbsp;and&nbsp;formatting&nbsp;for&nbsp;code&nbsp;review&nbsp;results.<br>
+&nbsp;<br>
+This&nbsp;module&nbsp;handles&nbsp;the&nbsp;creation&nbsp;of&nbsp;comprehensive&nbsp;review&nbsp;reports&nbsp;in&nbsp;both<br>
+JSON&nbsp;format&nbsp;(for&nbsp;programmatic&nbsp;access)&nbsp;and&nbsp;human-readable&nbsp;text&nbsp;format<br>
+(for&nbsp;easy&nbsp;review&nbsp;and&nbsp;sharing).<br>
+&nbsp;<br>
+Functions:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;generate_review_report:&nbsp;Create&nbsp;and&nbsp;save&nbsp;detailed&nbsp;review&nbsp;reports</span></p>
+<p>
+<table class="section">
+<tr class="decor pkg-content-decor heading-text">
+<td class="section-title" colspan=3>&nbsp;<br><strong class="bigsection">Modules</strong></td></tr>
+    
+<tr><td class="decor pkg-content-decor"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></td><td>&nbsp;</td>
+<td class="singlecolumn"><table><tr><td class="multicolumn"><a href="json.html">json</a><br>
+</td><td class="multicolumn"></td><td class="multicolumn"></td><td class="multicolumn"></td></tr></table></td></tr></table><p>
+<table class="section">
+<tr class="decor functions-decor heading-text">
+<td class="section-title" colspan=3>&nbsp;<br><strong class="bigsection">Functions</strong></td></tr>
+    
+<tr><td class="decor functions-decor"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></td><td>&nbsp;</td>
+<td class="singlecolumn"><dl><dt><a name="-generate_review_report"><strong>generate_review_report</strong></a>(
+    report: src.aicodereviewer.models.ReviewReport,
+    output_file: str = None
+) -&gt; str</dt><dd><span class="code">Generate&nbsp;and&nbsp;save&nbsp;comprehensive&nbsp;review&nbsp;reports&nbsp;in&nbsp;JSON&nbsp;and&nbsp;text&nbsp;formats.<br>
+&nbsp;<br>
+Creates&nbsp;two&nbsp;output&nbsp;files:<br>
+1.&nbsp;JSON&nbsp;file&nbsp;with&nbsp;complete&nbsp;structured&nbsp;data&nbsp;for&nbsp;programmatic&nbsp;access<br>
+2.&nbsp;Human-readable&nbsp;summary&nbsp;text&nbsp;file&nbsp;with&nbsp;key&nbsp;findings&nbsp;and&nbsp;statistics<br>
+&nbsp;<br>
+Args:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;report&nbsp;(ReviewReport):&nbsp;The&nbsp;complete&nbsp;review&nbsp;report&nbsp;to&nbsp;save<br>
+&nbsp;&nbsp;&nbsp;&nbsp;output_file&nbsp;(str,&nbsp;optional):&nbsp;Custom&nbsp;output&nbsp;filename.&nbsp;If&nbsp;None,&nbsp;generates<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;timestamped&nbsp;filename&nbsp;automatically.<br>
+&nbsp;<br>
+Returns:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;str:&nbsp;Path&nbsp;to&nbsp;the&nbsp;generated&nbsp;JSON&nbsp;report&nbsp;file<br>
+&nbsp;<br>
+Note:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;Also&nbsp;creates&nbsp;a&nbsp;corresponding&nbsp;'_summary.txt'&nbsp;file&nbsp;with&nbsp;human-readable&nbsp;content.</span></dd></dl>
+</td></tr></table>
+</body></html>

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Python: module src.aicodereviewer.scanner</title>
+</head><body>
+
+<table class="heading">
+<tr class="heading-text decor">
+<td class="title">&nbsp;<br><strong class="title"><a href="src.html" class="white">src</a>.<a href="src.aicodereviewer.html" class="white">aicodereviewer</a>.scanner</strong></td>
+<td class="extra"><a href=".">index</a><br><a href="file:d%3A%5Cdevelopment%5Cpython%5Caicodereviewer%5Csrc%5Caicodereviewer%5Cscanner.py">d:\development\python\aicodereviewer\src\aicodereviewer\scanner.py</a></td></tr></table>
+    <p><span class="code">File&nbsp;scanning&nbsp;and&nbsp;diff&nbsp;parsing&nbsp;utilities&nbsp;for&nbsp;AICodeReviewer.<br>
+&nbsp;<br>
+This&nbsp;module&nbsp;provides&nbsp;functionality&nbsp;for&nbsp;discovering&nbsp;source&nbsp;files&nbsp;in&nbsp;projects<br>
+and&nbsp;parsing&nbsp;diff&nbsp;files&nbsp;to&nbsp;identify&nbsp;changed&nbsp;code&nbsp;for&nbsp;targeted&nbsp;reviews.<br>
+&nbsp;<br>
+Functions:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;scan_project:&nbsp;Recursively&nbsp;find&nbsp;source&nbsp;files&nbsp;by&nbsp;extension<br>
+&nbsp;&nbsp;&nbsp;&nbsp;parse_diff_file:&nbsp;Parse&nbsp;unified&nbsp;diff&nbsp;format&nbsp;to&nbsp;extract&nbsp;changed&nbsp;files<br>
+&nbsp;&nbsp;&nbsp;&nbsp;get_diff_from_commits:&nbsp;Generate&nbsp;diff&nbsp;from&nbsp;git&nbsp;commit&nbsp;range<br>
+&nbsp;&nbsp;&nbsp;&nbsp;scan_project_with_scope:&nbsp;Main&nbsp;entry&nbsp;point&nbsp;for&nbsp;scoped&nbsp;file&nbsp;discovery</span></p>
+<p>
+<table class="section">
+<tr class="decor pkg-content-decor heading-text">
+<td class="section-title" colspan=3>&nbsp;<br><strong class="bigsection">Modules</strong></td></tr>
+    
+<tr><td class="decor pkg-content-decor"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></td><td>&nbsp;</td>
+<td class="singlecolumn"><table><tr><td class="multicolumn"><a href="os.html">os</a><br>
+</td><td class="multicolumn"><a href="re.html">re</a><br>
+</td><td class="multicolumn"><a href="subprocess.html">subprocess</a><br>
+</td><td class="multicolumn"></td></tr></table></td></tr></table><p>
+<table class="section">
+<tr class="decor functions-decor heading-text">
+<td class="section-title" colspan=3>&nbsp;<br><strong class="bigsection">Functions</strong></td></tr>
+    
+<tr><td class="decor functions-decor"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></td><td>&nbsp;</td>
+<td class="singlecolumn"><dl><dt><a name="-get_diff_from_commits"><strong>get_diff_from_commits</strong></a>(project_path: str, commit_range: str) -&gt; Optional[str]</dt><dd><span class="code">Generate&nbsp;diff&nbsp;content&nbsp;from&nbsp;a&nbsp;git&nbsp;commit&nbsp;range.<br>
+&nbsp;<br>
+Uses&nbsp;git&nbsp;diff&nbsp;to&nbsp;extract&nbsp;changes&nbsp;between&nbsp;commits&nbsp;for&nbsp;targeted&nbsp;code&nbsp;review.<br>
+&nbsp;<br>
+Args:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;project_path&nbsp;(str):&nbsp;Path&nbsp;to&nbsp;the&nbsp;git&nbsp;repository<br>
+&nbsp;&nbsp;&nbsp;&nbsp;commit_range&nbsp;(str):&nbsp;Git&nbsp;commit&nbsp;range&nbsp;(e.g.,&nbsp;'HEAD~1..HEAD'&nbsp;or&nbsp;'abc123..def456')<br>
+&nbsp;<br>
+Returns:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;Optional[str]:&nbsp;Diff&nbsp;content&nbsp;as&nbsp;string,&nbsp;or&nbsp;None&nbsp;if&nbsp;git&nbsp;command&nbsp;fails</span></dd></dl>
+ <dl><dt><a name="-parse_diff_file"><strong>parse_diff_file</strong></a>(diff_content: str) -&gt; List[Dict[str, str]]</dt><dd><span class="code">Parse&nbsp;unified&nbsp;diff&nbsp;content&nbsp;and&nbsp;extract&nbsp;changed&nbsp;files&nbsp;with&nbsp;their&nbsp;content.<br>
+&nbsp;<br>
+Processes&nbsp;diff&nbsp;output&nbsp;to&nbsp;identify&nbsp;files&nbsp;that&nbsp;were&nbsp;modified,&nbsp;extracting<br>
+the&nbsp;added&nbsp;and&nbsp;context&nbsp;lines&nbsp;for&nbsp;each&nbsp;changed&nbsp;file.<br>
+&nbsp;<br>
+Args:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;diff_content&nbsp;(str):&nbsp;Raw&nbsp;diff&nbsp;content&nbsp;in&nbsp;unified&nbsp;format<br>
+&nbsp;<br>
+Returns:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;List[Dict[str,&nbsp;str]]:&nbsp;List&nbsp;of&nbsp;dictionaries&nbsp;with&nbsp;'filename'&nbsp;and&nbsp;'content'&nbsp;keys</span></dd></dl>
+ <dl><dt><a name="-scan_project"><strong>scan_project</strong></a>(directory: str) -&gt; List[pathlib._local.Path]</dt><dd><span class="code">Find&nbsp;source&nbsp;files&nbsp;for&nbsp;common&nbsp;programming&nbsp;languages&nbsp;in&nbsp;a&nbsp;directory.<br>
+&nbsp;<br>
+Recursively&nbsp;scans&nbsp;the&nbsp;given&nbsp;directory&nbsp;for&nbsp;files&nbsp;with&nbsp;extensions&nbsp;commonly<br>
+used&nbsp;in&nbsp;software&nbsp;development,&nbsp;excluding&nbsp;common&nbsp;build/dependency&nbsp;directories.<br>
+&nbsp;<br>
+Supported&nbsp;languages&nbsp;and&nbsp;frameworks:<br>
+-&nbsp;Python,&nbsp;JavaScript/TypeScript,&nbsp;Java,&nbsp;C/C++,&nbsp;C#,&nbsp;Go,&nbsp;Ruby,&nbsp;PHP,&nbsp;Rust<br>
+-&nbsp;Swift,&nbsp;Kotlin,&nbsp;Objective-C,&nbsp;React&nbsp;(.jsx/.tsx),&nbsp;Vue,&nbsp;Svelte,&nbsp;Astro<br>
+-&nbsp;Web&nbsp;technologies:&nbsp;HTML,&nbsp;CSS,&nbsp;Sass,&nbsp;Less,&nbsp;JSON,&nbsp;XML,&nbsp;YAML<br>
+&nbsp;<br>
+Args:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;directory&nbsp;(str):&nbsp;Root&nbsp;directory&nbsp;path&nbsp;to&nbsp;scan<br>
+&nbsp;<br>
+Returns:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;List[Path]:&nbsp;List&nbsp;of&nbsp;Path&nbsp;objects&nbsp;for&nbsp;discovered&nbsp;source&nbsp;files</span></dd></dl>
+ <dl><dt><a name="-scan_project_with_scope"><strong>scan_project_with_scope</strong></a>(
+    directory: str,
+    scope: str = 'project',
+    diff_file: Optional[str] = None,
+    commits: Optional[str] = None
+) -&gt; List[Any]</dt><dd><span class="code">Scan&nbsp;project&nbsp;files&nbsp;based&nbsp;on&nbsp;the&nbsp;specified&nbsp;review&nbsp;scope.<br>
+&nbsp;<br>
+Main&nbsp;entry&nbsp;point&nbsp;for&nbsp;file&nbsp;discovery&nbsp;that&nbsp;handles&nbsp;both&nbsp;full&nbsp;project&nbsp;scans<br>
+and&nbsp;diff-based&nbsp;targeted&nbsp;reviews.<br>
+&nbsp;<br>
+Args:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;directory&nbsp;(str):&nbsp;Root&nbsp;directory&nbsp;path&nbsp;to&nbsp;scan<br>
+&nbsp;&nbsp;&nbsp;&nbsp;scope&nbsp;(str):&nbsp;Review&nbsp;scope&nbsp;('project'&nbsp;or&nbsp;'diff')<br>
+&nbsp;&nbsp;&nbsp;&nbsp;diff_file&nbsp;(Optional[str]):&nbsp;Path&nbsp;to&nbsp;diff&nbsp;file&nbsp;for&nbsp;diff&nbsp;scope<br>
+&nbsp;&nbsp;&nbsp;&nbsp;commits&nbsp;(Optional[str]):&nbsp;Git&nbsp;commit&nbsp;range&nbsp;for&nbsp;diff&nbsp;scope<br>
+&nbsp;<br>
+Returns:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;List[Any]:&nbsp;For&nbsp;project&nbsp;scope:&nbsp;List[Path]&nbsp;of&nbsp;file&nbsp;paths<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;For&nbsp;diff&nbsp;scope:&nbsp;List[Dict]&nbsp;with&nbsp;file&nbsp;info&nbsp;and&nbsp;changed&nbsp;content</span></dd></dl>
+</td></tr></table><p>
+<table class="section">
+<tr class="decor data-decor heading-text">
+<td class="section-title" colspan=3>&nbsp;<br><strong class="bigsection">Data</strong></td></tr>
+    
+<tr><td class="decor data-decor"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></td><td>&nbsp;</td>
+<td class="singlecolumn"><strong>Dict</strong> = typing.Dict<br>
+<strong>List</strong> = typing.List<br>
+<strong>Optional</strong> = typing.Optional</td></tr></table>
+</body></html>

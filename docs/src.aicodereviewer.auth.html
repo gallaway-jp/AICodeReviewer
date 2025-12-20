@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Python: module src.aicodereviewer.auth</title>
+</head><body>
+
+<table class="heading">
+<tr class="heading-text decor">
+<td class="title">&nbsp;<br><strong class="title"><a href="src.html" class="white">src</a>.<a href="src.aicodereviewer.html" class="white">aicodereviewer</a>.auth</strong></td>
+<td class="extra"><a href=".">index</a><br><a href="file:d%3A%5Cdevelopment%5Cpython%5Caicodereviewer%5Csrc%5Caicodereviewer%5Cauth.py">d:\development\python\aicodereviewer\src\aicodereviewer\auth.py</a></td></tr></table>
+    <p><span class="code">AWS&nbsp;authentication&nbsp;and&nbsp;profile&nbsp;management&nbsp;for&nbsp;AICodeReviewer.<br>
+&nbsp;<br>
+This&nbsp;module&nbsp;handles&nbsp;secure&nbsp;storage&nbsp;and&nbsp;retrieval&nbsp;of&nbsp;AWS&nbsp;profiles&nbsp;using<br>
+the&nbsp;system&nbsp;keyring,&nbsp;along&nbsp;with&nbsp;automatic&nbsp;language&nbsp;detection&nbsp;for&nbsp;UI.<br>
+&nbsp;<br>
+Functions:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;get_profile_name:&nbsp;Retrieve&nbsp;or&nbsp;prompt&nbsp;for&nbsp;AWS&nbsp;profile&nbsp;name<br>
+&nbsp;&nbsp;&nbsp;&nbsp;set_profile_name:&nbsp;Set&nbsp;or&nbsp;change&nbsp;AWS&nbsp;profile&nbsp;name<br>
+&nbsp;&nbsp;&nbsp;&nbsp;clear_profile:&nbsp;Remove&nbsp;stored&nbsp;AWS&nbsp;profile<br>
+&nbsp;&nbsp;&nbsp;&nbsp;get_system_language:&nbsp;Detect&nbsp;system&nbsp;language&nbsp;for&nbsp;UI&nbsp;localization</span></p>
+<p>
+<table class="section">
+<tr class="decor pkg-content-decor heading-text">
+<td class="section-title" colspan=3>&nbsp;<br><strong class="bigsection">Modules</strong></td></tr>
+    
+<tr><td class="decor pkg-content-decor"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></td><td>&nbsp;</td>
+<td class="singlecolumn"><table><tr><td class="multicolumn"><a href="keyring.html">keyring</a><br>
+</td><td class="multicolumn"><a href="locale.html">locale</a><br>
+</td><td class="multicolumn"></td><td class="multicolumn"></td></tr></table></td></tr></table><p>
+<table class="section">
+<tr class="decor functions-decor heading-text">
+<td class="section-title" colspan=3>&nbsp;<br><strong class="bigsection">Functions</strong></td></tr>
+    
+<tr><td class="decor functions-decor"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></td><td>&nbsp;</td>
+<td class="singlecolumn"><dl><dt><a name="-clear_profile"><strong>clear_profile</strong></a>()</dt><dd><span class="code">Remove&nbsp;the&nbsp;stored&nbsp;AWS&nbsp;profile&nbsp;from&nbsp;system&nbsp;keyring.<br>
+&nbsp;<br>
+Clears&nbsp;authentication&nbsp;credentials,&nbsp;requiring&nbsp;re-setup&nbsp;on&nbsp;next&nbsp;use.<br>
+Useful&nbsp;for&nbsp;switching&nbsp;accounts&nbsp;or&nbsp;troubleshooting&nbsp;auth&nbsp;issues.</span></dd></dl>
+ <dl><dt><a name="-get_profile_name"><strong>get_profile_name</strong></a>()</dt><dd><span class="code">Retrieve&nbsp;stored&nbsp;AWS&nbsp;profile&nbsp;name&nbsp;or&nbsp;prompt&nbsp;user&nbsp;for&nbsp;initial&nbsp;setup.<br>
+&nbsp;<br>
+Uses&nbsp;system&nbsp;keyring&nbsp;for&nbsp;secure&nbsp;storage&nbsp;of&nbsp;AWS&nbsp;profile&nbsp;credentials.<br>
+If&nbsp;no&nbsp;profile&nbsp;is&nbsp;stored,&nbsp;guides&nbsp;user&nbsp;through&nbsp;initial&nbsp;configuration.<br>
+&nbsp;<br>
+Returns:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;str:&nbsp;AWS&nbsp;profile&nbsp;name&nbsp;for&nbsp;authentication</span></dd></dl>
+ <dl><dt><a name="-get_system_language"><strong>get_system_language</strong></a>()</dt><dd><span class="code">Detect&nbsp;system&nbsp;language&nbsp;for&nbsp;UI&nbsp;localization.<br>
+&nbsp;<br>
+Automatically&nbsp;detects&nbsp;if&nbsp;the&nbsp;system&nbsp;locale&nbsp;is&nbsp;Japanese&nbsp;to&nbsp;provide<br>
+appropriate&nbsp;language&nbsp;for&nbsp;AI&nbsp;responses&nbsp;and&nbsp;user&nbsp;interface.<br>
+&nbsp;<br>
+Returns:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;str:&nbsp;'ja'&nbsp;for&nbsp;Japanese&nbsp;systems,&nbsp;'en'&nbsp;for&nbsp;others</span></dd></dl>
+ <dl><dt><a name="-set_profile_name"><strong>set_profile_name</strong></a>(new_profile=None)</dt><dd><span class="code">Set&nbsp;or&nbsp;change&nbsp;the&nbsp;AWS&nbsp;profile&nbsp;name&nbsp;for&nbsp;authentication.<br>
+&nbsp;<br>
+Updates&nbsp;the&nbsp;stored&nbsp;profile&nbsp;in&nbsp;system&nbsp;keyring.&nbsp;If&nbsp;no&nbsp;profile&nbsp;provided,<br>
+prompts&nbsp;user&nbsp;for&nbsp;input.<br>
+&nbsp;<br>
+Args:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;new_profile&nbsp;(str,&nbsp;optional):&nbsp;New&nbsp;profile&nbsp;name.&nbsp;If&nbsp;None,&nbsp;prompts&nbsp;user.<br>
+&nbsp;<br>
+Returns:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;str:&nbsp;The&nbsp;profile&nbsp;name&nbsp;that&nbsp;was&nbsp;set</span></dd></dl>
+</td></tr></table><p>
+<table class="section">
+<tr class="decor data-decor heading-text">
+<td class="section-title" colspan=3>&nbsp;<br><strong class="bigsection">Data</strong></td></tr>
+    
+<tr><td class="decor data-decor"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></td><td>&nbsp;</td>
+<td class="singlecolumn"><strong>SERVICE_NAME</strong> = 'AICodeReviewer'</td></tr></table>
+</body></html>

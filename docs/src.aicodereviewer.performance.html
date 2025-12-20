@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Python: module src.aicodereviewer.performance</title>
+</head><body>
+
+<table class="heading">
+<tr class="heading-text decor">
+<td class="title">&nbsp;<br><strong class="title"><a href="src.html" class="white">src</a>.<a href="src.aicodereviewer.html" class="white">aicodereviewer</a>.performance</strong></td>
+<td class="extra"><a href=".">index</a><br><a href="file:d%3A%5Cdevelopment%5Cpython%5Caicodereviewer%5Csrc%5Caicodereviewer%5Cperformance.py">d:\development\python\aicodereviewer\src\aicodereviewer\performance.py</a></td></tr></table>
+    <p><span class="code">Performance&nbsp;monitoring&nbsp;utilities&nbsp;for&nbsp;AICodeReviewer.<br>
+&nbsp;<br>
+This&nbsp;module&nbsp;provides&nbsp;optional&nbsp;performance&nbsp;tracking&nbsp;for&nbsp;code&nbsp;review&nbsp;operations,<br>
+including&nbsp;timing&nbsp;and&nbsp;memory&nbsp;usage&nbsp;monitoring&nbsp;to&nbsp;help&nbsp;optimize&nbsp;the&nbsp;application.<br>
+&nbsp;<br>
+Classes:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<a href="#PerformanceMonitor">PerformanceMonitor</a>:&nbsp;Context&nbsp;manager&nbsp;for&nbsp;tracking&nbsp;operation&nbsp;performance</span></p>
+<p>
+<table class="section">
+<tr class="decor pkg-content-decor heading-text">
+<td class="section-title" colspan=3>&nbsp;<br><strong class="bigsection">Modules</strong></td></tr>
+    
+<tr><td class="decor pkg-content-decor"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></td><td>&nbsp;</td>
+<td class="singlecolumn"><table><tr><td class="multicolumn"><a href="os.html">os</a><br>
+</td><td class="multicolumn"><a href="psutil.html">psutil</a><br>
+</td><td class="multicolumn"><a href="time.html">time</a><br>
+</td><td class="multicolumn"></td></tr></table></td></tr></table><p>
+<table class="section">
+<tr class="decor index-decor heading-text">
+<td class="section-title" colspan=3>&nbsp;<br><strong class="bigsection">Classes</strong></td></tr>
+    
+<tr><td class="decor index-decor"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></td><td>&nbsp;</td>
+<td class="singlecolumn"><dl>
+<dt class="heading-text"><a href="builtins.html#object">builtins.object</a>
+</dt><dd>
+<dl>
+<dt class="heading-text"><a href="src.aicodereviewer.performance.html#PerformanceMonitor">PerformanceMonitor</a>
+</dt></dl>
+</dd>
+</dl>
+ <p>
+<table class="section">
+<tr class="decor title-decor heading-text">
+<td class="section-title" colspan=3>&nbsp;<br><a name="PerformanceMonitor">class <strong>PerformanceMonitor</strong></a>(<a href="builtins.html#object">builtins.object</a>)</td></tr>
+    
+<tr><td class="decor title-decor" rowspan=2><span class="code">&nbsp;&nbsp;&nbsp;</span></td>
+<td class="decor title-decor" colspan=2><span class="code">Monitor&nbsp;performance&nbsp;metrics&nbsp;during&nbsp;code&nbsp;review&nbsp;operations.<br>
+&nbsp;<br>
+Tracks&nbsp;execution&nbsp;time&nbsp;and&nbsp;memory&nbsp;usage&nbsp;for&nbsp;operations&nbsp;when&nbsp;enabled.<br>
+Uses&nbsp;psutil&nbsp;for&nbsp;accurate&nbsp;memory&nbsp;measurements&nbsp;and&nbsp;provides&nbsp;detailed<br>
+metrics&nbsp;for&nbsp;performance&nbsp;analysis&nbsp;and&nbsp;optimization.<br>
+&nbsp;<br>
+Attributes:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;metrics&nbsp;(Dict[str,&nbsp;Any]):&nbsp;Collected&nbsp;performance&nbsp;metrics<br>
+&nbsp;&nbsp;&nbsp;&nbsp;enabled&nbsp;(bool):&nbsp;Whether&nbsp;performance&nbsp;monitoring&nbsp;is&nbsp;active<br>&nbsp;</span></td></tr>
+<tr><td>&nbsp;</td>
+<td class="singlecolumn">Methods defined here:<br>
+<dl><dt><a name="PerformanceMonitor-__init__"><strong>__init__</strong></a>(self)</dt><dd><span class="code">Initialize&nbsp;performance&nbsp;monitor&nbsp;with&nbsp;configuration&nbsp;settings.<br>
+&nbsp;<br>
+Checks&nbsp;configuration&nbsp;to&nbsp;determine&nbsp;if&nbsp;performance&nbsp;logging&nbsp;is&nbsp;enabled.</span></dd></dl>
+
+<dl><dt><a name="PerformanceMonitor-get_metrics"><strong>get_metrics</strong></a>(self) -&gt; Dict[str, Any]</dt><dd><span class="code">Get&nbsp;collected&nbsp;performance&nbsp;metrics.<br>
+&nbsp;<br>
+Returns&nbsp;a&nbsp;copy&nbsp;of&nbsp;all&nbsp;collected&nbsp;metrics&nbsp;to&nbsp;prevent&nbsp;external&nbsp;modification.<br>
+&nbsp;<br>
+Returns:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;Dict[str,&nbsp;Any]:&nbsp;Dictionary&nbsp;of&nbsp;operation&nbsp;names&nbsp;to&nbsp;performance&nbsp;metrics</span></dd></dl>
+
+<dl><dt><a name="PerformanceMonitor-reset"><strong>reset</strong></a>(self)</dt><dd><span class="code">Reset&nbsp;performance&nbsp;metrics&nbsp;to&nbsp;start&nbsp;fresh&nbsp;collection.</span></dd></dl>
+
+<dl><dt><a name="PerformanceMonitor-track_operation"><strong>track_operation</strong></a>(self, operation_name: str)</dt><dd><span class="code">Context&nbsp;manager&nbsp;to&nbsp;track&nbsp;operation&nbsp;performance&nbsp;metrics.<br>
+&nbsp;<br>
+Measures&nbsp;execution&nbsp;time&nbsp;and&nbsp;memory&nbsp;usage&nbsp;for&nbsp;the&nbsp;wrapped&nbsp;operation.<br>
+Only&nbsp;collects&nbsp;metrics&nbsp;when&nbsp;performance&nbsp;monitoring&nbsp;is&nbsp;enabled.<br>
+&nbsp;<br>
+Args:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;operation_name&nbsp;(str):&nbsp;Name&nbsp;identifier&nbsp;for&nbsp;the&nbsp;operation&nbsp;being&nbsp;tracked<br>
+&nbsp;<br>
+Example:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;with&nbsp;performance_monitor.<a href="#PerformanceMonitor-track_operation">track_operation</a>("file_scan"):<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;scan_project_files()</span></dd></dl>
+
+<hr>
+Data descriptors defined here:<br>
+<dl><dt><strong>__dict__</strong></dt>
+<dd><span class="code">dictionary&nbsp;for&nbsp;instance&nbsp;variables</span></dd>
+</dl>
+<dl><dt><strong>__weakref__</strong></dt>
+<dd><span class="code">list&nbsp;of&nbsp;weak&nbsp;references&nbsp;to&nbsp;the&nbsp;object</span></dd>
+</dl>
+</td></tr></table></td></tr></table><p>
+<table class="section">
+<tr class="decor data-decor heading-text">
+<td class="section-title" colspan=3>&nbsp;<br><strong class="bigsection">Data</strong></td></tr>
+    
+<tr><td class="decor data-decor"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></td><td>&nbsp;</td>
+<td class="singlecolumn"><strong>Dict</strong> = typing.Dict<br>
+<strong>config</strong> = &lt;src.aicodereviewer.config.Config object&gt;<br>
+<strong>performance_monitor</strong> = &lt;src.aicodereviewer.performance.PerformanceMonitor object&gt;</td></tr></table>
+</body></html>

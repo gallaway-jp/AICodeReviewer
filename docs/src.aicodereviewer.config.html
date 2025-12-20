@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Python: module src.aicodereviewer.config</title>
+</head><body>
+
+<table class="heading">
+<tr class="heading-text decor">
+<td class="title">&nbsp;<br><strong class="title"><a href="src.html" class="white">src</a>.<a href="src.aicodereviewer.html" class="white">aicodereviewer</a>.config</strong></td>
+<td class="extra"><a href=".">index</a><br><a href="file:d%3A%5Cdevelopment%5Cpython%5Caicodereviewer%5Csrc%5Caicodereviewer%5Cconfig.py">d:\development\python\aicodereviewer\src\aicodereviewer\config.py</a></td></tr></table>
+    <p><span class="code">Configuration&nbsp;management&nbsp;for&nbsp;AICodeReviewer.<br>
+&nbsp;<br>
+This&nbsp;module&nbsp;provides&nbsp;centralized&nbsp;configuration&nbsp;management&nbsp;with&nbsp;default&nbsp;values,<br>
+file-based&nbsp;overrides,&nbsp;and&nbsp;automatic&nbsp;type&nbsp;conversion&nbsp;for&nbsp;application&nbsp;settings.<br>
+&nbsp;<br>
+Classes:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<a href="#Config">Config</a>:&nbsp;Main&nbsp;configuration&nbsp;manager&nbsp;with&nbsp;performance&nbsp;and&nbsp;processing&nbsp;settings</span></p>
+<p>
+<table class="section">
+<tr class="decor pkg-content-decor heading-text">
+<td class="section-title" colspan=3>&nbsp;<br><strong class="bigsection">Modules</strong></td></tr>
+    
+<tr><td class="decor pkg-content-decor"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></td><td>&nbsp;</td>
+<td class="singlecolumn"><table><tr><td class="multicolumn"><a href="configparser.html">configparser</a><br>
+</td><td class="multicolumn"><a href="os.html">os</a><br>
+</td><td class="multicolumn"></td><td class="multicolumn"></td></tr></table></td></tr></table><p>
+<table class="section">
+<tr class="decor index-decor heading-text">
+<td class="section-title" colspan=3>&nbsp;<br><strong class="bigsection">Classes</strong></td></tr>
+    
+<tr><td class="decor index-decor"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></td><td>&nbsp;</td>
+<td class="singlecolumn"><dl>
+<dt class="heading-text"><a href="builtins.html#object">builtins.object</a>
+</dt><dd>
+<dl>
+<dt class="heading-text"><a href="src.aicodereviewer.config.html#Config">Config</a>
+</dt></dl>
+</dd>
+</dl>
+ <p>
+<table class="section">
+<tr class="decor title-decor heading-text">
+<td class="section-title" colspan=3>&nbsp;<br><a name="Config">class <strong>Config</strong></a>(<a href="builtins.html#object">builtins.object</a>)</td></tr>
+    
+<tr><td class="decor title-decor" rowspan=2><span class="code">&nbsp;&nbsp;&nbsp;</span></td>
+<td class="decor title-decor" colspan=2><span class="code">Configuration&nbsp;manager&nbsp;for&nbsp;AICodeReviewer&nbsp;application&nbsp;settings.<br>
+&nbsp;<br>
+Manages&nbsp;performance&nbsp;limits,&nbsp;API&nbsp;settings,&nbsp;and&nbsp;processing&nbsp;parameters&nbsp;with<br>
+support&nbsp;for&nbsp;configuration&nbsp;files&nbsp;and&nbsp;automatic&nbsp;type&nbsp;conversion.<br>
+&nbsp;<br>
+Configuration&nbsp;sections:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;performance:&nbsp;File&nbsp;size&nbsp;limits,&nbsp;API&nbsp;rate&nbsp;limiting,&nbsp;timeouts<br>
+&nbsp;&nbsp;&nbsp;&nbsp;processing:&nbsp;Batch&nbsp;processing&nbsp;and&nbsp;parallel&nbsp;execution&nbsp;settings<br>
+&nbsp;&nbsp;&nbsp;&nbsp;logging:&nbsp;Log&nbsp;levels&nbsp;and&nbsp;performance&nbsp;monitoring<br>&nbsp;</span></td></tr>
+<tr><td>&nbsp;</td>
+<td class="singlecolumn">Methods defined here:<br>
+<dl><dt><a name="Config-__init__"><strong>__init__</strong></a>(self)</dt><dd><span class="code">Initialize&nbsp;configuration&nbsp;with&nbsp;defaults&nbsp;and&nbsp;load&nbsp;user&nbsp;config&nbsp;file.<br>
+&nbsp;<br>
+Looks&nbsp;for&nbsp;config.ini&nbsp;in&nbsp;the&nbsp;project&nbsp;root&nbsp;directory&nbsp;and&nbsp;merges<br>
+user&nbsp;settings&nbsp;with&nbsp;default&nbsp;values.</span></dd></dl>
+
+<dl><dt><a name="Config-get"><strong>get</strong></a>(self, section: str, key: str, fallback: Any = None) -&gt; Any</dt><dd><span class="code">Get&nbsp;configuration&nbsp;value&nbsp;with&nbsp;automatic&nbsp;type&nbsp;conversion.<br>
+&nbsp;<br>
+Retrieves&nbsp;configuration&nbsp;values&nbsp;and&nbsp;converts&nbsp;them&nbsp;to&nbsp;appropriate&nbsp;types<br>
+based&nbsp;on&nbsp;the&nbsp;setting&nbsp;name&nbsp;and&nbsp;section.<br>
+&nbsp;<br>
+Args:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;section&nbsp;(str):&nbsp;Configuration&nbsp;section&nbsp;name<br>
+&nbsp;&nbsp;&nbsp;&nbsp;key&nbsp;(str):&nbsp;Configuration&nbsp;key&nbsp;name<br>
+&nbsp;&nbsp;&nbsp;&nbsp;fallback&nbsp;(Any):&nbsp;Value&nbsp;to&nbsp;return&nbsp;if&nbsp;key&nbsp;not&nbsp;found<br>
+&nbsp;<br>
+Returns:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;Any:&nbsp;Configuration&nbsp;value&nbsp;with&nbsp;appropriate&nbsp;type&nbsp;conversion<br>
+&nbsp;<br>
+Type&nbsp;conversions:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;-&nbsp;Size&nbsp;values&nbsp;ending&nbsp;in&nbsp;'_mb':&nbsp;converted&nbsp;to&nbsp;bytes<br>
+&nbsp;&nbsp;&nbsp;&nbsp;-&nbsp;Time/duration&nbsp;values:&nbsp;converted&nbsp;to&nbsp;float<br>
+&nbsp;&nbsp;&nbsp;&nbsp;-&nbsp;Integer&nbsp;values:&nbsp;converted&nbsp;to&nbsp;int<br>
+&nbsp;&nbsp;&nbsp;&nbsp;-&nbsp;Boolean&nbsp;values:&nbsp;converted&nbsp;to&nbsp;bool</span></dd></dl>
+
+<hr>
+Data descriptors defined here:<br>
+<dl><dt><strong>__dict__</strong></dt>
+<dd><span class="code">dictionary&nbsp;for&nbsp;instance&nbsp;variables</span></dd>
+</dl>
+<dl><dt><strong>__weakref__</strong></dt>
+<dd><span class="code">list&nbsp;of&nbsp;weak&nbsp;references&nbsp;to&nbsp;the&nbsp;object</span></dd>
+</dl>
+</td></tr></table></td></tr></table><p>
+<table class="section">
+<tr class="decor data-decor heading-text">
+<td class="section-title" colspan=3>&nbsp;<br><strong class="bigsection">Data</strong></td></tr>
+    
+<tr><td class="decor data-decor"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></td><td>&nbsp;</td>
+<td class="singlecolumn"><strong>Dict</strong> = typing.Dict<br>
+<strong>config</strong> = &lt;src.aicodereviewer.config.Config object&gt;</td></tr></table>
+</body></html>
