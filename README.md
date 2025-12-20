@@ -91,9 +91,25 @@ To create a standalone Windows executable:
 - AWS CLI configured with SSO profile
 - Access to Amazon Bedrock (Claude 3.5 Sonnet model)
 
-## Setup
+## Development
 
-On first run, you'll be prompted to enter your AWS SSO profile name. Make sure you've configured AWS CLI with `aws configure sso` beforehand.
+### Running Tests
+
+The project includes a comprehensive test suite for the diff functionality:
+
+```bash
+# Install development dependencies
+pip install -e ".[dev]"
+
+# Run all tests
+pytest
+
+# Run with verbose output
+pytest -v
+
+# Run specific test file
+pytest tests/test_diff_functionality.py
+```
 
 ### Profile Management
 
