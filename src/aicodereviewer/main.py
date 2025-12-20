@@ -17,14 +17,14 @@ The workflow follows these steps:
 import argparse
 from datetime import datetime
 
-from .auth import get_profile_name, set_profile_name, clear_profile, get_system_language
-from .bedrock import BedrockClient
-from .backup import cleanup_old_backups
-from .scanner import scan_project_with_scope
-from .reviewer import collect_review_issues
-from .interactive import interactive_review_confirmation
-from .reporter import generate_review_report
-from .models import ReviewReport
+from aicodereviewer.auth import get_profile_name, set_profile_name, clear_profile, get_system_language
+from aicodereviewer.bedrock import BedrockClient
+from aicodereviewer.backup import cleanup_old_backups
+from aicodereviewer.scanner import scan_project_with_scope
+from aicodereviewer.reviewer import collect_review_issues
+from aicodereviewer.interactive import interactive_review_confirmation
+from aicodereviewer.reporter import generate_review_report
+from aicodereviewer.models import ReviewReport
 
 
 def main():

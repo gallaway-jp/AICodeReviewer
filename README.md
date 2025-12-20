@@ -100,14 +100,28 @@ python -m aicodereviewer . --type best_practices --output my_review_report.json
 
 ## Building Windows Executable
 
-To create a standalone Windows executable:
+To create a standalone Windows executable with custom icon:
 
 1. Run the build script:
    ```bash
    build_exe.bat
    ```
 
-2. The executable will be created in the `dist` folder as `AICodeReviewer.exe`
+2. The build script will:
+   - Generate the application icon from `tools/convert_icon.py`
+   - Bundle all dependencies into a single executable
+   - Create `AICodeReviewer.exe` in the `dist` folder
+
+### Icon Generation
+
+The application icon is converted from the SVG design to ICO format:
+
+```bash
+# Convert SVG to ICO
+python tools/convert_icon.py
+```
+
+This creates `build/icon.ico` with multiple resolutions for optimal display across different Windows contexts. The script tries multiple conversion methods (cairosvg, ImageMagick, Inkscape) and falls back to a programmatic placeholder if needed.
 
 ## Performance Optimizations
 

@@ -1,0 +1,35 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="256"
+  height="256"
+  viewBox="0 0 256 256"
+  role="img"
+  aria-label="AI Code Reviewer Icon"
+>
+  <!-- Background -->
+  <rect x="0" y="0" width="256" height="256" rx="48" fill="#0F172A"/>
+
+  <!-- Document -->
+  <rect x="56" y="40" width="144" height="176" rx="12" fill="#E5E7EB"/>
+  <rect x="72" y="72" width="112" height="10" rx="5" fill="#60A5FA"/>
+  <rect x="72" y="96" width="96" height="10" rx="5" fill="#93C5FD"/>
+  <rect x="72" y="120" width="104" height="10" rx="5" fill="#60A5FA"/>
+
+  <!-- AI Circuit Node -->
+  <circle cx="176" cy="64" r="10" fill="#22D3EE"/>
+  <line x1="176" y1="74" x2="176" y2="88" stroke="#22D3EE" stroke-width="4"/>
+  <line x1="166" y1="64" x2="144" y2="64" stroke="#22D3EE" stroke-width="4"/>
+
+  <!-- Checkmark Circle -->
+  <circle cx="128" cy="168" r="28" fill="#22C55E"/>
+
+  <!-- Checkmark -->
+  <path
+    d="M116 168 L124 176 L140 156"
+    fill="none"
+    stroke="#FFFFFF"
+    stroke-width="6"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>
