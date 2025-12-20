@@ -19,9 +19,14 @@ def get_system_language():
 def scan_project(directory):
     """Finds source files for most common programming languages."""
     # Add or remove extensions based on your needs
+    # Supports: Python, JavaScript/TypeScript, Java, C/C++, C#, Go, Ruby, PHP, Rust, Swift, Kotlin, Objective-C
+    # Frameworks: React (.jsx, .tsx), Laravel (.blade.php)
+    # Web: HTML, CSS, Sass, Less, Vue, Svelte, Astro, JSON, XML, YAML
     valid_extensions = {
         '.py', '.js', '.ts', '.java', '.cpp', '.c', '.cs', 
-        '.go', '.rb', '.php', '.rs', '.swift', '.kt', '.m'
+        '.go', '.rb', '.php', '.rs', '.swift', '.kt', '.m', '.h', '.mm',
+        '.blade.php', '.jsx', '.tsx', '.html', '.css', '.scss', '.sass', 
+        '.less', '.vue', '.svelte', '.astro', '.json', '.xml', '.yaml', '.yml'
     }
     files = []
     ignore_dirs = {'.git', '.venv', '__pycache__', 'node_modules', 'bin', 'obj', 'dist'}

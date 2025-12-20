@@ -1,6 +1,6 @@
 # AICodeReviewer
 
-An AI-powered code review tool that analyzes your codebase for security, performance, and best practices issues.
+An AI-powered code review tool that analyzes your codebase for security, performance, and best practices issues. Supports 12+ programming languages including Python, JavaScript, TypeScript, Java, C/C++, C#, Go, Ruby, PHP, Rust, Swift, Kotlin, and Objective-C. Includes framework support for React (.jsx, .tsx), Laravel (.blade.php), Vue, Svelte, and Astro, plus web technologies like HTML, CSS, Sass, Less, JSON, XML, and YAML.
 
 ## Installation
 
