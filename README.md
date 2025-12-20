@@ -34,7 +34,7 @@ dist\AICodeReviewer.exe /path/to/your/project
 
 ### Command Line Options
 
-- `path`: Path to the project folder to review (required)
+- `path`: Path to the project folder to review (required for code review)
 - `--type`: Review type (default: best_practices)
   - `security`: Analyze code for vulnerabilities
   - `performance`: Optimize efficiency and resources
@@ -50,6 +50,8 @@ dist\AICodeReviewer.exe /path/to/your/project
   - `architecture`: Review code structure and design patterns
   - `license`: Review third-party library usage and license compliance
 - `--lang`: Output language - `en` (English), `ja` (Japanese), or `default` (auto-detect system language)
+- `--set-profile PROFILE`: Set or change the AWS profile name
+- `--clear-profile`: Remove the stored AWS profile from keyring
 
 Examples:
 ```bash
@@ -77,3 +79,15 @@ To create a standalone Windows executable:
 ## Setup
 
 On first run, you'll be prompted to enter your AWS SSO profile name. Make sure you've configured AWS CLI with `aws configure sso` beforehand.
+
+### Profile Management
+
+You can manage your AWS profile settings using these commands:
+
+```bash
+# Set or change your AWS profile
+python -m aicodereviewer --set-profile myprofile
+
+# Remove stored profile (will prompt for new one on next run)
+python -m aicodereviewer --clear-profile
+```

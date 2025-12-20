@@ -3,7 +3,7 @@ import os
 import argparse
 import locale
 from pathlib import Path
-from aicodereviewer.auth import get_profile_name
+from aicodereviewer.auth import get_profile_name, set_profile_name, clear_profile
 from aicodereviewer.bedrock import BedrockClient
 
 def get_system_language():
@@ -41,7 +41,15 @@ def scan_project(directory):
 
 def main():
     parser = argparse.ArgumentParser(description="AICodeReviewer - Multi-language AI Review")
-    parser.add_argument("path", help="Path to the project folder")
+    
+    # Profile management options
+    parser.add_argument("--set-profile", metavar="PROFILE", 
+                        help="Set or change AWS profile name")
+    parser.add_argument("--clear-profile", action="store_true",
+                        help="Remove stored AWS profile from keyring")
+    
+    # Code review options
+    parser.add_argument("path", nargs="?", help="Path to the project folder")
     parser.add_argument("--type", choices=['security', 'performance', 'best_practices', 'maintainability', 'documentation', 'testing', 'accessibility', 'scalability', 'compatibility', 'error_handling', 'complexity', 'architecture', 'license'], 
                         default='best_practices')
     # Manual language override
@@ -49,6 +57,20 @@ def main():
                         help="Review language (en: English, ja: Japanese)")
     
     args = parser.parse_args()
+    
+    # Handle profile management commands
+    if args.set_profile:
+        set_profile_name(args.set_profile)
+        return
+    elif args.clear_profile:
+        clear_profile()
+        return
+    
+    # Require path for code review
+    if not args.path:
+        parser.error("path is required for code review (or use --set-profile or --clear-profile)")
+    
+    # Continue with normal code review...
 
     # Determine final language
     target_lang = args.lang
