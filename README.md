@@ -35,6 +35,9 @@ dist\AICodeReviewer.exe /path/to/your/project
 ### Command Line Options
 
 - `path`: Path to the project folder to review (required for code review)
+- `--scope`: Review scope - `project` (default, entire project) or `diff` (changes only)
+- `--diff-file FILE`: Path to diff file (TortoiseSVN/TortoiseGit format) when using diff scope
+- `--commits RANGE`: Commit range for diff generation (e.g., `HEAD~1..HEAD`) when using diff scope
 - `--type`: Review type (default: best_practices)
   - `security`: Analyze code for vulnerabilities
   - `performance`: Optimize efficiency and resources
@@ -55,8 +58,20 @@ dist\AICodeReviewer.exe /path/to/your/project
 
 Examples:
 ```bash
+# Review entire project for security issues
 python -m aicodereviewer . --type security --lang ja
+
+# Review performance aspects of a specific project
 python -m aicodereviewer /path/to/project --type performance
+
+# Review only changes from a diff file
+python -m aicodereviewer . --scope diff --diff-file changes.patch --type best_practices
+
+# Review changes between two commits
+python -m aicodereviewer . --scope diff --commits HEAD~1..HEAD --type maintainability
+
+# Review recent changes in a pull request style
+python -m aicodereviewer . --scope diff --commits main..feature-branch --type testing
 ```
 
 ## Building Windows Executable
