@@ -54,7 +54,7 @@ def parse_diff_file(diff_content):
         line = lines[i]
         
         # Check for file header (unified diff format)
-        if line.startswith('+++ ') or line.startswith('--- '):
+        if line.startswith('+++ '):
             # Save previous file if exists
             if current_file and current_content:
                 files.append({
@@ -62,16 +62,14 @@ def parse_diff_file(diff_content):
                     'content': '\n'.join(current_content)
                 })
             
-            # Extract filename
-            if line.startswith('+++ '):
-                # +++ b/path/to/file
-                match = re.match(r'\+\+\+ [ab]/(.+)', line)
-                if match:
-                    current_file = match.group(1)
-                    current_content = []
+            # Extract filename from +++ b/path/to/file
+            match = re.match(r'\+\+\+ [ab]/(.+)', line)
+            if match:
+                current_file = match.group(1)
+                current_content = []
         
         # Check for diff hunks
-        elif line.startswith('@@'):
+        elif line.startswith('@@') and current_file:
             # Skip hunk header, start collecting content
             i += 1
             while i < len(lines) and not (lines[i].startswith('+++') or lines[i].startswith('---') or lines[i].startswith('@@')):
