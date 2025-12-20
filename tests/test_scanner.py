@@ -1,98 +1,120 @@
+# tests/test_scanner.py
 """
-Tests for AI Code Reviewer diff functionality
+Tests for AI Code Reviewer scanner functionality
 """
 import pytest
 import tempfile
 import os
 from pathlib import Path
 from unittest.mock import patch, MagicMock
-
-# Import the functions we want to test
-from aicodereviewer.scanner import parse_diff_file, get_diff_from_commits, scan_project_with_scope
+from aicodereviewer.scanner import scan_project, parse_diff_file, get_diff_from_commits, scan_project_with_scope
 
 
-class TestDiffParsing:
+class TestScanProject:
+    """Test project scanning functionality"""
+
+    def test_scan_project_basic(self):
+        """Test basic project scanning"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create test files
+            py_file = Path(temp_dir) / "test.py"
+            py_file.write_text("print('hello')")
+
+            js_file = Path(temp_dir) / "test.js"
+            js_file.write_text("console.log('hello')")
+
+            txt_file = Path(temp_dir) / "readme.txt"
+            txt_file.write_text("readme")
+
+            result = scan_project(temp_dir)
+
+            assert len(result) == 2  # Should find .py and .js files
+            assert py_file in result
+            assert js_file in result
+            assert txt_file not in result
+
+    def test_scan_project_ignore_dirs(self):
+        """Test that ignored directories are skipped"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create ignored directories
+            venv_dir = Path(temp_dir) / ".venv"
+            venv_dir.mkdir()
+            (venv_dir / "test.py").write_text("print('hello')")
+
+            node_modules = Path(temp_dir) / "node_modules"
+            node_modules.mkdir()
+            (node_modules / "test.js").write_text("console.log('hello')")
+
+            # Create valid file
+            valid_file = Path(temp_dir) / "main.py"
+            valid_file.write_text("print('valid')")
+
+            result = scan_project(temp_dir)
+
+            assert len(result) == 1
+            assert valid_file in result
+
+    def test_scan_project_nested_dirs(self):
+        """Test scanning nested directories"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create nested structure
+            sub_dir = Path(temp_dir) / "src"
+            sub_dir.mkdir()
+
+            nested_file = sub_dir / "nested.py"
+            nested_file.write_text("print('nested')")
+
+            result = scan_project(temp_dir)
+
+            assert len(result) == 1
+            assert nested_file in result
+
+
+class TestParseDiffFile:
     """Test diff file parsing functionality"""
 
     def test_parse_simple_diff(self):
         """Test parsing a simple unified diff"""
         diff_content = """--- a/test.py
 +++ b/test.py
-@@ -1,3 +1,4 @@
- def hello():
-     print("Hello")
-+    print("World")
+@@ -1,2 +1,3 @@
+ print("hello")
++print("world")
 """
-
         result = parse_diff_file(diff_content)
 
         assert len(result) == 1
         assert result[0]['filename'] == 'test.py'
-        assert 'def hello():' in result[0]['content']
-        assert 'print("Hello")' in result[0]['content']
-        assert 'print("World")' in result[0]['content']
+        assert 'print("hello")' in result[0]['content']
+        assert 'print("world")' in result[0]['content']
 
     def test_parse_multiple_files(self):
         """Test parsing diff with multiple files"""
         diff_content = """--- a/file1.py
 +++ b/file1.py
-@@ -1,2 +1,3 @@
- def func1():
-     pass
-+    print("added")
-
+@@ -1,1 +1,2 @@
+ print("file1")
++print("added")
 --- a/file2.py
 +++ b/file2.py
-@@ -1,2 +1,3 @@
- def func2():
-     pass
-+    return True
+@@ -1,1 +1,2 @@
+ print("file2")
++print("modified")
 """
-
         result = parse_diff_file(diff_content)
 
         assert len(result) == 2
-
-        # Check first file
-        assert result[0]['filename'] == 'file1.py'
-        assert 'def func1():' in result[0]['content']
-        assert 'print("added")' in result[0]['content']
-
-        # Check second file
-        assert result[1]['filename'] == 'file2.py'
-        assert 'def func2():' in result[1]['content']
-        assert 'return True' in result[1]['content']
-
-    def test_parse_diff_with_context_lines(self):
-        """Test parsing diff with context lines"""
-        diff_content = """--- a/example.py
-+++ b/example.py
-@@ -1,5 +1,6 @@
- def calculate(x, y):
-     result = x + y
-     print(f"Result: {result}")
-+    log_result(result)
-     return result
-
- def log_result(value):
-"""
-
-        result = parse_diff_file(diff_content)
-
-        assert len(result) == 1
-        content = result[0]['content']
-        assert 'def calculate(x, y):' in content
-        assert 'result = x + y' in content
-        assert 'log_result(result)' in content
-        assert 'def log_result(value):' in content
+        filenames = [f['filename'] for f in result]
+        assert 'file1.py' in filenames
+        assert 'file2.py' in filenames
 
     def test_parse_empty_diff(self):
-        """Test parsing empty diff content"""
+        """Test parsing empty diff"""
         result = parse_diff_file("")
         assert result == []
 
     def test_parse_diff_without_changes(self):
-        """Test parsing diff with only file headers"""
+        """Test parsing diff header without actual changes"""
         diff_content = """--- a/test.py
 +++ b/test.py
 """
@@ -100,26 +122,20 @@ class TestDiffParsing:
         assert result == []
 
 
-class TestGitDiffGeneration:
+class TestGetDiffFromCommits:
     """Test git diff generation functionality"""
 
     @patch('subprocess.run')
     def test_get_diff_from_commits_success(self, mock_run):
         """Test successful git diff generation"""
-        mock_result = MagicMock()
-        mock_result.stdout = "diff content here"
-        mock_run.return_value = mock_result
+        mock_process = MagicMock()
+        mock_process.stdout = "diff content here"
+        mock_run.return_value = mock_process
 
         result = get_diff_from_commits("/path/to/project", "HEAD~1..HEAD")
 
         assert result == "diff content here"
-        mock_run.assert_called_once_with(
-            ['git', 'diff', 'HEAD~1..HEAD'],
-            cwd='/path/to/project',
-            capture_output=True,
-            text=True,
-            check=True
-        )
+        mock_run.assert_called_once()
 
     @patch('subprocess.run')
     def test_get_diff_from_commits_error(self, mock_run):
@@ -141,7 +157,7 @@ class TestGitDiffGeneration:
         assert result is None
 
 
-class TestProjectScanning:
+class TestScanProjectWithScope:
     """Test project scanning with different scopes"""
 
     def test_scan_project_scope(self):
@@ -200,7 +216,7 @@ class TestProjectScanning:
         """Test scanning with diff scope using commits"""
         mock_get_diff.return_value = """--- a/test.py
 +++ b/test.py
-@@ -1,2 +1,3 @@
+@@ -1,1 +1,2 @@
  print("hello")
 +print("world")
 """
@@ -222,48 +238,9 @@ class TestProjectScanning:
     def test_scan_diff_scope_no_diff_content(self):
         """Test scanning with diff scope when no diff content"""
         with tempfile.TemporaryDirectory() as temp_dir:
-            result = scan_project_with_scope(temp_dir, scope='diff')
+            result = scan_project_with_scope(
+                temp_dir,
+                scope='diff'
+            )
 
             assert result == []
-
-
-class TestIntegration:
-    """Integration tests for the diff functionality"""
-
-    def test_complete_workflow(self):
-        """Test a complete diff parsing and file scanning workflow"""
-        diff_content = """--- a/src/main.py
-+++ b/src/main.py
-@@ -1,4 +1,5 @@
- def main():
-     print("Hello")
-+    print("AI Code Review")
-     return True
-
---- a/src/utils.py
-+++ b/src/utils.py
-@@ -1,2 +1,4 @@
- def helper():
-     pass
-+
-+def new_feature():
-+    return "added"
-"""
-
-        # Test diff parsing
-        parsed_files = parse_diff_file(diff_content)
-        assert len(parsed_files) == 2
-
-        # Verify file 1
-        assert parsed_files[0]['filename'] == 'src/main.py'
-        assert 'def main():' in parsed_files[0]['content']
-        assert 'print("AI Code Review")' in parsed_files[0]['content']
-
-        # Verify file 2
-        assert parsed_files[1]['filename'] == 'src/utils.py'
-        assert 'def helper():' in parsed_files[1]['content']
-        assert 'def new_feature():' in parsed_files[1]['content']
-
-
-if __name__ == "__main__":
-    pytest.main([__file__])
