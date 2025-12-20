@@ -1,0 +1,13 @@
+README.md
+pyproject.toml
+src/aicodereviewer/__init__.py
+src/aicodereviewer/__main__.py
+src/aicodereviewer/auth.py
+src/aicodereviewer/bedrock.py
+src/aicodereviewer/main.py
+src/aicodereviewer.egg-info/PKG-INFO
+src/aicodereviewer.egg-info/SOURCES.txt
+src/aicodereviewer.egg-info/dependency_links.txt
+src/aicodereviewer.egg-info/entry_points.txt
+src/aicodereviewer.egg-info/requires.txt
+src/aicodereviewer.egg-info/top_level.txt

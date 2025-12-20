@@ -1,0 +1,8 @@
+Metadata-Version: 2.4
+Name: aicodereviewer
+Version: 0.1.0
+Summary: AI Code Review Program
+Author-email: Your Name <your.email@example.com>
+Requires-Python: >=3.8
+Requires-Dist: boto3
+Requires-Dist: keyring
