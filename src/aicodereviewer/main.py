@@ -24,7 +24,7 @@ from aicodereviewer.scanner import scan_project_with_scope
 from aicodereviewer.reviewer import collect_review_issues
 from aicodereviewer.interactive import interactive_review_confirmation
 from aicodereviewer.reporter import generate_review_report
-from aicodereviewer.models import ReviewReport
+from aicodereviewer.models import ReviewReport, calculate_quality_score
 
 
 def main():
@@ -65,6 +65,12 @@ def main():
     parser.add_argument("--output", metavar="FILE",
                         help="Output file path for the review report (JSON format)")
 
+    # Review metadata options
+    parser.add_argument("--programmers", nargs='+', metavar="NAME",
+                        help="Names of programmers who worked on the code (space-separated)")
+    parser.add_argument("--reviewers", nargs='+', metavar="NAME",
+                        help="Names of reviewers performing the review (space-separated)")
+
     args = parser.parse_args()
 
     # Handle profile management commands first
@@ -85,6 +91,12 @@ def main():
     # Require path for project scope, optional for diff scope
     if args.scope == 'project' and not args.path:
         parser.error("path is required for project scope (or use --set-profile or --clear-profile)")
+
+    # Require programmers and reviewers for code review operations
+    if not args.programmers:
+        parser.error("--programmers is required for code review")
+    if not args.reviewers:
+        parser.error("--reviewers is required for code review")
 
     # Determine final language for AI responses
     target_lang = args.lang
@@ -125,6 +137,9 @@ def main():
     # Interactive review confirmation and potential fixes
     resolved_issues = interactive_review_confirmation(issues, client, args.type, target_lang)
 
+    # Calculate quality score
+    quality_score = calculate_quality_score(resolved_issues)
+
     # Create comprehensive review report
     diff_source = args.diff_file or args.commits if args.scope == 'diff' else None
     report = ReviewReport(
@@ -135,7 +150,10 @@ def main():
         issues_found=resolved_issues,
         generated_at=datetime.now(),
         language=target_lang,
-        diff_source=diff_source
+        diff_source=diff_source,
+        quality_score=quality_score,
+        programmers=args.programmers,
+        reviewers=args.reviewers
     )
 
     # Generate and save report files

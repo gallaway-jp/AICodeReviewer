@@ -50,6 +50,9 @@ def generate_review_report(report: ReviewReport, output_file: str = None) -> str
         f.write(f"Review Type: {report.review_type}\n")
         f.write(f"Scope: {report.scope}\n")
         f.write(f"Files Scanned: {report.total_files_scanned}\n")
+        f.write(f"Quality Score: {report.quality_score}/100\n")
+        f.write(f"Programmers: {', '.join(report.programmers)}\n")
+        f.write(f"Reviewers: {', '.join(report.reviewers)}\n")
         f.write(f"Generated: {report.generated_at.strftime('%Y-%m-%d %H:%M:%S')}\n")
         f.write(f"Language: {report.language}\n")
         if report.diff_source:

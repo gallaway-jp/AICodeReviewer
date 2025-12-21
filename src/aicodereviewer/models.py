@@ -9,7 +9,7 @@ Classes:
     ReviewIssue: Represents individual code review findings with metadata
     ReviewReport: Contains complete review results with statistics and issues
 """
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 
@@ -65,6 +65,9 @@ class ReviewReport:
         generated_at (datetime): Timestamp when report was generated
         language (str): Language used for AI responses ('en' or 'ja')
         diff_source (Optional[str]): Diff source for diff-based reviews
+        quality_score (Optional[int]): Aggregated quality score (0-100)
+        programmers (List[str]): List of programmers who worked on the code
+        reviewers (List[str]): List of reviewers who performed the review
     """
     project_path: str
     review_type: str
@@ -74,6 +77,9 @@ class ReviewReport:
     generated_at: datetime
     language: str
     diff_source: Optional[str] = None
+    quality_score: Optional[int] = None
+    programmers: List[str] = field(default_factory=list)
+    reviewers: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -114,3 +120,35 @@ class ReviewReport:
         # Convert issue dictionaries to ReviewIssue objects
         data['issues_found'] = [ReviewIssue(**issue) for issue in data['issues_found']]
         return cls(**data)
+
+
+def calculate_quality_score(issues: List[ReviewIssue]) -> int:
+    """
+    Calculate an aggregated quality score based on issues.
+    
+    Starts with 100 points and deducts based on issue severity and count.
+    Score ranges from 0-100.
+    
+    Args:
+        issues: List of review issues
+        
+    Returns:
+        Quality score between 0-100
+    """
+    if not issues:
+        return 100
+    
+    base_score = 100
+    severity_deductions = {
+        'critical': 20, 
+        'high': 10, 
+        'medium': 5, 
+        'low': 2, 
+        'info': 1
+    }
+    
+    for issue in issues:
+        deduction = severity_deductions.get(issue.severity, 1)
+        base_score -= deduction
+    
+    return max(0, base_score)  # Ensure score doesn't go below 0

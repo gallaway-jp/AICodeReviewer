@@ -56,6 +56,8 @@ dist\AICodeReviewer.exe /path/to/your/project
 - `--set-profile PROFILE`: Set or change the AWS profile name
 - `--clear-profile`: Remove the stored AWS profile from keyring
 - `--output FILE`: Output file path for the review report (JSON format, default: auto-generated timestamped file)
+- `--programmers NAME [NAME ...]`: Names of programmers who worked on the code (required, space-separated)
+- `--reviewers NAME [NAME ...]`: Names of reviewers performing the review (required, space-separated)
 
 ## Interactive Review Workflow
 
@@ -80,16 +82,16 @@ You can specify a custom output filename using the `--output` option.
 Examples:
 ```bash
 # Review entire project for security issues
-python -m aicodereviewer . --type security --lang ja
+python -m aicodereviewer . --type security --lang ja --programmers "Alice Bob" --reviewers "Charlie"
 
 # Review performance aspects of a specific project
-python -m aicodereviewer /path/to/project --type performance
+python -m aicodereviewer /path/to/project --type performance --programmers "Alice" --reviewers "Charlie Dave"
 
 # Review only changes from a diff file (with project context)
-python -m aicodereviewer . --scope diff --diff-file changes.patch --type best_practices
+python -m aicodereviewer . --scope diff --diff-file changes.patch --type best_practices --programmers "Alice Bob" --reviewers "Charlie"
 
 # Review only changes from a diff file (without project context)
-python -m aicodereviewer --scope diff --diff-file changes.patch --type best_practices
+python -m aicodereviewer --scope diff --diff-file changes.patch --type best_practices --programmers "Alice" --reviewers "Charlie"
 
 # Review changes between two commits
 python -m aicodereviewer . --scope diff --commits HEAD~1..HEAD --type maintainability
