@@ -105,6 +105,7 @@ class TestInteractiveReviewConfirmation:
         mock_choice.side_effect = ["3", "y", "4"]  # AI FIX, accept, VIEW CODE
         mock_input.return_value = "dummy"  # Not used in this test
         mock_fix.return_value = "fixed_code()"
+        mock_open.return_value.__enter__.return_value.read.return_value = "original_code()"
 
         mock_client = MagicMock()
         issues = [self.create_test_issue()]

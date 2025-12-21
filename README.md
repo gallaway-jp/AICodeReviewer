@@ -63,7 +63,7 @@ AICodeReviewer now features an interactive review process that requires you to a
 
 1. **RESOLVED** - Mark the issue as resolved (program will verify the fix)
 2. **IGNORE** - Ignore the issue (requires providing a reason)
-3. **AI FIX** - Let AI automatically fix the code issue
+3. **AI FIX** - Let AI automatically fix the code issue (shows before/after diff for review before applying)
 4. **VIEW CODE** - Display the full file content for context
 
 The program will not generate a final report until all issues have been addressed through one of these actions. This ensures thorough review and prevents overlooking important issues.

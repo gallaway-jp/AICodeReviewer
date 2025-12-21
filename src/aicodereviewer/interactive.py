@@ -13,6 +13,8 @@ Functions:
 import shutil
 from datetime import datetime
 from typing import List
+import difflib
+from pathlib import Path
 
 from .models import ReviewIssue
 from .reviewer import verify_issue_resolved
@@ -114,10 +116,32 @@ def interactive_review_confirmation(issues: List[ReviewIssue], client, review_ty
                 # AI FIX - apply AI-generated fix with confirmation
                 fix_result = apply_ai_fix(issue, client, review_type, lang)
                 if fix_result:
+                    # Read current file content for diff generation
+                    try:
+                        with open(issue.file_path, "r", encoding="utf-8", errors="ignore") as f:
+                            current_content = f.read()
+                    except Exception as e:
+                        print(f"❌ Error reading current file for diff: {e}")
+                        continue
+
+                    # Generate unified diff
+                    current_lines = current_content.splitlines(keepends=True)
+                    fixed_lines = fix_result.splitlines(keepends=True)
+                    diff = list(difflib.unified_diff(
+                        current_lines,
+                        fixed_lines,
+                        fromfile=f"a/{Path(issue.file_path).name}",
+                        tofile=f"b/{Path(issue.file_path).name}",
+                        lineterm=""
+                    ))
+
                     print("\n🤖 AI suggests the following fix:")
-                    print("=" * 50)
-                    print(fix_result)
-                    print("=" * 50)
+                    print("=" * 80)
+                    if diff:
+                        print("".join(diff))
+                    else:
+                        print("No changes detected in diff (files may be identical)")
+                    print("=" * 80)
 
                     confirm = get_valid_choice("Apply this AI fix? (y/n): ", ["y", "n", "yes", "no"])
                     if confirm.lower() in ["y", "yes"]:
