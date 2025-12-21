@@ -13,7 +13,7 @@ Functions:
 """
 import os
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from .models import ReviewIssue
 from .config import config
@@ -65,7 +65,7 @@ def _read_file_content(file_path: Path) -> str:
         return ""
 
 
-def collect_review_issues(target_files: List[Any], review_type: str, client, lang: str) -> List[ReviewIssue]:
+def collect_review_issues(target_files: List[Any], review_type: str, client, lang: str, spec_content: Optional[str] = None) -> List[ReviewIssue]:
     """
     Collect all review issues from target files using AI analysis.
 
@@ -78,6 +78,7 @@ def collect_review_issues(target_files: List[Any], review_type: str, client, lan
         review_type (str): Type of review to perform (e.g., 'security', 'performance')
         client: AI review client instance
         lang (str): Language for AI responses ('en' or 'ja')
+        spec_content (Optional[str]): Specification document content for specification review
 
     Returns:
         List[ReviewIssue]: List of identified review issues
@@ -102,7 +103,7 @@ def collect_review_issues(target_files: List[Any], review_type: str, client, lan
         print(f"Analyzing {display_name}...")
 
         try:
-            feedback = client.get_review(code, review_type=review_type, lang=lang)
+            feedback = client.get_review(code, review_type=review_type, lang=lang, spec_content=spec_content)
 
             # Parse AI feedback into structured issues
             if feedback and not feedback.startswith("Error:"):

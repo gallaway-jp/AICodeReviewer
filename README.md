@@ -55,6 +55,8 @@ dist\AICodeReviewer.exe /path/to/your/project
   - `complexity`: Evaluate code complexity and suggest simplifications
   - `architecture`: Review code structure and design patterns
   - `license`: Review third-party library usage and license compliance
+  - `specification`: Compare code against feature specifications (requires --spec-file)
+- `--spec-file FILE`: Path to specification document file (required when using --type specification)
 - `--lang`: Output language - `en` (English), `ja` (Japanese), or `default` (auto-detect system language)
 - `--set-profile PROFILE`: Set or change the AWS profile name
 - `--clear-profile`: Remove the stored AWS profile from keyring
@@ -102,8 +104,11 @@ python -m aicodereviewer . --scope diff --commits HEAD~1..HEAD --type maintainab
 # Review changes between two revisions (SVN)
 python -m aicodereviewer . --scope diff --commits 100:101 --type maintainability --programmers "Alice" --reviewers "Charlie"
 
+# Review code against feature specifications
+python -m aicodereviewer . --type specification --spec-file requirements.txt --programmers "Alice" --reviewers "Charlie"
+
 # Review recent changes in a pull request style
-python -m aicodereviewer . --scope diff --commits main..feature-branch --type testing
+python -m aicodereviewer . --scope diff --commits main..feature-branch --type testing --programmers "Alice" --reviewers "Charlie"
 
 # Generate a custom-named report
 python -m aicodereviewer . --type best_practices --output my_review_report.json

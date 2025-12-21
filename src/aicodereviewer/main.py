@@ -55,8 +55,10 @@ def main():
 
     # Code review options
     parser.add_argument("path", nargs="?", help="Path to the project folder (required for project scope, optional for diff scope to provide additional context)")
-    parser.add_argument("--type", choices=['security', 'performance', 'best_practices', 'maintainability', 'documentation', 'testing', 'accessibility', 'scalability', 'compatibility', 'error_handling', 'complexity', 'architecture', 'license'],
+    parser.add_argument("--type", choices=['security', 'performance', 'best_practices', 'maintainability', 'documentation', 'testing', 'accessibility', 'scalability', 'compatibility', 'error_handling', 'complexity', 'architecture', 'license', 'specification'],
                         default='best_practices')
+    parser.add_argument("--spec-file", metavar="FILE",
+                        help="Path to specification document file (required when using --type specification)")
     # Manual language override
     parser.add_argument("--lang", choices=['en', 'ja', 'default'], default='default',
                         help="Review language (en: English, ja: Japanese)")
@@ -98,6 +100,10 @@ def main():
     if not args.reviewers:
         parser.error("--reviewers is required for code review")
 
+    # Require spec-file when using specification review type
+    if args.type == 'specification' and not args.spec_file:
+        parser.error("--spec-file is required when using --type specification")
+
     # Determine final language for AI responses
     target_lang = args.lang
     if target_lang == 'default':
@@ -124,9 +130,22 @@ def main():
     estimated_time = num_files * 8  # Rough estimate: 8 seconds per file (6s API + 2s overhead)
     print(f"Found {num_files} files to review (estimated time: {estimated_time // 60}m {estimated_time % 60}s)")
 
+    # Load specification document if provided
+    spec_content = None
+    if args.spec_file:
+        try:
+            with open(args.spec_file, 'r', encoding='utf-8') as f:
+                spec_content = f.read()
+        except FileNotFoundError:
+            print(f"Error: Specification file not found: {args.spec_file}")
+            return
+        except Exception as e:
+            print(f"Error reading specification file: {e}")
+            return
+
     # Collect all review issues from AI analysis
     print(f"\nCollecting review issues from {num_files} files...")
-    issues = collect_review_issues(target_files, args.type, client, target_lang)
+    issues = collect_review_issues(target_files, args.type, client, target_lang, spec_content)
 
     if not issues:
         print("No review issues found!")

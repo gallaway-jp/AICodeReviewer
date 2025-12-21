@@ -110,7 +110,7 @@ class BedrockClient:
         except (TokenRetrievalError, ClientError) as e:
             raise Exception("AWSログインの期限が切れています。'aws sso login --profile <プロファイル名>' を実行してください。")
 
-    def get_review(self, code_content, review_type="security", lang="en"):
+    def get_review(self, code_content, review_type="security", lang="en", spec_content=None):
         """
         Perform AI-powered code review with specialized prompts.
 
@@ -121,6 +121,7 @@ class BedrockClient:
             code_content (str): Code to review
             review_type (str): Type of review ('security', 'performance', etc.)
             lang (str): Response language ('en' or 'ja')
+            spec_content (Optional[str]): Specification document content for specification review
 
         Returns:
             str: AI review feedback or error message
@@ -151,6 +152,7 @@ class BedrockClient:
             "complexity": "You are a Code Analyst. Evaluate code complexity and suggest simplifications.",
             "architecture": "You are a Software Architect. Review code structure and design patterns.",
             "license": "You are a License Compliance Specialist. Review third-party library usage and licenses.",
+            "specification": "You are a Requirements Analyst. Compare the code against the provided specifications and identify any deviations, missing implementations, or incorrect interpretations.",
             "fix": "You are an expert code fixer. Fix the code issues identified. Return only the corrected code."
         }
 
@@ -164,9 +166,15 @@ class BedrockClient:
 
         system_msg = f"{base_prompt} {lang_instruction}"
 
+        # Construct user message with specification if provided
+        if review_type == "specification" and spec_content:
+            user_message = f"SPECIFICATION DOCUMENT:\n{spec_content}\n\n---\n\nCODE TO REVIEW:\n{code_content}\n\n---\n\nCompare the code against the specification and identify any deviations, missing implementations, or areas that don't meet the requirements."
+        else:
+            user_message = f"Review this code:\n\n{code_content}"
+
         messages = [{
             "role": "user",
-            "content": [{"text": f"Review this code:\n\n{code_content}"}]
+            "content": [{"text": user_message}]
         }]
 
         try:
