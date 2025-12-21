@@ -50,8 +50,9 @@ class BedrockClient:
             Exception: If AWS profile is not found
         """
         try:
-            # Create session with optimized config
+            # Create session with the specified region
             self.session = boto3.Session(profile_name=profile_name, region_name=region)
+            
             config_settings = Config(
                 region_name=region,
                 retries={'max_attempts': 3, 'mode': 'standard'},
@@ -113,7 +114,28 @@ class BedrockClient:
                 messages=[{"role": "user", "content": [{"text": "Hello"}]}],
                 inferenceConfig={"maxTokens": 1}
             )
-        except (TokenRetrievalError, ClientError) as e:
+        except TokenRetrievalError as e:
+            raise Exception("AWSログインの期限が切れています。'aws sso login --profile <プロファイル名>' を実行してください。")
+        except ClientError as e:
+            error_code = e.response.get('Error', {}).get('Code', '')
+            error_message = e.response.get('Error', {}).get('Message', '')
+            
+            # Check for Anthropic use case form requirement
+            if 'use case' in error_message.lower() and 'anthropic' in error_message.lower():
+                raise Exception(
+                    "Anthropicの利用規約フォームが完了していません。\n"
+                    "AWS Bedrock コンソールで Anthropic Claude モデルの使用規約フォームを送信してください。\n"
+                    "詳細: https://console.aws.amazon.com/bedrock"
+                )
+            
+            # Check for model access denied
+            if error_code == 'AccessDeniedException':
+                raise Exception(
+                    f"AWSアクセス権限がありません。\n"
+                    f"プロファイル '{self.session.profile_name}' は Bedrock へのアクセス権限を持っていません。"
+                )
+            
+            # Default to authentication error
             raise Exception("AWSログインの期限が切れています。'aws sso login --profile <プロファイル名>' を実行してください。")
 
     def get_review(self, code_content: str, review_type: str = "security", lang: str = "en", spec_content: Optional[str] = None) -> str:
@@ -198,12 +220,27 @@ class BedrockClient:
 
         except ClientError as e:
             error_code = e.response['Error']['Code']
+            error_message = e.response['Error'].get('Message', '')
+            
+            # Check for Anthropic use case form requirement
+            if 'use case' in error_message.lower() and 'anthropic' in error_message.lower():
+                return (
+                    "Error: Anthropicの利用規約フォームが完了していません。\n"
+                    "AWS Bedrock コンソールで Anthropic Claude モデルの使用規約フォームを送信してください。\n"
+                    "詳細: https://console.aws.amazon.com/bedrock"
+                )
+            
             if error_code == 'ThrottlingException':
                 logger.warning("AWS API rate limit exceeded. Waiting before retry...")
                 time.sleep(30)
-                return self.get_review(code_content, review_type, lang)  # Retry once
+                return self.get_review(code_content, review_type, lang, spec_content)  # Retry once
             elif error_code == 'ValidationException':
                 return f"Error: Input validation failed - {str(e)}"
+            elif error_code == 'AccessDeniedException':
+                return (
+                    f"Error: AWSアクセス権限がありません。\n"
+                    f"プロファイル '{self.session.profile_name}' は Bedrock へのアクセス権限を持っていません。"
+                )
             else:
                 return f"Error: AWS API error - {str(e)}"
         except Exception as e:
