@@ -122,23 +122,48 @@ def detect_vcs_type(project_path: str) -> Optional[str]:
     """
     Detect the version control system used in the project.
 
-    Checks for the presence of .git or .svn directories to determine
-    whether the project uses Git or SVN.
+    Searches upward from the provided path for the presence of a .git or .svn
+    directory to determine whether the project uses Git or SVN. This allows
+    passing a subdirectory within a repository and still detecting the VCS.
 
     Args:
-        project_path (str): Path to the project directory
+        project_path (str): Path to the project directory (or subdirectory)
 
     Returns:
         Optional[str]: 'git', 'svn', or None if no VCS detected
     """
-    git_dir = Path(project_path) / '.git'
-    svn_dir = Path(project_path) / '.svn'
-
-    if git_dir.exists():
-        return 'git'
-    elif svn_dir.exists():
-        return 'svn'
+    p = Path(project_path)
+    for candidate in [p] + list(p.parents):
+        git_dir = candidate / '.git'
+        if git_dir.exists():
+            return 'git'
+        svn_dir = candidate / '.svn'
+        if svn_dir.exists():
+            return 'svn'
     return None
+
+
+def _find_vcs_root(project_path: str, vcs_type: str) -> Optional[Path]:
+    """Find the repository root directory for the given VCS by walking upward."""
+    p = Path(project_path)
+    marker = '.git' if vcs_type == 'git' else '.svn'
+    for candidate in [p] + list(p.parents):
+        if (candidate / marker).exists():
+            return candidate
+    return None
+
+
+def _normalize_commit_range(vcs_type: str, commit_range: str) -> str:
+    """
+    Normalize commit/revision range across VCS tools.
+
+    - Git: pass through (e.g., 'HEAD~1..HEAD', 'abc..def').
+    - SVN: accept 'REV1:REV2', 'REV1..REV2', or keywords like 'PREV:HEAD'.
+      Convert '..' to ':' for SVN.
+    """
+    if vcs_type == 'svn':
+        return commit_range if ':' in commit_range else commit_range.replace('..', ':')
+    return commit_range
 
 
 def get_diff_from_commits(project_path: str, commit_range: str) -> Optional[str]:
@@ -165,25 +190,29 @@ def get_diff_from_commits(project_path: str, commit_range: str) -> Optional[str]
         return None
 
     try:
+        repo_root = _find_vcs_root(project_path, vcs_type)
+        cwd = project_path if repo_root is None else str(repo_root)
+        in_subdir = repo_root is not None and Path(project_path) != repo_root
+
         if vcs_type == 'git':
+            # Limit diff scope only when running from a subdirectory
+            base_cmd = ['git', 'diff', _normalize_commit_range(vcs_type, commit_range)]
+            cmd = base_cmd + (['--', '.'] if in_subdir else [])
             result = subprocess.run(
-                ['git', 'diff', commit_range],
-                cwd=project_path,
+                cmd,
+                cwd=cwd,
                 capture_output=True,
                 text=True,
                 check=True
             )
         elif vcs_type == 'svn':
-            # Convert commit range to SVN revision format if needed
-            # SVN expects -r REV1:REV2 format
-            if ':' in commit_range:
-                rev_range = commit_range
-            else:
-                rev_range = commit_range.replace('..', ':')
-            
+            # SVN expects '-r REV1:REV2'; only limit to '.' when in a subdirectory
+            rev_range = _normalize_commit_range(vcs_type, commit_range)
+            base_cmd = ['svn', 'diff', '-r', rev_range]
+            cmd = base_cmd + (['.'] if in_subdir else [])
             result = subprocess.run(
-                ['svn', 'diff', '-r', rev_range],
-                cwd=project_path,
+                cmd,
+                cwd=cwd,
                 capture_output=True,
                 text=True,
                 check=True
