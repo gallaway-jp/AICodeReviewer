@@ -22,9 +22,8 @@ from aicodereviewer.auth import get_profile_name, set_profile_name, clear_profil
 from aicodereviewer.bedrock import BedrockClient
 from aicodereviewer.backup import cleanup_old_backups
 from aicodereviewer.scanner import scan_project_with_scope
-from aicodereviewer.reviewer import collect_review_issues
-from aicodereviewer.interactive import interactive_review_confirmation
-from aicodereviewer.reporter import generate_review_report
+from aicodereviewer.orchestration import AppRunner
+from aicodereviewer.orchestration import AppRunner
 from aicodereviewer.models import ReviewReport, calculate_quality_score
 
 logger = logging.getLogger(__name__)
@@ -144,23 +143,6 @@ def main():
     profile = get_profile_name()
     client = BedrockClient(profile)
 
-    # Clean up old backup files to manage disk space
-    cleanup_old_backups(args.path)
-
-    # Display scan configuration and start file discovery
-    scope_desc = "entire project" if args.scope == 'project' else f"changes ({args.diff_file or args.commits})"
-    print(f"Scanning {args.path} - Scope: {scope_desc} (Output Language: {target_lang})...")
-    target_files = scan_project_with_scope(args.path, args.scope, args.diff_file, args.commits)
-
-    if not target_files:
-        print("No files found to review.")
-        return
-
-    # Estimate processing time and show progress
-    num_files = len(target_files)
-    estimated_time = num_files * 8  # Rough estimate: 8 seconds per file (6s API + 2s overhead)
-    print(f"Found {num_files} files to review (estimated time: {estimated_time // 60}m {estimated_time % 60}s)")
-
     # Load specification document if provided
     spec_content = None
     if args.spec_file:
@@ -174,42 +156,24 @@ def main():
             logger.error(f"Error reading specification file: {e}")
             return
 
-    # Collect all review issues from AI analysis
-    logger.info(f"Collecting review issues from {num_files} files...")
-    issues = collect_review_issues(target_files, args.type, client, target_lang, spec_content)
+    # Clean up old backup files to manage disk space
+    cleanup_old_backups(args.path)
 
-    if not issues:
-        logger.info("No review issues found!")
-        return
-
-    logger.info(f"Found {len(issues)} review issues. Starting interactive confirmation...")
-
-    # Interactive review confirmation and potential fixes
-    resolved_issues = interactive_review_confirmation(issues, client, args.type, target_lang)
-
-    # Calculate quality score
-    quality_score = calculate_quality_score(resolved_issues)
-
-    # Create comprehensive review report
-    diff_source = args.diff_file or args.commits if args.scope == 'diff' else None
-    report = ReviewReport(
-        project_path=args.path,
-        review_type=args.type,
+    # Run orchestration
+    runner = AppRunner(client, scan_fn=scan_project_with_scope)
+    runner.run(
+        path=args.path,
         scope=args.scope,
-        total_files_scanned=len(target_files),
-        issues_found=resolved_issues,
-        generated_at=datetime.now(),
-        language=target_lang,
-        diff_source=diff_source,
-        quality_score=quality_score,
+        diff_file=args.diff_file,
+        commits=args.commits,
+        review_type=args.type,
+        spec_content=spec_content,
+        target_lang=target_lang,
         programmers=args.programmers,
-        reviewers=args.reviewers
+        reviewers=args.reviewers,
     )
 
-    # Generate and save report files
-    output_file = generate_review_report(report, args.output)
-    logger.info(f"Review complete! Report saved to: {output_file}")
-    logger.info(f"Summary: {output_file.replace('.json', '_summary.txt')}")
+    # Orchestration handles reporting/logging
 
 
 if __name__ == "__main__":
