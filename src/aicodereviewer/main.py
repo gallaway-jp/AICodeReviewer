@@ -94,16 +94,28 @@ def main():
 
     args = parser.parse_args()
 
-    # Configure logging
+    # Configure logging: crisp console output for interactive UI
     try:
         log_level_name = 'INFO'
         from aicodereviewer.config import config as _config
         lvl = _config.get('logging', 'log_level', 'INFO')
         if isinstance(lvl, str):
             log_level_name = lvl.upper()
-        logging.basicConfig(level=getattr(logging, log_level_name, logging.INFO), format='[%(levelname)s] %(message)s')
+
+        level = getattr(logging, log_level_name, logging.INFO)
+        root_logger = logging.getLogger()
+        root_logger.setLevel(level)
+
+        # Clear existing handlers to avoid duplicate logs
+        root_logger.handlers.clear()
+
+        # Console handler with minimal formatting to keep UI clean
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(level)
+        console_handler.setFormatter(logging.Formatter('%(message)s'))
+        root_logger.addHandler(console_handler)
     except Exception:
-        logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
+        logging.basicConfig(level=logging.INFO, format='%(message)s')
 
     # Handle profile management commands first
     if args.set_profile:

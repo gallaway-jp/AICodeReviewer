@@ -24,6 +24,22 @@ python -m aicodereviewer /path/to/your/project
 python src/aicodereviewer/main.py /path/to/your/project
 ```
 
+## Logging
+
+Console output is tuned to keep the interactive UI crisp — only the message is shown without timestamps or levels. You can control verbosity via `config.ini`.
+
+- Levels: `DEBUG`, `INFO` (default), `WARNING`, `ERROR`
+- Console: minimal formatter showing just messages
+- Reports: save paths are logged when JSON/summary files are written
+
+Example configuration:
+
+```ini
+[logging]
+log_level = INFO            # DEBUG for detailed trace, INFO for normal use
+enable_performance_logging = true
+```
+
 ### Running the Windows Executable
 
 After building with `build_exe.bat`, you can run the standalone executable:
@@ -181,6 +197,7 @@ max_content_length = 100000    # Maximum content length for API
 max_fix_content_length = 50000 # Maximum content for fix operations
 
 [logging]
+log_level = INFO                 # Logging level: DEBUG, INFO, WARNING, ERROR
 enable_performance_logging = true  # Enable performance monitoring
 ```
 
