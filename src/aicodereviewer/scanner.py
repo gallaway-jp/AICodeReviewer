@@ -147,7 +147,7 @@ def get_diff_from_commits(project_path: str, commit_range: str) -> Optional[str]
         return None
 
 
-def scan_project_with_scope(directory: str, scope: str = 'project', diff_file: Optional[str] = None, commits: Optional[str] = None) -> List[Any]:
+def scan_project_with_scope(directory: Optional[str], scope: str = 'project', diff_file: Optional[str] = None, commits: Optional[str] = None) -> List[Any]:
     """
     Scan project files based on the specified review scope.
 
@@ -155,14 +155,14 @@ def scan_project_with_scope(directory: str, scope: str = 'project', diff_file: O
     and diff-based targeted reviews.
 
     Args:
-        directory (str): Root directory path to scan
+        directory (Optional[str]): Root directory path to scan (optional for diff scope)
         scope (str): Review scope ('project' or 'diff')
         diff_file (Optional[str]): Path to diff file for diff scope
         commits (Optional[str]): Git commit range for diff scope
 
     Returns:
         List[Any]: For project scope: List[Path] of file paths
-                   For diff scope: List[Dict] with file info and changed content
+                   For diff scope: List[Dict] with file info and content (full file if directory provided, else diff content)
     """
     if scope == 'project':
         return scan_project(directory)
@@ -178,6 +178,9 @@ def scan_project_with_scope(directory: str, scope: str = 'project', diff_file: O
                 print(f"Diff file not found: {diff_file}")
                 return []
         elif commits:
+            if directory is None:
+                print("Directory is required when using --commits for diff scope")
+                return []
             diff_content = get_diff_from_commits(directory, commits)
             if diff_content is None:
                 return []
@@ -189,14 +192,26 @@ def scan_project_with_scope(directory: str, scope: str = 'project', diff_file: O
 
         # Convert to file paths relative to project
         for diff_file_info in diff_files:
-            file_path = Path(directory) / diff_file_info['filename']
-            if file_path.exists():
-                # Create a temporary file-like object with the changed content
-                changed_files.append({
-                    'path': file_path,
-                    'content': diff_file_info['content'],
-                    'filename': diff_file_info['filename']
-                })
+            if directory:
+                file_path = Path(directory) / diff_file_info['filename']
+                if file_path.exists():
+                    # Read full file content for additional context
+                    try:
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            content = f.read()
+                    except (IOError, UnicodeDecodeError):
+                        content = diff_file_info['content']  # fallback to diff content
+                else:
+                    content = diff_file_info['content']
+            else:
+                file_path = Path(diff_file_info['filename'])  # relative path
+                content = diff_file_info['content']
+
+            changed_files.append({
+                'path': file_path,
+                'content': content,
+                'filename': diff_file_info['filename']
+            })
 
         return changed_files
 

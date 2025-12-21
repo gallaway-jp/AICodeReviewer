@@ -54,7 +54,7 @@ def main():
                         help="Commit range for diff (e.g., 'HEAD~1..HEAD' or 'abc123..def456')")
 
     # Code review options
-    parser.add_argument("path", nargs="?", help="Path to the project folder")
+    parser.add_argument("path", nargs="?", help="Path to the project folder (required for project scope, optional for diff scope to provide additional context)")
     parser.add_argument("--type", choices=['security', 'performance', 'best_practices', 'maintainability', 'documentation', 'testing', 'accessibility', 'scalability', 'compatibility', 'error_handling', 'complexity', 'architecture', 'license'],
                         default='best_practices')
     # Manual language override
@@ -82,9 +82,9 @@ def main():
         if args.diff_file and args.commits:
             parser.error("Cannot specify both --diff-file and --commits")
 
-    # Require path for code review operations
-    if not args.path:
-        parser.error("path is required for code review (or use --set-profile or --clear-profile)")
+    # Require path for project scope, optional for diff scope
+    if args.scope == 'project' and not args.path:
+        parser.error("path is required for project scope (or use --set-profile or --clear-profile)")
 
     # Determine final language for AI responses
     target_lang = args.lang
