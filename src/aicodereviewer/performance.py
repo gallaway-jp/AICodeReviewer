@@ -11,10 +11,12 @@ Classes:
 import time
 import psutil
 import os
+import logging
 from typing import Dict, Any
 from contextlib import contextmanager
 
 from .config import config
+logger = logging.getLogger(__name__)
 
 
 class PerformanceMonitor:
@@ -76,8 +78,9 @@ class PerformanceMonitor:
                 'memory_delta_mb': memory_delta / (1024 * 1024)
             }
 
-            print(f"Performance: {operation_name} took {duration:.2f}s, "
-                  f"memory change: {memory_delta / (1024*1024):.2f}MB")
+            logger.info(
+                f"Performance: {operation_name} took {duration:.2f}s, memory change: {memory_delta / (1024*1024):.2f}MB"
+            )
 
     def get_metrics(self) -> Dict[str, Any]:
         """

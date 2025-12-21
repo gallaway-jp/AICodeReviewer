@@ -17,6 +17,9 @@ import re
 import subprocess
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def scan_project(directory: str) -> List[Path]:
@@ -179,8 +182,8 @@ def get_diff_from_commits(project_path: str, commit_range: str) -> Optional[str]
     vcs_type = detect_vcs_type(project_path)
 
     if vcs_type is None:
-        print(f"No version control system detected in {project_path}")
-        print("Please ensure the project is a Git or SVN repository.")
+        logger.warning(f"No version control system detected in {project_path}")
+        logger.info("Please ensure the project is a Git or SVN repository.")
         return None
 
     try:
@@ -212,16 +215,16 @@ def get_diff_from_commits(project_path: str, commit_range: str) -> Optional[str]
                 check=True
             )
         else:
-            print(f"Unsupported VCS type: {vcs_type}")
+            logger.error(f"Unsupported VCS type: {vcs_type}")
             return None
 
         return result.stdout
 
     except subprocess.CalledProcessError as e:
-        print(f"Error getting diff from {vcs_type.upper()}: {e}")
+        logger.error(f"Error getting diff from {vcs_type.upper()}: {e}")
         return None
     except FileNotFoundError:
-        print(f"{vcs_type.upper()} not found. Please ensure {vcs_type} is installed and in PATH.")
+        logger.error(f"{vcs_type.upper()} not found. Please ensure {vcs_type} is installed and in PATH.")
         return None
 
 

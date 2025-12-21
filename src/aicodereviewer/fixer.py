@@ -12,9 +12,11 @@ Functions:
 import os
 from typing import Optional
 from botocore.exceptions import ClientError
+import logging
 
 from .models import ReviewIssue
 from .config import config
+logger = logging.getLogger(__name__)
 
 
 def apply_ai_fix(issue: ReviewIssue, client, review_type: str, lang: str) -> Optional[str]:
@@ -43,7 +45,7 @@ def apply_ai_fix(issue: ReviewIssue, client, review_type: str, lang: str) -> Opt
         file_size = os.path.getsize(issue.file_path)
         max_fix_size = config.get('performance', 'max_fix_file_size_mb')
         if file_size > max_fix_size:
-            print(f"Warning: File too large for AI fix: {issue.file_path} ({file_size} bytes > {max_fix_size} bytes)")
+            logger.warning(f"File too large for AI fix: {issue.file_path} ({file_size} bytes > {max_fix_size} bytes)")
             return None
 
         with open(issue.file_path, "r", encoding="utf-8", errors="ignore") as f:
@@ -52,7 +54,7 @@ def apply_ai_fix(issue: ReviewIssue, client, review_type: str, lang: str) -> Opt
         # Skip if file is empty or too large for the model
         max_fix_content = config.get('performance', 'max_fix_content_length')
         if not current_code or len(current_code) > max_fix_content:
-            print(f"Warning: File content too large for AI processing: {issue.file_path} ({len(current_code)} chars > {max_fix_content})")
+            logger.warning(f"File content too large for AI processing: {issue.file_path} ({len(current_code)} chars > {max_fix_content})")
             return None
 
         # Create a more focused prompt for the AI to generate a fix
@@ -75,8 +77,8 @@ Return ONLY the complete corrected code, no explanations or markdown."""
         return None
 
     except (OSError, UnicodeDecodeError, ClientError) as e:
-        print(f"Error generating AI fix: {e}")
+        logger.error(f"Error generating AI fix: {e}")
         return None
     except Exception as e:
-        print(f"Error generating AI fix: {e}")
+        logger.error(f"Error generating AI fix: {e}")
         return None

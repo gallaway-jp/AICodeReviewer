@@ -14,12 +14,14 @@ Functions:
 import os
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+import logging
 
 from .models import ReviewIssue
 from .config import config
 
 # Cache for file contents to avoid re-reading large files
 _file_content_cache = {}
+logger = logging.getLogger(__name__)
 def _parse_severity(feedback: str) -> str:
     """Infer severity from AI feedback text using simple keyword heuristics."""
     try:
@@ -63,7 +65,7 @@ def _read_file_content(file_path: Path) -> str:
         file_size = os.path.getsize(file_path)
         max_size = config.get('performance', 'max_file_size_mb')
         if file_size > max_size:
-            print(f"Warning: Skipping large file {file_path} ({file_size} bytes > {max_size} bytes)")
+            logger.warning(f"Skipping large file {file_path} ({file_size} bytes > {max_size} bytes)")
             return ""
 
         # Read file efficiently
@@ -78,7 +80,7 @@ def _read_file_content(file_path: Path) -> str:
         return content
 
     except (OSError, UnicodeDecodeError) as e:
-        print(f"Error reading file {file_path}: {e}")
+        logger.error(f"Error reading file {file_path}: {e}")
         return ""
 
 
@@ -117,7 +119,7 @@ def collect_review_issues(target_files: List[Any], review_type: str, client, lan
             if not code:  # Skip empty or unreadable files
                 continue
 
-        print(f"Analyzing {display_name}...")
+        logger.info(f"Analyzing {display_name}...")
 
         try:
             feedback = client.get_review(code, review_type=review_type, lang=lang, spec_content=spec_content)
@@ -137,7 +139,7 @@ def collect_review_issues(target_files: List[Any], review_type: str, client, lan
                 issues.append(issue)
 
         except Exception as e:
-            print(f"Error analyzing {display_name}: {e}")
+            logger.error(f"Error analyzing {display_name}: {e}")
 
     return issues
 
@@ -174,9 +176,9 @@ def verify_issue_resolved(issue: ReviewIssue, client, review_type: str, lang: st
         if new_feedback_length < old_feedback_length * 0.5 or "no issues" in new_feedback.lower():
             return True
 
-        print(f"New analysis still shows issues: {new_feedback}")
+        logger.info(f"New analysis still shows issues: {new_feedback}")
         return False
 
     except Exception as e:
-        print(f"Error verifying resolution: {e}")
+        logger.error(f"Error verifying resolution: {e}")
         return False
