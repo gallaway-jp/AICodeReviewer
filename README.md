@@ -28,17 +28,20 @@ python src/aicodereviewer/main.py /path/to/your/project
 
 Console output is tuned to keep the interactive UI crisp — only the message is shown without timestamps or levels. You can control verbosity via `config.ini`.
 
-- Levels: `DEBUG`, `INFO` (default), `WARNING`, `ERROR`
-- Console: minimal formatter showing just messages
-- Reports: save paths are logged when JSON/summary files are written
+- **Console**: Minimal formatter showing just messages for clean interactive experience
+- **Levels**: `DEBUG`, `INFO` (default), `WARNING`, `ERROR`
+- **File logging** (optional): Enable for debugging; saves detailed logs with timestamps and module names to a file
 
 Example configuration:
 
 ```ini
 [logging]
-log_level = INFO            # DEBUG for detailed trace, INFO for normal use
-enable_performance_logging = true
+log_level = INFO                 # DEBUG for detailed trace, INFO for normal use
+enable_file_logging = false      # Enable to write detailed logs to file (useful for debugging)
+log_file = aicodereviewer.log    # File path for debug logs (when enable_file_logging = true)
 ```
+
+To enable debug file logging, set `enable_file_logging = true` in `config.ini`. This creates a timestamped log file with detailed information about each module's operations, useful for troubleshooting.
 
 ### Running the Windows Executable
 
@@ -199,6 +202,8 @@ max_fix_content_length = 50000 # Maximum content for fix operations
 [logging]
 log_level = INFO                 # Logging level: DEBUG, INFO, WARNING, ERROR
 enable_performance_logging = true  # Enable performance monitoring
+enable_file_logging = false      # Enable to write detailed logs to file (for debugging)
+log_file = aicodereviewer.log    # File path for debug logs (when enable_file_logging = true)
 ```
 
 ### Performance Tips

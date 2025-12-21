@@ -114,6 +114,22 @@ def main():
         console_handler.setLevel(level)
         console_handler.setFormatter(logging.Formatter('%(message)s'))
         root_logger.addHandler(console_handler)
+
+        # Optional file handler for debugging with detailed format
+        try:
+            enable_file_logging = _config.get('logging', 'enable_file_logging', 'false').lower() == 'true'
+            if enable_file_logging:
+                log_file = _config.get('logging', 'log_file', 'aicodereviewer.log')
+                file_handler = logging.FileHandler(log_file, encoding='utf-8')
+                file_handler.setLevel(level)
+                file_handler.setFormatter(logging.Formatter(
+                    '[%(asctime)s] [%(levelname)s] %(name)s: %(message)s',
+                    datefmt='%Y-%m-%d %H:%M:%S'
+                ))
+                root_logger.addHandler(file_handler)
+                logger.debug(f"File logging enabled: {log_file}")
+        except Exception as e:
+            logger.warning(f"Could not enable file logging: {e}")
     except Exception:
         logging.basicConfig(level=logging.INFO, format='%(message)s')
 
