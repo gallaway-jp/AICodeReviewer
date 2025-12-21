@@ -9,6 +9,7 @@ description = "AI Code Review Program"
 authors = [
     {name = "Your Name", email = "your.email@example.com"},
 ]
+license = { file = "LICENSE" }
 dependencies = [
     "boto3",
     "keyring",
@@ -19,6 +20,7 @@ dependencies = [
 dev = [
     "pytest>=9.0.2",
     "pytest-cov",
+    "pip-licenses",
 ]
 
 requires-python = ">=3.8"
