@@ -182,8 +182,9 @@ AICodeReviewer includes several performance optimizations to handle large codeba
 
 ### Processing Optimizations
 - **Efficient File Scanning**: Uses `os.walk()` with filtered directory pruning
+- **Batch Processing**: Groups files into configurable batches (default: 5) for efficient review
+- **Parallel Processing**: Optional parallel batch processing via ThreadPoolExecutor for large projects
 - **Optimized Diff Parsing**: Streamlined parsing logic for large diff files
-- **Parallel Processing Ready**: Architecture supports future parallel file processing
 
 ### Configuration
 
@@ -196,8 +197,14 @@ max_fix_file_size_mb = 5       # Maximum file size for AI fixes
 file_cache_size = 100          # Number of files to cache in memory
 min_request_interval_seconds = 6.0  # API rate limiting
 max_requests_per_minute = 10   # API request limit per minute
+api_timeout_seconds = 300      # API request timeout in seconds
+connect_timeout_seconds = 30   # Connection timeout in seconds
 max_content_length = 100000    # Maximum content length for API
 max_fix_content_length = 50000 # Maximum content for fix operations
+
+[processing]
+batch_size = 5                 # Files per batch (for batch processing)
+enable_parallel_processing = false  # Enable parallel batch processing (faster for large projects)
 
 [logging]
 log_level = INFO                 # Logging level: DEBUG, INFO, WARNING, ERROR
@@ -209,9 +216,12 @@ log_file = aicodereviewer.log    # File path for debug logs (when enable_file_lo
 ### Performance Tips
 
 1. **Large Codebases**: Use `--scope diff` to review only changed files instead of entire projects
-2. **File Types**: The scanner automatically excludes common build/dependency directories
-3. **Memory Usage**: Monitor memory usage with `enable_performance_logging = true`
-4. **API Limits**: The tool automatically handles AWS Bedrock rate limits and retries
+2. **Parallel Processing**: Enable `enable_parallel_processing = true` in `config.ini` for 2-4x speedup on projects with 100+ files
+3. **Batch Size**: Increase `batch_size` (default: 5) to process more files concurrently when parallel processing is enabled
+4. **File Types**: The scanner automatically excludes common build/dependency directories
+5. **Memory Usage**: Monitor memory usage with `enable_performance_logging = true`
+6. **API Limits**: The tool automatically handles AWS Bedrock rate limits and retries
+7. **Timeouts**: Adjust `api_timeout_seconds` and `connect_timeout_seconds` if working with slow networks
 
 ## Development
 

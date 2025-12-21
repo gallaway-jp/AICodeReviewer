@@ -4,7 +4,7 @@ Code review issue collection and verification.
 
 This module handles the core review process including file content reading,
 AI-powered issue detection, and resolution verification with performance
-optimizations like file caching and size limits.
+optimizations like file caching, size limits, and batch processing.
 
 Functions:
     _read_file_content: Cached file reading with size validation
@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .models import ReviewIssue
 from .config import config
@@ -90,6 +91,7 @@ def collect_review_issues(target_files: List[Any], review_type: str, client, lan
 
     Processes each file through the AI review client to identify code quality
     issues. Handles both project-wide scans and diff-based reviews.
+    Supports batch processing when enabled in config.
 
     Args:
         target_files (List[Any]): Files to review - either Path objects (project scope)
@@ -103,6 +105,48 @@ def collect_review_issues(target_files: List[Any], review_type: str, client, lan
         List[ReviewIssue]: List of identified review issues
     """
     issues = []
+    
+    # Check if batch processing is enabled
+    batch_size = config.get('processing', 'batch_size', 5)
+    enable_parallel = config.get('processing', 'enable_parallel_processing', False)
+    
+    # Prepare file batches
+    batches = [target_files[i:i + batch_size] for i in range(0, len(target_files), batch_size)]
+    
+    if enable_parallel and len(batches) > 1:
+        # Process batches in parallel
+        logger.debug(f"Processing {len(target_files)} files in {len(batches)} batches (parallel mode)")
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(_process_file_batch, batch, review_type, client, lang, spec_content) 
+                      for batch in batches]
+            for future in as_completed(futures):
+                batch_issues = future.result()
+                issues.extend(batch_issues)
+    else:
+        # Sequential batch processing
+        for batch in batches:
+            batch_issues = _process_file_batch(batch, review_type, client, lang, spec_content)
+            issues.extend(batch_issues)
+    
+    logger.debug(f"Collected {len(issues)} review issues from {len(target_files)} files")
+    return issues
+
+
+def _process_file_batch(target_files: List[Any], review_type: str, client, lang: str, spec_content: Optional[str] = None) -> List[ReviewIssue]:
+    """
+    Process a batch of files and collect review issues (helper for batch processing).
+    
+    Args:
+        target_files (List[Any]): Files to review in this batch
+        review_type (str): Type of review to perform
+        client: AI review client instance
+        lang (str): Language for AI responses
+        spec_content (Optional[str]): Specification document content
+    
+    Returns:
+        List[ReviewIssue]: Identified review issues for this batch
+    """
+    batch_issues = []
 
     for file_info in target_files:
         if isinstance(file_info, dict):
@@ -136,12 +180,12 @@ def collect_review_issues(target_files: List[Any], review_type: str, client, lan
                     code_snippet=code[:200] + "..." if len(code) > 200 else code,
                     ai_feedback=feedback
                 )
-                issues.append(issue)
+                batch_issues.append(issue)
 
         except Exception as e:
             logger.error(f"Error analyzing {display_name}: {e}")
 
-    return issues
+    return batch_issues
 
 
 def verify_issue_resolved(issue: ReviewIssue, client, review_type: str, lang: str) -> bool:

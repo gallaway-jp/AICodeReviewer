@@ -18,6 +18,9 @@ import subprocess
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from .config import config
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +31,7 @@ def scan_project(directory: str) -> List[Path]:
 
     Recursively scans the given directory for files with extensions commonly
     used in software development, excluding common build/dependency directories.
+    Supports parallel scanning when enable_parallel_processing is true.
 
     Supported languages and frameworks:
     - Python, JavaScript/TypeScript, Java, C/C++, C#, Go, Ruby, PHP, Rust
@@ -52,14 +56,54 @@ def scan_project(directory: str) -> List[Path]:
     })
     ignore_dirs = frozenset({'.git', '.venv', '__pycache__', 'node_modules', 'bin', 'obj', 'dist'})
 
+    # Check if parallel processing is enabled
+    enable_parallel = config.get('processing', 'enable_parallel_processing', False)
+    
     files = []
-    for root, dirs, filenames in os.walk(directory):
-        # Filter directories in-place for efficiency
-        dirs[:] = [d for d in dirs if d not in ignore_dirs]
-        for filename in filenames:
-            if Path(filename).suffix.lower() in valid_extensions:
-                files.append(Path(root) / filename)
+    
+    if enable_parallel:
+        # Parallel scanning: collect directory batches and scan in parallel
+        dir_batches = []
+        for root, dirs, filenames in os.walk(directory):
+            dirs[:] = [d for d in dirs if d not in ignore_dirs]
+            if filenames:
+                dir_batches.append((root, filenames, valid_extensions))
+        
+        if dir_batches:
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                futures = [executor.submit(_scan_directory_batch, root, filenames, valid_extensions) 
+                          for root, filenames, valid_extensions in dir_batches]
+                for future in as_completed(futures):
+                    files.extend(future.result())
+        logger.debug(f"Parallel scan complete: {len(files)} files found")
+    else:
+        # Sequential scanning (default)
+        for root, dirs, filenames in os.walk(directory):
+            dirs[:] = [d for d in dirs if d not in ignore_dirs]
+            for filename in filenames:
+                if Path(filename).suffix.lower() in valid_extensions:
+                    files.append(Path(root) / filename)
+    
     return files
+
+
+def _scan_directory_batch(root: str, filenames: List[str], valid_extensions: frozenset) -> List[Path]:
+    """
+    Scan a single directory batch for matching files (helper for parallel scanning).
+    
+    Args:
+        root (str): Root directory path
+        filenames (List[str]): List of filenames in the directory
+        valid_extensions (frozenset): Set of valid file extensions
+    
+    Returns:
+        List[Path]: List of matching files in this batch
+    """
+    batch_files = []
+    for filename in filenames:
+        if Path(filename).suffix.lower() in valid_extensions:
+            batch_files.append(Path(root) / filename)
+    return batch_files
 
 
 def parse_diff_file(diff_content: str) -> List[Dict[str, str]]:
