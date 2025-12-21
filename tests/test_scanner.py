@@ -108,6 +108,44 @@ class TestParseDiffFile:
         assert 'file1.py' in filenames
         assert 'file2.py' in filenames
 
+    def test_parse_multiple_hunks_single_file(self):
+        """Test parsing diff with multiple hunks for a single file"""
+        diff_content = """--- a/app.py
++++ b/app.py
+@@ -1,2 +1,3 @@
+ print("hello")
++print("world")
+@@ -10,2 +10,3 @@
+ def func():
+     pass
++    return True
+"""
+        result = parse_diff_file(diff_content)
+
+        assert len(result) == 1
+        assert result[0]['filename'] == 'app.py'
+        content = result[0]['content']
+        assert 'print("hello")' in content
+        assert 'print("world")' in content
+        assert 'def func():' in content
+        assert 'return True' in content
+
+    def test_parse_rename_file(self):
+        """Test parsing diff after file rename still captures new filename"""
+        diff_content = """--- a/old.py
++++ b/new.py
+@@ -1,1 +1,2 @@
+-print("old")
+ print("new")
++print("added")
+"""
+        result = parse_diff_file(diff_content)
+
+        assert len(result) == 1
+        assert result[0]['filename'] == 'new.py'
+        assert 'print("new")' in result[0]['content']
+        assert 'print("added")' in result[0]['content']
+
     def test_parse_empty_diff(self):
         """Test parsing empty diff"""
         result = parse_diff_file("")

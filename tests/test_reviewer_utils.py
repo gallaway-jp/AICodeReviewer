@@ -39,3 +39,12 @@ def test_read_file_content_skips_large_files():
 
         assert content == ""
         assert reviewer._file_content_cache == {}
+
+
+def test_parse_severity_keywords():
+    assert reviewer._parse_severity("This is a CRITICAL vulnerability") == "critical"
+    assert reviewer._parse_severity("High risk security issue") == "high"
+    assert reviewer._parse_severity("Minor, low impact bug") == "low"
+    assert reviewer._parse_severity("Informational note only") == "info"
+    # Default stays medium
+    assert reviewer._parse_severity("General feedback without severity") == "medium"

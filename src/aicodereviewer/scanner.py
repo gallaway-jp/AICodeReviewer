@@ -63,8 +63,8 @@ def parse_diff_file(diff_content: str) -> List[Dict[str, str]]:
     """
     Parse unified diff content and extract changed files with their content.
 
-    Processes diff output to identify files that were modified, extracting
-    the added and context lines for each changed file.
+    Supports multiple hunks per file and collects added ('+') and
+    context (' ') lines while skipping removed ('-') lines.
 
     Args:
         diff_content (str): Raw diff content in unified format
@@ -72,48 +72,42 @@ def parse_diff_file(diff_content: str) -> List[Dict[str, str]]:
     Returns:
         List[Dict[str, str]]: List of dictionaries with 'filename' and 'content' keys
     """
-    files = []
-    lines = diff_content.splitlines()  # More efficient than split('\n')
-    i = 0
-    n = len(lines)
+    files: List[Dict[str, str]] = []
+    lines = diff_content.splitlines()
+    current_file: Optional[str] = None
+    content_accumulator: Dict[str, List[str]] = {}
+    in_hunk = False
 
-    while i < n:
-        line = lines[i]
-
-        # Check for file header (unified diff format)
+    for line in lines:
         if line.startswith('+++ '):
-            # Extract filename from +++ b/path/to/file
-            match = re.match(r'\+\+\+ [ab]/(.+)', line)
-            if match:
-                filename = match.group(1)
-                content_lines = []
+            # Start of file header; extract filename
+            m = re.match(r'\+\+\+ [ab]/(.+)', line)
+            current_file = m.group(1) if m else None
+            if current_file and current_file not in content_accumulator:
+                content_accumulator[current_file] = []
+            in_hunk = False
+            continue
 
-                # Skip to next hunk or end
-                i += 1
-                while i < n:
-                    hunk_line = lines[i]
-                    if hunk_line.startswith('@@'):
-                        # Process hunk content
-                        i += 1
-                        while i < n:
-                            content_line = lines[i]
-                            if content_line.startswith(('+++', '---', '@@')):
-                                break
-                            elif content_line.startswith(('+', ' ')):
-                                # Added or context line
-                                content_lines.append(content_line[1:])  # Remove prefix
-                            # Skip removed lines (start with -)
-                            i += 1
-                        break
-                    i += 1
+        if line.startswith('@@'):
+            # Enter a hunk for the current file
+            in_hunk = True
+            continue
 
-                if content_lines:  # Only add if there's actual content
-                    files.append({
-                        'filename': filename,
-                        'content': '\n'.join(content_lines)
-                    })
-        else:
-            i += 1
+        if current_file and in_hunk:
+            if line.startswith(('+++', '---', '@@')):
+                # Header or next hunk marker
+                if line.startswith('@@'):
+                    in_hunk = True
+                else:
+                    in_hunk = False
+                continue
+            if line.startswith(('+', ' ')):
+                content_accumulator[current_file].append(line[1:])
+            # skip removed lines starting with '-'
+
+    for fname, parts in content_accumulator.items():
+        if parts:
+            files.append({'filename': fname, 'content': '\n'.join(parts)})
 
     return files
 

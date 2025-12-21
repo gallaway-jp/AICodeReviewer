@@ -20,6 +20,23 @@ from .config import config
 
 # Cache for file contents to avoid re-reading large files
 _file_content_cache = {}
+def _parse_severity(feedback: str) -> str:
+    """Infer severity from AI feedback text using simple keyword heuristics."""
+    try:
+        text = feedback.lower()
+        if any(k in text for k in ["critical", "critically"]):
+            return "critical"
+        if "high" in text or "severe" in text:
+            return "high"
+        if "medium" in text:
+            return "medium"
+        if "low" in text or "minor" in text:
+            return "low"
+        if "info" in text or "informational" in text:
+            return "info"
+    except Exception:
+        pass
+    return "medium"
 
 
 def _read_file_content(file_path: Path) -> str:
@@ -112,7 +129,7 @@ def collect_review_issues(target_files: List[Any], review_type: str, client, lan
                     file_path=str(file_path),
                     line_number=None,  # Could be enhanced to extract line numbers
                     issue_type=review_type,
-                    severity='medium',  # Could be enhanced to detect severity
+                    severity=_parse_severity(feedback),
                     description=f"Review feedback for {display_name}",
                     code_snippet=code[:200] + "..." if len(code) > 200 else code,
                     ai_feedback=feedback
