@@ -15,6 +15,7 @@ The workflow follows these steps:
 6. Generate and save reports
 """
 import argparse
+import logging
 from datetime import datetime
 
 from aicodereviewer.auth import get_profile_name, set_profile_name, clear_profile, get_system_language
@@ -25,6 +26,8 @@ from aicodereviewer.reviewer import collect_review_issues
 from aicodereviewer.interactive import interactive_review_confirmation
 from aicodereviewer.reporter import generate_review_report
 from aicodereviewer.models import ReviewReport, calculate_quality_score
+
+logger = logging.getLogger(__name__)
 
 
 def main():
@@ -92,6 +95,17 @@ def main():
 
     args = parser.parse_args()
 
+    # Configure logging
+    try:
+        log_level_name = 'INFO'
+        from aicodereviewer.config import config as _config
+        lvl = _config.get('logging', 'log_level', 'INFO')
+        if isinstance(lvl, str):
+            log_level_name = lvl.upper()
+        logging.basicConfig(level=getattr(logging, log_level_name, logging.INFO), format='[%(levelname)s] %(message)s')
+    except Exception:
+        logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
+
     # Handle profile management commands first
     if args.set_profile:
         set_profile_name(args.set_profile)
@@ -154,21 +168,21 @@ def main():
             with open(args.spec_file, 'r', encoding='utf-8') as f:
                 spec_content = f.read()
         except FileNotFoundError:
-            print(f"Error: Specification file not found: {args.spec_file}")
+            logger.error(f"Error: Specification file not found: {args.spec_file}")
             return
         except Exception as e:
-            print(f"Error reading specification file: {e}")
+            logger.error(f"Error reading specification file: {e}")
             return
 
     # Collect all review issues from AI analysis
-    print(f"\nCollecting review issues from {num_files} files...")
+    logger.info(f"Collecting review issues from {num_files} files...")
     issues = collect_review_issues(target_files, args.type, client, target_lang, spec_content)
 
     if not issues:
-        print("No review issues found!")
+        logger.info("No review issues found!")
         return
 
-    print(f"\nFound {len(issues)} review issues. Starting interactive confirmation...")
+    logger.info(f"Found {len(issues)} review issues. Starting interactive confirmation...")
 
     # Interactive review confirmation and potential fixes
     resolved_issues = interactive_review_confirmation(issues, client, args.type, target_lang)
@@ -194,8 +208,8 @@ def main():
 
     # Generate and save report files
     output_file = generate_review_report(report, args.output)
-    print(f"\n✅ Review complete! Report saved to: {output_file}")
-    print(f"   Summary: {output_file.replace('.json', '_summary.txt')}")
+    logger.info(f"Review complete! Report saved to: {output_file}")
+    logger.info(f"Summary: {output_file.replace('.json', '_summary.txt')}")
 
 
 if __name__ == "__main__":

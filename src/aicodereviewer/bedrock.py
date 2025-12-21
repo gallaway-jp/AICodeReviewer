@@ -11,10 +11,16 @@ Classes:
 """
 import boto3
 import time
+import logging
 from botocore.exceptions import ClientError, ProfileNotFound, TokenRetrievalError
 from botocore.config import Config
+from typing import Optional
 
 from .config import config
+from .interfaces import AIClient
+
+
+logger = logging.getLogger(__name__)
 
 
 class BedrockClient:
@@ -83,7 +89,7 @@ class BedrockClient:
         if self.request_count >= self.max_requests_per_minute:
             sleep_time = 60 - (current_time - self.window_start)
             if sleep_time > 0:
-                print(f"Rate limit reached. Sleeping for {sleep_time:.1f} seconds...")
+                logger.info(f"Rate limit reached. Sleeping for {sleep_time:.1f} seconds...")
                 time.sleep(sleep_time)
                 self.request_count = 0
                 self.window_start = time.time()
@@ -110,7 +116,7 @@ class BedrockClient:
         except (TokenRetrievalError, ClientError) as e:
             raise Exception("AWSログインの期限が切れています。'aws sso login --profile <プロファイル名>' を実行してください。")
 
-    def get_review(self, code_content, review_type="security", lang="en", spec_content=None):
+    def get_review(self, code_content: str, review_type: str = "security", lang: str = "en", spec_content: Optional[str] = None) -> str:
         """
         Perform AI-powered code review with specialized prompts.
 
@@ -193,7 +199,7 @@ class BedrockClient:
         except ClientError as e:
             error_code = e.response['Error']['Code']
             if error_code == 'ThrottlingException':
-                print("AWS API rate limit exceeded. Waiting before retry...")
+                logger.warning("AWS API rate limit exceeded. Waiting before retry...")
                 time.sleep(30)
                 return self.get_review(code_content, review_type, lang)  # Retry once
             elif error_code == 'ValidationException':
