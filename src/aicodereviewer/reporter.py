@@ -10,8 +10,11 @@ Functions:
     generate_review_report: Create and save detailed review reports
 """
 import json
+import logging
 
 from .models import ReviewReport
+
+logger = logging.getLogger(__name__)
 
 
 def generate_review_report(report: ReviewReport, output_file: str = None) -> str:
@@ -40,6 +43,7 @@ def generate_review_report(report: ReviewReport, output_file: str = None) -> str
     # Save JSON report
     with open(output_file, 'w', encoding='utf-8') as f:
         json.dump(report.to_dict(), f, indent=2, ensure_ascii=False)
+    logger.info(f"Saved JSON review report to {output_file}")
 
     # Generate human-readable summary
     summary_file = output_file.replace('.json', '_summary.txt')
@@ -81,5 +85,6 @@ def generate_review_report(report: ReviewReport, output_file: str = None) -> str
             f.write(f"  Description: {issue.description}\n")
             f.write(f"  Code: {issue.code_snippet}\n")
             f.write(f"  AI Feedback: {issue.ai_feedback[:200]}...\n")
+    logger.info(f"Saved human-readable summary to {summary_file}")
 
     return output_file
