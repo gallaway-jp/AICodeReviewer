@@ -146,7 +146,10 @@ Data and other attributes defined here:<br>
 &nbsp;&nbsp;&nbsp;&nbsp;issues_found:&nbsp;List[src.aicodereviewer.models.<a href="#ReviewIssue">ReviewIssue</a>],<br>
 &nbsp;&nbsp;&nbsp;&nbsp;generated_at:&nbsp;datetime.datetime,<br>
 &nbsp;&nbsp;&nbsp;&nbsp;language:&nbsp;str,<br>
-&nbsp;&nbsp;&nbsp;&nbsp;diff_source:&nbsp;Optional[str]&nbsp;=&nbsp;None<br>
+&nbsp;&nbsp;&nbsp;&nbsp;diff_source:&nbsp;Optional[str]&nbsp;=&nbsp;None,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;quality_score:&nbsp;Optional[int]&nbsp;=&nbsp;None,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;programmers:&nbsp;List[str]&nbsp;=&nbsp;&amp;lt;factory&amp;gt;,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;reviewers:&nbsp;List[str]&nbsp;=&nbsp;&amp;lt;factory&amp;gt;<br>
 )&nbsp;-&amp;gt;&nbsp;None<br>
 &nbsp;<br>
 Complete&nbsp;review&nbsp;report&nbsp;containing&nbsp;all&nbsp;issues&nbsp;and&nbsp;metadata.<br>
@@ -162,7 +165,10 @@ Attributes:<br>
 &nbsp;&nbsp;&nbsp;&nbsp;issues_found&nbsp;(List[<a href="#ReviewIssue">ReviewIssue</a>]):&nbsp;All&nbsp;issues&nbsp;discovered&nbsp;during&nbsp;review<br>
 &nbsp;&nbsp;&nbsp;&nbsp;generated_at&nbsp;(datetime):&nbsp;Timestamp&nbsp;when&nbsp;report&nbsp;was&nbsp;generated<br>
 &nbsp;&nbsp;&nbsp;&nbsp;language&nbsp;(str):&nbsp;Language&nbsp;used&nbsp;for&nbsp;AI&nbsp;responses&nbsp;('en'&nbsp;or&nbsp;'ja')<br>
-&nbsp;&nbsp;&nbsp;&nbsp;diff_source&nbsp;(Optional[str]):&nbsp;Diff&nbsp;source&nbsp;for&nbsp;diff-based&nbsp;reviews<br>&nbsp;</span></td></tr>
+&nbsp;&nbsp;&nbsp;&nbsp;diff_source&nbsp;(Optional[str]):&nbsp;Diff&nbsp;source&nbsp;for&nbsp;diff-based&nbsp;reviews<br>
+&nbsp;&nbsp;&nbsp;&nbsp;quality_score&nbsp;(Optional[int]):&nbsp;Aggregated&nbsp;quality&nbsp;score&nbsp;(0-100)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;programmers&nbsp;(List[str]):&nbsp;List&nbsp;of&nbsp;programmers&nbsp;who&nbsp;worked&nbsp;on&nbsp;the&nbsp;code<br>
+&nbsp;&nbsp;&nbsp;&nbsp;reviewers&nbsp;(List[str]):&nbsp;List&nbsp;of&nbsp;reviewers&nbsp;who&nbsp;performed&nbsp;the&nbsp;review<br>&nbsp;</span></td></tr>
 <tr><td>&nbsp;</td>
 <td class="singlecolumn">Methods defined here:<br>
 <dl><dt><a name="ReviewReport-__eq__"><strong>__eq__</strong></a>(self, other)</dt><dd><span class="code">Return&nbsp;self==value.</span></dd></dl>
@@ -176,7 +182,10 @@ Attributes:<br>
     issues_found: List[src.aicodereviewer.models.ReviewIssue],
     generated_at: datetime.datetime,
     language: str,
-    diff_source: Optional[str] = None
+    diff_source: Optional[str] = None,
+    quality_score: Optional[int] = None,
+    programmers: List[str] = &lt;factory&gt;,
+    reviewers: List[str] = &lt;factory&gt;
 ) -&gt; None</dt><dd><span class="code">Initialize&nbsp;self.&nbsp;&nbsp;See&nbsp;help(type(self))&nbsp;for&nbsp;accurate&nbsp;signature.</span></dd></dl>
 
 <dl><dt><a name="ReviewReport-__replace__"><strong>__replace__</strong></a> = _replace(self, /, **changes)<span class="grey"><span class="heading-text"> from <a href="dataclasses.html">dataclasses</a></span></span></dt></dl>
@@ -213,19 +222,37 @@ Data descriptors defined here:<br>
 </dl>
 <hr>
 Data and other attributes defined here:<br>
-<dl><dt><strong>__annotations__</strong> = {'diff_source': typing.Optional[str], 'generated_at': &lt;class 'datetime.datetime'&gt;, 'issues_found': typing.List[src.aicodereviewer.models.ReviewIssue], 'language': &lt;class 'str'&gt;, 'project_path': &lt;class 'str'&gt;, 'review_type': &lt;class 'str'&gt;, 'scope': &lt;class 'str'&gt;, 'total_files_scanned': &lt;class 'int'&gt;}</dl>
+<dl><dt><strong>__annotations__</strong> = {'diff_source': typing.Optional[str], 'generated_at': &lt;class 'datetime.datetime'&gt;, 'issues_found': typing.List[src.aicodereviewer.models.ReviewIssue], 'language': &lt;class 'str'&gt;, 'programmers': typing.List[str], 'project_path': &lt;class 'str'&gt;, 'quality_score': typing.Optional[int], 'review_type': &lt;class 'str'&gt;, 'reviewers': typing.List[str], 'scope': &lt;class 'str'&gt;, ...}</dl>
 
-<dl><dt><strong>__dataclass_fields__</strong> = {'diff_source': Field(name='diff_source',type=typing.Optional[st...appingproxy({}),kw_only=False,_field_type=_FIELD), 'generated_at': Field(name='generated_at',type=&lt;class 'datetime....appingproxy({}),kw_only=False,_field_type=_FIELD), 'issues_found': Field(name='issues_found',type=typing.List[src.a...appingproxy({}),kw_only=False,_field_type=_FIELD), 'language': Field(name='language',type=&lt;class 'str'&gt;,default...appingproxy({}),kw_only=False,_field_type=_FIELD), 'project_path': Field(name='project_path',type=&lt;class 'str'&gt;,def...appingproxy({}),kw_only=False,_field_type=_FIELD), 'review_type': Field(name='review_type',type=&lt;class 'str'&gt;,defa...appingproxy({}),kw_only=False,_field_type=_FIELD), 'scope': Field(name='scope',type=&lt;class 'str'&gt;,default=&lt;d...appingproxy({}),kw_only=False,_field_type=_FIELD), 'total_files_scanned': Field(name='total_files_scanned',type=&lt;class 'in...appingproxy({}),kw_only=False,_field_type=_FIELD)}</dl>
+<dl><dt><strong>__dataclass_fields__</strong> = {'diff_source': Field(name='diff_source',type=typing.Optional[st...appingproxy({}),kw_only=False,_field_type=_FIELD), 'generated_at': Field(name='generated_at',type=&lt;class 'datetime....appingproxy({}),kw_only=False,_field_type=_FIELD), 'issues_found': Field(name='issues_found',type=typing.List[src.a...appingproxy({}),kw_only=False,_field_type=_FIELD), 'language': Field(name='language',type=&lt;class 'str'&gt;,default...appingproxy({}),kw_only=False,_field_type=_FIELD), 'programmers': Field(name='programmers',type=typing.List[str],d...appingproxy({}),kw_only=False,_field_type=_FIELD), 'project_path': Field(name='project_path',type=&lt;class 'str'&gt;,def...appingproxy({}),kw_only=False,_field_type=_FIELD), 'quality_score': Field(name='quality_score',type=typing.Optional[...appingproxy({}),kw_only=False,_field_type=_FIELD), 'review_type': Field(name='review_type',type=&lt;class 'str'&gt;,defa...appingproxy({}),kw_only=False,_field_type=_FIELD), 'reviewers': Field(name='reviewers',type=typing.List[str],def...appingproxy({}),kw_only=False,_field_type=_FIELD), 'scope': Field(name='scope',type=&lt;class 'str'&gt;,default=&lt;d...appingproxy({}),kw_only=False,_field_type=_FIELD), ...}</dl>
 
 <dl><dt><strong>__dataclass_params__</strong> = _DataclassParams(init=True,repr=True,eq=True,ord...rue,kw_only=False,slots=False,weakref_slot=False)</dl>
 
 <dl><dt><strong>__hash__</strong> = None</dl>
 
-<dl><dt><strong>__match_args__</strong> = ('project_path', 'review_type', 'scope', 'total_files_scanned', 'issues_found', 'generated_at', 'language', 'diff_source')</dl>
+<dl><dt><strong>__match_args__</strong> = ('project_path', 'review_type', 'scope', 'total_files_scanned', 'issues_found', 'generated_at', 'language', 'diff_source', 'quality_score', 'programmers', 'reviewers')</dl>
 
 <dl><dt><strong>diff_source</strong> = None</dl>
 
+<dl><dt><strong>quality_score</strong> = None</dl>
+
 </td></tr></table></td></tr></table><p>
+<table class="section">
+<tr class="decor functions-decor heading-text">
+<td class="section-title" colspan=3>&nbsp;<br><strong class="bigsection">Functions</strong></td></tr>
+    
+<tr><td class="decor functions-decor"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></td><td>&nbsp;</td>
+<td class="singlecolumn"><dl><dt><a name="-calculate_quality_score"><strong>calculate_quality_score</strong></a>(issues: List[src.aicodereviewer.models.ReviewIssue]) -&gt; int</dt><dd><span class="code">Calculate&nbsp;an&nbsp;aggregated&nbsp;quality&nbsp;score&nbsp;based&nbsp;on&nbsp;issues.<br>
+&nbsp;<br>
+Starts&nbsp;with&nbsp;100&nbsp;points&nbsp;and&nbsp;deducts&nbsp;based&nbsp;on&nbsp;issue&nbsp;severity&nbsp;and&nbsp;count.<br>
+Score&nbsp;ranges&nbsp;from&nbsp;0-100.<br>
+&nbsp;<br>
+Args:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;issues:&nbsp;List&nbsp;of&nbsp;review&nbsp;issues<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<br>
+Returns:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;Quality&nbsp;score&nbsp;between&nbsp;0-100</span></dd></dl>
+</td></tr></table><p>
 <table class="section">
 <tr class="decor data-decor heading-text">
 <td class="section-title" colspan=3>&nbsp;<br><strong class="bigsection">Data</strong></td></tr>

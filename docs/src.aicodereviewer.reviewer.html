@@ -13,7 +13,7 @@
 &nbsp;<br>
 This&nbsp;module&nbsp;handles&nbsp;the&nbsp;core&nbsp;review&nbsp;process&nbsp;including&nbsp;file&nbsp;content&nbsp;reading,<br>
 AI-powered&nbsp;issue&nbsp;detection,&nbsp;and&nbsp;resolution&nbsp;verification&nbsp;with&nbsp;performance<br>
-optimizations&nbsp;like&nbsp;file&nbsp;caching&nbsp;and&nbsp;size&nbsp;limits.<br>
+optimizations&nbsp;like&nbsp;file&nbsp;caching,&nbsp;size&nbsp;limits,&nbsp;and&nbsp;batch&nbsp;processing.<br>
 &nbsp;<br>
 Functions:<br>
 &nbsp;&nbsp;&nbsp;&nbsp;_read_file_content:&nbsp;Cached&nbsp;file&nbsp;reading&nbsp;with&nbsp;size&nbsp;validation<br>
@@ -25,8 +25,9 @@ Functions:<br>
 <td class="section-title" colspan=3>&nbsp;<br><strong class="bigsection">Modules</strong></td></tr>
     
 <tr><td class="decor pkg-content-decor"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></td><td>&nbsp;</td>
-<td class="singlecolumn"><table><tr><td class="multicolumn"><a href="os.html">os</a><br>
-</td><td class="multicolumn"></td><td class="multicolumn"></td><td class="multicolumn"></td></tr></table></td></tr></table><p>
+<td class="singlecolumn"><table><tr><td class="multicolumn"><a href="logging.html">logging</a><br>
+</td><td class="multicolumn"><a href="os.html">os</a><br>
+</td><td class="multicolumn"></td><td class="multicolumn"></td></tr></table></td></tr></table><p>
 <table class="section">
 <tr class="decor functions-decor heading-text">
 <td class="section-title" colspan=3>&nbsp;<br><strong class="bigsection">Functions</strong></td></tr>
@@ -36,11 +37,13 @@ Functions:<br>
     target_files: List[Any],
     review_type: str,
     client,
-    lang: str
+    lang: str,
+    spec_content: Optional[str] = None
 ) -&gt; List[src.aicodereviewer.models.ReviewIssue]</dt><dd><span class="code">Collect&nbsp;all&nbsp;review&nbsp;issues&nbsp;from&nbsp;target&nbsp;files&nbsp;using&nbsp;AI&nbsp;analysis.<br>
 &nbsp;<br>
 Processes&nbsp;each&nbsp;file&nbsp;through&nbsp;the&nbsp;AI&nbsp;review&nbsp;client&nbsp;to&nbsp;identify&nbsp;code&nbsp;quality<br>
 issues.&nbsp;Handles&nbsp;both&nbsp;project-wide&nbsp;scans&nbsp;and&nbsp;diff-based&nbsp;reviews.<br>
+Supports&nbsp;batch&nbsp;processing&nbsp;when&nbsp;enabled&nbsp;in&nbsp;config.<br>
 &nbsp;<br>
 Args:<br>
 &nbsp;&nbsp;&nbsp;&nbsp;target_files&nbsp;(List[Any]):&nbsp;Files&nbsp;to&nbsp;review&nbsp;-&nbsp;either&nbsp;Path&nbsp;objects&nbsp;(project&nbsp;scope)<br>
@@ -48,6 +51,7 @@ Args:<br>
 &nbsp;&nbsp;&nbsp;&nbsp;review_type&nbsp;(str):&nbsp;Type&nbsp;of&nbsp;review&nbsp;to&nbsp;perform&nbsp;(e.g.,&nbsp;'security',&nbsp;'performance')<br>
 &nbsp;&nbsp;&nbsp;&nbsp;client:&nbsp;AI&nbsp;review&nbsp;client&nbsp;instance<br>
 &nbsp;&nbsp;&nbsp;&nbsp;lang&nbsp;(str):&nbsp;Language&nbsp;for&nbsp;AI&nbsp;responses&nbsp;('en'&nbsp;or&nbsp;'ja')<br>
+&nbsp;&nbsp;&nbsp;&nbsp;spec_content&nbsp;(Optional[str]):&nbsp;Specification&nbsp;document&nbsp;content&nbsp;for&nbsp;specification&nbsp;review<br>
 &nbsp;<br>
 Returns:<br>
 &nbsp;&nbsp;&nbsp;&nbsp;List[ReviewIssue]:&nbsp;List&nbsp;of&nbsp;identified&nbsp;review&nbsp;issues</span></dd></dl>
@@ -77,5 +81,7 @@ Returns:<br>
 <tr><td class="decor data-decor"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></td><td>&nbsp;</td>
 <td class="singlecolumn"><strong>Dict</strong> = typing.Dict<br>
 <strong>List</strong> = typing.List<br>
-<strong>config</strong> = &lt;src.aicodereviewer.config.Config object&gt;</td></tr></table>
+<strong>Optional</strong> = typing.Optional<br>
+<strong>config</strong> = &lt;src.aicodereviewer.config.Config object&gt;<br>
+<strong>logger</strong> = &lt;Logger src.aicodereviewer.reviewer (WARNING)&gt;</td></tr></table>
 </body></html>

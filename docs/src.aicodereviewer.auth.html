@@ -27,7 +27,8 @@ Functions:<br>
 <tr><td class="decor pkg-content-decor"><span class="code">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></td><td>&nbsp;</td>
 <td class="singlecolumn"><table><tr><td class="multicolumn"><a href="keyring.html">keyring</a><br>
 </td><td class="multicolumn"><a href="locale.html">locale</a><br>
-</td><td class="multicolumn"></td><td class="multicolumn"></td></tr></table></td></tr></table><p>
+</td><td class="multicolumn"><a href="os.html">os</a><br>
+</td><td class="multicolumn"></td></tr></table></td></tr></table><p>
 <table class="section">
 <tr class="decor functions-decor heading-text">
 <td class="section-title" colspan=3>&nbsp;<br><strong class="bigsection">Functions</strong></td></tr>
@@ -44,10 +45,10 @@ If&nbsp;no&nbsp;profile&nbsp;is&nbsp;stored,&nbsp;guides&nbsp;user&nbsp;through&
 &nbsp;<br>
 Returns:<br>
 &nbsp;&nbsp;&nbsp;&nbsp;str:&nbsp;AWS&nbsp;profile&nbsp;name&nbsp;for&nbsp;authentication</span></dd></dl>
- <dl><dt><a name="-get_system_language"><strong>get_system_language</strong></a>()</dt><dd><span class="code">Detect&nbsp;system&nbsp;language&nbsp;for&nbsp;UI&nbsp;localization.<br>
+ <dl><dt><a name="-get_system_language"><strong>get_system_language</strong></a>()</dt><dd><span class="code">Detect&nbsp;system&nbsp;language&nbsp;for&nbsp;UI&nbsp;localization&nbsp;using&nbsp;recommended&nbsp;APIs.<br>
 &nbsp;<br>
-Automatically&nbsp;detects&nbsp;if&nbsp;the&nbsp;system&nbsp;locale&nbsp;is&nbsp;Japanese&nbsp;to&nbsp;provide<br>
-appropriate&nbsp;language&nbsp;for&nbsp;AI&nbsp;responses&nbsp;and&nbsp;user&nbsp;interface.<br>
+Prefers&nbsp;environment&nbsp;variables,&nbsp;then&nbsp;uses&nbsp;locale.setlocale/getlocale<br>
+to&nbsp;read&nbsp;the&nbsp;user's&nbsp;configured&nbsp;locale&nbsp;without&nbsp;deprecated&nbsp;functions.<br>
 &nbsp;<br>
 Returns:<br>
 &nbsp;&nbsp;&nbsp;&nbsp;str:&nbsp;'ja'&nbsp;for&nbsp;Japanese&nbsp;systems,&nbsp;'en'&nbsp;for&nbsp;others</span></dd></dl>
