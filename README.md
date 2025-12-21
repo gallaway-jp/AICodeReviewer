@@ -37,7 +37,10 @@ dist\AICodeReviewer.exe /path/to/your/project
 - `path`: Path to the project folder to review (required for project scope, optional for diff scope to provide additional context)
 - `--scope`: Review scope - `project` (default, entire project) or `diff` (changes only)
 - `--diff-file FILE`: Path to diff file (TortoiseSVN/TortoiseGit format) when using diff scope
-- `--commits RANGE`: Commit range for diff generation (e.g., `HEAD~1..HEAD`) when using diff scope
+- `--commits RANGE`: Commit/revision range for diff generation when using diff scope
+  - Git format: `HEAD~1..HEAD` or `abc123..def456`
+  - SVN format: `PREV:HEAD` or `100:101`
+  - Automatically detects whether project uses Git or SVN
 - `--type`: Review type (default: best_practices)
   - `security`: Comprehensive security analysis covering OWASP Top 10 vulnerabilities and additional security risks including injection attacks, authentication issues, XSS, CSRF, insecure configurations, and secure coding practices with severity levels
   - `performance`: Optimize efficiency and resources
@@ -93,8 +96,11 @@ python -m aicodereviewer . --scope diff --diff-file changes.patch --type best_pr
 # Review only changes from a diff file (without project context)
 python -m aicodereviewer --scope diff --diff-file changes.patch --type best_practices --programmers "Alice" --reviewers "Charlie"
 
-# Review changes between two commits
-python -m aicodereviewer . --scope diff --commits HEAD~1..HEAD --type maintainability
+# Review changes between two commits (Git)
+python -m aicodereviewer . --scope diff --commits HEAD~1..HEAD --type maintainability --programmers "Alice" --reviewers "Charlie"
+
+# Review changes between two revisions (SVN)
+python -m aicodereviewer . --scope diff --commits 100:101 --type maintainability --programmers "Alice" --reviewers "Charlie"
 
 # Review recent changes in a pull request style
 python -m aicodereviewer . --scope diff --commits main..feature-branch --type testing

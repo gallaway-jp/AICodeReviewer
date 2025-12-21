@@ -123,11 +123,13 @@ class TestParseDiffFile:
 
 
 class TestGetDiffFromCommits:
-    """Test git diff generation functionality"""
+    """Test git/svn diff generation functionality"""
 
+    @patch('aicodereviewer.scanner.detect_vcs_type')
     @patch('subprocess.run')
-    def test_get_diff_from_commits_success(self, mock_run):
+    def test_get_diff_from_commits_success(self, mock_run, mock_detect_vcs):
         """Test successful git diff generation"""
+        mock_detect_vcs.return_value = 'git'
         mock_process = MagicMock()
         mock_process.stdout = "diff content here"
         mock_run.return_value = mock_process
@@ -137,9 +139,11 @@ class TestGetDiffFromCommits:
         assert result == "diff content here"
         mock_run.assert_called_once()
 
+    @patch('aicodereviewer.scanner.detect_vcs_type')
     @patch('subprocess.run')
-    def test_get_diff_from_commits_error(self, mock_run):
+    def test_get_diff_from_commits_error(self, mock_run, mock_detect_vcs):
         """Test git diff generation with error"""
+        mock_detect_vcs.return_value = 'git'
         from subprocess import CalledProcessError
         mock_run.side_effect = CalledProcessError(1, 'git', "Git error")
 
@@ -147,9 +151,11 @@ class TestGetDiffFromCommits:
 
         assert result is None
 
+    @patch('aicodereviewer.scanner.detect_vcs_type')
     @patch('subprocess.run')
-    def test_get_diff_from_commits_git_not_found(self, mock_run):
+    def test_get_diff_from_commits_git_not_found(self, mock_run, mock_detect_vcs):
         """Test git diff when git is not installed"""
+        mock_detect_vcs.return_value = 'git'
         mock_run.side_effect = FileNotFoundError()
 
         result = get_diff_from_commits("/path/to/project", "HEAD~1..HEAD")

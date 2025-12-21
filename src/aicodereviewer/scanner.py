@@ -8,7 +8,8 @@ and parsing diff files to identify changed code for targeted reviews.
 Functions:
     scan_project: Recursively find source files by extension
     parse_diff_file: Parse unified diff format to extract changed files
-    get_diff_from_commits: Generate diff from git commit range
+    detect_vcs_type: Detect whether project uses Git or SVN
+    get_diff_from_commits: Generate diff from Git or SVN commit/revision range
     scan_project_with_scope: Main entry point for scoped file discovery
 """
 import os
@@ -117,33 +118,87 @@ def parse_diff_file(diff_content: str) -> List[Dict[str, str]]:
     return files
 
 
-def get_diff_from_commits(project_path: str, commit_range: str) -> Optional[str]:
+def detect_vcs_type(project_path: str) -> Optional[str]:
     """
-    Generate diff content from a git commit range.
+    Detect the version control system used in the project.
 
-    Uses git diff to extract changes between commits for targeted code review.
+    Checks for the presence of .git or .svn directories to determine
+    whether the project uses Git or SVN.
 
     Args:
-        project_path (str): Path to the git repository
-        commit_range (str): Git commit range (e.g., 'HEAD~1..HEAD' or 'abc123..def456')
+        project_path (str): Path to the project directory
 
     Returns:
-        Optional[str]: Diff content as string, or None if git command fails
+        Optional[str]: 'git', 'svn', or None if no VCS detected
     """
+    git_dir = Path(project_path) / '.git'
+    svn_dir = Path(project_path) / '.svn'
+
+    if git_dir.exists():
+        return 'git'
+    elif svn_dir.exists():
+        return 'svn'
+    return None
+
+
+def get_diff_from_commits(project_path: str, commit_range: str) -> Optional[str]:
+    """
+    Generate diff content from a commit/revision range.
+
+    Automatically detects whether the project uses Git or SVN and uses
+    the appropriate diff command to extract changes for targeted code review.
+
+    Args:
+        project_path (str): Path to the repository (Git or SVN)
+        commit_range (str): Commit/revision range
+            - Git format: 'HEAD~1..HEAD' or 'abc123..def456'
+            - SVN format: 'PREV:HEAD' or '100:101' (will be converted to -r format)
+
+    Returns:
+        Optional[str]: Diff content as string, or None if command fails
+    """
+    vcs_type = detect_vcs_type(project_path)
+
+    if vcs_type is None:
+        print(f"No version control system detected in {project_path}")
+        print("Please ensure the project is a Git or SVN repository.")
+        return None
+
     try:
-        result = subprocess.run(
-            ['git', 'diff', commit_range],
-            cwd=project_path,
-            capture_output=True,
-            text=True,
-            check=True
-        )
+        if vcs_type == 'git':
+            result = subprocess.run(
+                ['git', 'diff', commit_range],
+                cwd=project_path,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+        elif vcs_type == 'svn':
+            # Convert commit range to SVN revision format if needed
+            # SVN expects -r REV1:REV2 format
+            if ':' in commit_range:
+                rev_range = commit_range
+            else:
+                rev_range = commit_range.replace('..', ':')
+            
+            result = subprocess.run(
+                ['svn', 'diff', '-r', rev_range],
+                cwd=project_path,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+        else:
+            print(f"Unsupported VCS type: {vcs_type}")
+            return None
+
         return result.stdout
+
     except subprocess.CalledProcessError as e:
-        print(f"Error getting diff from commits: {e}")
+        print(f"Error getting diff from {vcs_type.upper()}: {e}")
         return None
     except FileNotFoundError:
-        print("Git not found. Please ensure git is installed and in PATH.")
+        print(f"{vcs_type.upper()} not found. Please ensure {vcs_type} is installed and in PATH.")
         return None
 
 
@@ -158,7 +213,7 @@ def scan_project_with_scope(directory: Optional[str], scope: str = 'project', di
         directory (Optional[str]): Root directory path to scan (optional for diff scope)
         scope (str): Review scope ('project' or 'diff')
         diff_file (Optional[str]): Path to diff file for diff scope
-        commits (Optional[str]): Git commit range for diff scope
+        commits (Optional[str]): Git/SVN commit/revision range for diff scope
 
     Returns:
         List[Any]: For project scope: List[Path] of file paths
