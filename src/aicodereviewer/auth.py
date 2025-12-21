@@ -13,6 +13,7 @@ Functions:
 """
 import keyring
 import locale
+import os
 
 SERVICE_NAME = "AICodeReviewer"
 
@@ -87,18 +88,38 @@ def clear_profile():
 
 def get_system_language():
     """
-    Detect system language for UI localization.
+    Detect system language for UI localization using recommended APIs.
 
-    Automatically detects if the system locale is Japanese to provide
-    appropriate language for AI responses and user interface.
+    Prefers environment variables, then uses locale.setlocale/getlocale
+    to read the user's configured locale without deprecated functions.
 
     Returns:
         str: 'ja' for Japanese systems, 'en' for others
     """
     try:
-        lang, _ = locale.getdefaultlocale()
-        if lang and lang.startswith('ja'):
-            return 'ja'
-    except:
+        # Check common environment variables first
+        for var in ("LC_ALL", "LANG", "LANGUAGE"):
+            val = os.environ.get(var)
+            if val:
+                v = val.lower()
+                if v.startswith("ja"):
+                    return "ja"
+                if v.startswith("en"):
+                    return "en"
+
+        # Initialize locale from user settings and read it
+        try:
+            locale.setlocale(locale.LC_ALL, "")
+        except Exception:
+            # If setting locale fails, continue with current settings
+            pass
+
+        loc = locale.getlocale()[0]
+        if loc:
+            loc_lower = loc.lower()
+            if loc_lower.startswith("ja") or "japanese" in loc_lower:
+                return "ja"
+    except Exception:
+        # Fall through to default
         pass
-    return 'en'
+    return "en"

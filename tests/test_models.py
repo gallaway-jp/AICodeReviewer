@@ -4,7 +4,7 @@ Tests for AI Code Reviewer data models
 """
 import pytest
 from datetime import datetime
-from aicodereviewer.models import ReviewIssue, ReviewReport
+from aicodereviewer.models import ReviewIssue, ReviewReport, calculate_quality_score
 
 
 class TestReviewIssue:
@@ -154,3 +154,32 @@ class TestReviewReport:
         assert len(report.issues_found) == 1
         assert isinstance(report.generated_at, datetime)
         assert isinstance(report.issues_found[0].resolved_at, datetime)
+
+
+class TestCalculateQualityScore:
+    """Test quality score calculation"""
+
+    def test_quality_score_no_issues(self):
+        """Score should stay at 100 when there are no issues"""
+        assert calculate_quality_score([]) == 100
+
+    def test_quality_score_deductions(self):
+        """Score should deduct per severity with a lower bound of 0"""
+        issues = [
+            ReviewIssue(file_path="a.py", severity="critical"),
+            ReviewIssue(file_path="b.py", severity="high"),
+            ReviewIssue(file_path="c.py", severity="medium"),
+            ReviewIssue(file_path="d.py", severity="low"),
+            ReviewIssue(file_path="e.py", severity="info"),
+        ]
+
+        score = calculate_quality_score(issues)
+
+        # 100 - (20 + 10 + 5 + 2 + 1) = 62
+        assert score == 62
+
+    def test_quality_score_never_negative(self):
+        """Score should not drop below zero even with many high severity issues"""
+        issues = [ReviewIssue(file_path=f"f{i}.py", severity="critical") for i in range(10)]
+
+        assert calculate_quality_score(issues) == 0

@@ -1,0 +1,41 @@
+"""
+Tests for reviewer utilities such as file caching and size handling.
+"""
+import os
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
+
+from aicodereviewer import reviewer
+
+
+def test_read_file_content_caches_small_files():
+    reviewer._file_content_cache.clear()
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        file_path = Path(temp_dir) / "sample.py"
+        file_path.write_text("print('hello')\n")
+
+        first_read = reviewer._read_file_content(file_path)
+        assert first_read.startswith("print('hello')")
+
+        # Remove the file to ensure the second read comes from cache
+        os.remove(file_path)
+
+        second_read = reviewer._read_file_content(file_path)
+        assert second_read == first_read
+        assert str(file_path) in reviewer._file_content_cache
+
+
+def test_read_file_content_skips_large_files():
+    reviewer._file_content_cache.clear()
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        file_path = Path(temp_dir) / "big.py"
+        file_path.write_text("x = 1\n")
+
+        with patch('aicodereviewer.reviewer.os.path.getsize', return_value=reviewer.config.get('performance', 'max_file_size_mb') + 1):
+            content = reviewer._read_file_content(file_path)
+
+        assert content == ""
+        assert reviewer._file_content_cache == {}

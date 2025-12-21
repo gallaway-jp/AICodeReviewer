@@ -12,11 +12,12 @@ authors = [
 dependencies = [
     "boto3",
     "keyring",
+    "psutil",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.0.0",
+    "pytest>=9.0.2",
     "pytest-cov",
 ]
 
