@@ -37,7 +37,19 @@ def main():
     Command-line options support different review scopes (project vs diff),
     review types (security, performance, etc.), and output formats.
     """
-    parser = argparse.ArgumentParser(description="AICodeReviewer - Multi-language AI Review")
+    parser = argparse.ArgumentParser(
+        description="AICodeReviewer - Multi-language AI Review",
+        formatter_class=argparse.RawTextHelpFormatter,
+        epilog=(
+            "VCS diff behavior:\n"
+            "- When you run from a subdirectory inside a repository, diffs are scoped to that directory.\n"
+            "  Git (subdirectory): git diff RANGE -- .\n"
+            "  Git (repo root):    git diff RANGE\n"
+            "  SVN (subdirectory): svn diff -r REV1:REV2 .\n"
+            "  SVN (repo root):    svn diff -r REV1:REV2\n"
+            "- SVN ranges accept REV1..REV2 or REV1:REV2; both are normalized."
+        )
+    )
 
     # Profile management options
     parser.add_argument("--set-profile", metavar="PROFILE",
@@ -51,7 +63,12 @@ def main():
     parser.add_argument("--diff-file", metavar="FILE",
                         help="Path to diff file (TortoiseSVN/TortoiseGit format) for diff scope")
     parser.add_argument("--commits", metavar="RANGE",
-                        help="Commit range for diff (e.g., 'HEAD~1..HEAD' or 'abc123..def456')")
+                        help=(
+                            "Commit/revision range for diff. Examples:\n"
+                            "  Git: HEAD~1..HEAD or abc123..def456\n"
+                            "  SVN: PREV:HEAD or 100:101 (also accepts 100..101)\n"
+                            "Behavior: If run from a subdirectory, diff is scoped to that directory."
+                        ))
 
     # Code review options
     parser.add_argument("path", nargs="?", help="Path to the project folder (required for project scope, optional for diff scope to provide additional context)")
