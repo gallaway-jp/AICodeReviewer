@@ -2,6 +2,12 @@
 
 This directory contains demonstration materials for the AICodeReviewer tool, including a sample project with intentional code issues and scripts to run various review types.
 
+## 📚 Documentation
+
+- **[DEMO_WALKTHROUGH.md](DEMO_WALKTHROUGH.md)** - Step-by-step guide showing what to expect when running reviews
+- **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** - Quick reference card with commands and issue examples
+- **[sample_project/README.md](sample_project/README.md)** - Detailed list of intentional issues in the sample code
+
 ## Contents
 
 - **sample_project/** - A Python project with intentional security, performance, and quality issues
