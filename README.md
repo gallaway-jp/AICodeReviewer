@@ -41,6 +41,12 @@ dist\AICodeReviewer.exe /path/to/your/project
   - Git format: `HEAD~1..HEAD` or `abc123..def456`
   - SVN format: `PREV:HEAD` or `100:101`
   - Automatically detects whether project uses Git or SVN
+   - VCS diff behavior: When you run from a subdirectory inside a repository, AICodeReviewer scopes the diff to that directory. At the repository root, the diff covers the whole repo.
+      - Git (subdirectory): `git diff HEAD~1..HEAD -- .`
+      - Git (repo root): `git diff HEAD~1..HEAD`
+      - SVN (subdirectory): `svn diff -r REV1:REV2 .`
+      - SVN (repo root): `svn diff -r REV1:REV2`
+      - SVN ranges: You can use `REV1..REV2` or `REV1:REV2`; both are accepted and normalized.
 - `--type`: Review type (default: best_practices)
   - `security`: Comprehensive security analysis covering OWASP Top 10 vulnerabilities and additional security risks including injection attacks, authentication issues, XSS, CSRF, insecure configurations, and secure coding practices with severity levels
   - `performance`: Optimize efficiency and resources
