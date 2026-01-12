@@ -28,9 +28,10 @@ class AppRunner:
         target_lang: str,
         programmers: List[str],
         reviewers: List[str],
+        dry_run: bool = False,
     ) -> Optional[str]:
         # Clean old backups
-        if path:
+        if path and not dry_run:
             cleanup_old_backups(path)
 
         scope_desc = "entire project" if scope == 'project' else f"changes ({diff_file or commits})"
@@ -44,6 +45,18 @@ class AppRunner:
         num_files = len(target_files)
         estimated_time = num_files * 8
         logger.info(f"Found {num_files} files to review (estimated time: {estimated_time // 60}m {estimated_time % 60}s)")
+
+        # Dry-run mode: show files and exit without API calls
+        if dry_run:
+            logger.info("\n=== DRY RUN MODE - Files that would be analyzed ===")
+            for i, file_info in enumerate(target_files, 1):
+                file_path = file_info.get('path', file_info) if isinstance(file_info, dict) else file_info
+                logger.info(f"  {i}. {file_path}")
+            logger.info(f"\nTotal: {num_files} files")
+            logger.info(f"Review type: {review_type}")
+            logger.info(f"Language: {target_lang}")
+            logger.info("\nNo API calls made. Use without --dry-run to perform actual analysis.")
+            return None
 
         logger.info(f"Collecting review issues from {num_files} files...")
         issues: List[ReviewIssue] = collect_review_issues(target_files, review_type, self.client, target_lang, spec_content)

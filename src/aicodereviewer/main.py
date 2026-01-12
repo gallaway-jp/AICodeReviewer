@@ -92,6 +92,10 @@ def main():
     parser.add_argument("--reviewers", nargs='+', metavar="NAME",
                         help="Names of reviewers performing the review (space-separated)")
 
+    # Dry run option
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Show files that would be analyzed without making API calls")
+
     args = parser.parse_args()
 
     # Configure logging: crisp console output for interactive UI
@@ -152,11 +156,12 @@ def main():
     if args.scope == 'project' and not args.path:
         parser.error("path is required for project scope (or use --set-profile or --clear-profile)")
 
-    # Require programmers and reviewers for code review operations
-    if not args.programmers:
-        parser.error("--programmers is required for code review")
-    if not args.reviewers:
-        parser.error("--reviewers is required for code review")
+    # Require programmers and reviewers for code review operations (not needed for dry-run)
+    if not args.dry_run:
+        if not args.programmers:
+            parser.error("--programmers is required for code review")
+        if not args.reviewers:
+            parser.error("--reviewers is required for code review")
 
     # Require spec-file when using specification review type
     if args.type == 'specification' and not args.spec_file:
@@ -167,12 +172,14 @@ def main():
     if target_lang == 'default':
         target_lang = get_system_language()
 
-    # Initialize AWS Bedrock client with configured authentication
-    client = BedrockClient()
+    # Initialize AWS Bedrock client with configured authentication (skip for dry-run)
+    client = None
+    if not args.dry_run:
+        client = BedrockClient()
 
     # Load specification document if provided
     spec_content = None
-    if args.spec_file:
+    if args.spec_file and not args.dry_run:
         try:
             with open(args.spec_file, 'r', encoding='utf-8') as f:
                 spec_content = f.read()
@@ -184,7 +191,8 @@ def main():
             return
 
     # Clean up old backup files to manage disk space
-    cleanup_old_backups(args.path)
+    if args.path and not args.dry_run:
+        cleanup_old_backups(args.path)
 
     # Run orchestration
     runner = AppRunner(client, scan_fn=scan_project_with_scope)
@@ -196,8 +204,9 @@ def main():
         review_type=args.type,
         spec_content=spec_content,
         target_lang=target_lang,
-        programmers=args.programmers,
-        reviewers=args.reviewers,
+        programmers=args.programmers or [],
+        reviewers=args.reviewers or [],
+        dry_run=args.dry_run,
     )
 
     # Orchestration handles reporting/logging
