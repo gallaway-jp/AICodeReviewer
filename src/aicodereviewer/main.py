@@ -74,7 +74,7 @@ def main():
 
     # Code review options
     parser.add_argument("path", nargs="?", help="Path to the project folder (required for project scope, optional for diff scope to provide additional context)")
-    parser.add_argument("--type", choices=['security', 'performance', 'best_practices', 'maintainability', 'documentation', 'testing', 'accessibility', 'scalability', 'compatibility', 'error_handling', 'complexity', 'architecture', 'license', 'specification'],
+    parser.add_argument("--type", choices=['security', 'performance', 'best_practices', 'maintainability', 'documentation', 'testing', 'accessibility', 'scalability', 'compatibility', 'error_handling', 'complexity', 'architecture', 'license', 'specification', 'localization'],
                         default='best_practices')
     parser.add_argument("--spec-file", metavar="FILE",
                         help="Path to specification document file (required when using --type specification)")
