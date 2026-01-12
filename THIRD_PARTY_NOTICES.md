@@ -7,11 +7,7 @@ This project bundles or depends on the following third-party packages. Their lic
 - keyring — MIT
 - psutil — BSD-3-Clause
 - pytest (dev) — MIT
-- colorama (via pytest) — BSD-3-Clause
-- iniconfig (via pytest) — MIT
-- packaging (via pytest) — BSD-3-Clause
-- pluggy (via pytest) — MIT
-- Pygments (via pytest) — BSD-2-Clause
+- pip-licenses (dev) — MIT
 
 Notes:
 - Apache-2.0: retain license text; include NOTICE files if provided by the dependency.
