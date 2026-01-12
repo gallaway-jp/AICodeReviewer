@@ -85,6 +85,11 @@ class Config:
         self.config.add_section('model')
         self.config.set('model', 'model_id', 'anthropic.claude-3-5-sonnet-20240620-v1:0')
 
+        self.config.add_section('aws')
+        self.config.set('aws', 'access_key_id', '')
+        self.config.set('aws', 'region', 'us-east-1')
+        self.config.set('aws', 'session_token', '')
+
     def get(self, section: str, key: str, fallback: Any = None) -> Any:
         """
         Get configuration value with automatic type conversion.
@@ -128,6 +133,9 @@ class Config:
                     return value.lower() == 'true'
             elif section == 'model':
                 # Model ID is returned as string
+                return value
+            elif section == 'aws':
+                # AWS credentials are returned as strings
                 return value
 
             return value

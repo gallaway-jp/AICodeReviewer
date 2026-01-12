@@ -15,13 +15,13 @@ def mock_session(monkeypatch):
     mock_session_obj = MagicMock()
     mock_session_obj.client.return_value = mock_runtime
 
-    # Patch boto3 session creation to avoid real AWS
-    monkeypatch.setattr("aicodereviewer.bedrock.boto3.Session", lambda profile_name, region_name=None: mock_session_obj)
+    # Patch create_aws_session to return mock session
+    monkeypatch.setattr("aicodereviewer.bedrock.create_aws_session", lambda region="us-east-1": (mock_session_obj, "mock auth"))
     return mock_runtime
 
 
 def test_rate_limit_respects_min_interval(monkeypatch, mock_session):
-    client = BedrockClient("test")
+    client = BedrockClient()
     client.min_request_interval = 6
     client.last_request_time = 100
     client.window_start = 0
@@ -39,7 +39,7 @@ def test_rate_limit_respects_min_interval(monkeypatch, mock_session):
 
 
 def test_rate_limit_resets_minute_window(monkeypatch, mock_session):
-    client = BedrockClient("test")
+    client = BedrockClient()
     client.max_requests_per_minute = 2
     client.request_count = 2
     client.window_start = 90
@@ -59,7 +59,7 @@ def test_rate_limit_resets_minute_window(monkeypatch, mock_session):
 
 
 def test_validate_connection_token_error(monkeypatch, mock_session):
-    client = BedrockClient("test")
+    client = BedrockClient()
     client.client.converse.side_effect = TokenRetrievalError(provider="sso", error_msg="expired")
 
     with pytest.raises(Exception):
@@ -67,7 +67,7 @@ def test_validate_connection_token_error(monkeypatch, mock_session):
 
 
 def test_get_review_enforces_size_limit(monkeypatch, mock_session):
-    client = BedrockClient("test")
+    client = BedrockClient()
 
     # Force a tiny max_content_length to trigger limit
     monkeypatch.setattr(
@@ -81,7 +81,7 @@ def test_get_review_enforces_size_limit(monkeypatch, mock_session):
 
 
 def test_get_review_success_happy_path(monkeypatch, mock_session):
-    client = BedrockClient("test")
+    client = BedrockClient()
     client.client.converse.return_value = {
         "output": {"message": {"content": [{"text": "ok"}]}}
     }
@@ -97,7 +97,7 @@ def test_get_review_success_happy_path(monkeypatch, mock_session):
 
 
 def test_get_review_retries_on_throttling(monkeypatch, mock_session):
-    client = BedrockClient("test")
+    client = BedrockClient()
 
     throttling_error = ClientError(
         {"Error": {"Code": "ThrottlingException", "Message": "Slow down"}},

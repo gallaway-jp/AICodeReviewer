@@ -18,6 +18,7 @@ from typing import Optional
 
 from .config import config
 from .interfaces import AIClient
+from .auth import create_aws_session
 
 
 logger = logging.getLogger(__name__)
@@ -38,20 +39,23 @@ class BedrockClient:
         max_requests_per_minute: Rate limit for requests per minute
     """
 
-    def __init__(self, profile_name, region="us-east-1"):
+    def __init__(self, region="us-east-1"):
         """
-        Initialize Bedrock client with AWS profile and performance settings.
+        Initialize Bedrock client with AWS authentication and performance settings.
+
+        Uses config-based credentials if available, otherwise falls back to
+        AWS CLI profile authentication.
 
         Args:
-            profile_name (str): AWS profile name for authentication
             region (str): AWS region (default: us-east-1)
 
         Raises:
-            Exception: If AWS profile is not found
+            Exception: If AWS authentication fails
         """
         try:
-            # Create session with the specified region
-            self.session = boto3.Session(profile_name=profile_name, region_name=region)
+            # Create AWS session using config or profile authentication
+            self.session, auth_description = create_aws_session(region)
+            print(f"AWS認証成功: {auth_description}")
             
             config_settings = Config(
                 region_name=region,

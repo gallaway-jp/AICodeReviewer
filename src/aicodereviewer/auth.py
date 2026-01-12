@@ -14,6 +14,9 @@ Functions:
 import keyring
 import locale
 import os
+import boto3
+from botocore.exceptions import NoCredentialsError, PartialCredentialsError
+from .config import config
 
 SERVICE_NAME = "AICodeReviewer"
 
@@ -123,3 +126,65 @@ def get_system_language():
         # Fall through to default
         pass
     return "en"
+
+
+def create_aws_session(region="us-east-1"):
+    """
+    Create AWS session using config-based credentials or AWS CLI profile.
+
+    First checks for AWS credentials in config.ini. If access_key_id is set,
+    prompts for secret access key and creates session with direct credentials.
+    Otherwise, falls back to AWS CLI profile authentication.
+
+    Args:
+        region (str): AWS region for the session
+
+    Returns:
+        tuple: (boto3.Session, str) - session object and auth method description
+    """
+    # Check if config has AWS credentials
+    access_key_id = config.get('aws', 'access_key_id')
+    config_region = config.get('aws', 'region') or region
+    session_token = config.get('aws', 'session_token')
+
+    if access_key_id:
+        # Use config-based authentication
+        print("--- AWS設定 (設定ファイル) ---")
+        print(f"アクセスキーID: {access_key_id}")
+        print(f"リージョン: {config_region}")
+
+        # Prompt for secret access key (not stored in config for security)
+        secret_access_key = input("シークレットアクセスキー: ").strip()
+        if not secret_access_key:
+            raise ValueError("シークレットアクセスキーが必要です")
+
+        # Create session with direct credentials
+        try:
+            session = boto3.Session(
+                aws_access_key_id=access_key_id,
+                aws_secret_access_key=secret_access_key,
+                aws_session_token=session_token if session_token else None,
+                region_name=config_region
+            )
+            # Test the credentials
+            sts = session.client('sts')
+            sts.get_caller_identity()
+            return session, f"設定ファイル認証 ({access_key_id[:8]}...)"
+
+        except (NoCredentialsError, PartialCredentialsError) as e:
+            raise Exception(f"AWS認証エラー: {e}")
+
+    else:
+        # Fall back to AWS CLI profile authentication
+        profile_name = get_profile_name()
+        try:
+            session = boto3.Session(profile_name=profile_name, region_name=config_region)
+            # Test the profile credentials
+            sts = session.client('sts')
+            sts.get_caller_identity()
+            return session, f"プロファイル認証 ({profile_name})"
+
+        except (NoCredentialsError, PartialCredentialsError) as e:
+            raise Exception(f"AWSプロファイル認証エラー: {e}")
+        except Exception as e:
+            raise Exception(f"プロファイル '{profile_name}' の認証エラー: {e}")

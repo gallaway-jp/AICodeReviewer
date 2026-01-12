@@ -60,7 +60,7 @@ def test_specification_requires_file(monkeypatch):
 
 def test_happy_path_exits_when_no_files(monkeypatch):
     # Stub heavy dependencies to avoid network/file operations
-    monkeypatch.setattr(cli, "BedrockClient", lambda profile: SimpleNamespace())
+    monkeypatch.setattr(cli, "BedrockClient", lambda: SimpleNamespace())
     monkeypatch.setattr(cli, "cleanup_old_backups", lambda path: None)
     monkeypatch.setattr(cli, "scan_project_with_scope", lambda path, scope, diff_file=None, commits=None: [])
     monkeypatch.setattr(cli, "get_profile_name", lambda: "default")

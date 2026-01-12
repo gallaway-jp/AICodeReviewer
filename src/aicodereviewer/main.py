@@ -167,9 +167,8 @@ def main():
     if target_lang == 'default':
         target_lang = get_system_language()
 
-    # Initialize AWS Bedrock client with configured profile
-    profile = get_profile_name()
-    client = BedrockClient(profile)
+    # Initialize AWS Bedrock client with configured authentication
+    client = BedrockClient()
 
     # Load specification document if provided
     spec_content = None
