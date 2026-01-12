@@ -184,6 +184,7 @@ class BedrockClient:
             "complexity": "You are a Code Analyst. Evaluate code complexity and suggest simplifications.",
             "architecture": "You are a Software Architect. Review code structure and design patterns.",
             "license": "You are a License Compliance Specialist. Review third-party library usage and licenses.",
+            "localization": "You are an Internationalization Specialist. Review code for localization readiness, hardcoded strings that need translation, regional formatting requirements, date/time/currency formatting, and cultural compliance issues.",
             "specification": "You are a Requirements Analyst. Compare the code against the provided specifications and identify any deviations, missing implementations, or incorrect interpretations.",
             "fix": "You are an expert code fixer. Fix the code issues identified. Return only the corrected code."
         }
