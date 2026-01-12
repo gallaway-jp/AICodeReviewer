@@ -17,6 +17,9 @@ import os
 import boto3
 from botocore.exceptions import NoCredentialsError, PartialCredentialsError
 from .config import config
+import boto3
+from botocore.exceptions import NoCredentialsError, PartialCredentialsError
+from .config import config
 
 SERVICE_NAME = "AICodeReviewer"
 
@@ -132,9 +135,10 @@ def create_aws_session(region="us-east-1"):
     """
     Create AWS session using config-based credentials or AWS CLI profile.
 
-    First checks for AWS credentials in config.ini. If access_key_id is set,
-    prompts for secret access key and creates session with direct credentials.
-    Otherwise, falls back to AWS CLI profile authentication.
+    Priority order:
+    1. SSO session (if sso_session configured) - opens browser automatically
+    2. Config-based credentials (if access_key_id configured) - prompts for secret key
+    3. Profile-based authentication (fallback)
 
     Args:
         region (str): AWS region for the session
@@ -142,16 +146,29 @@ def create_aws_session(region="us-east-1"):
     Returns:
         tuple: (boto3.Session, str) - session object and auth method description
     """
-    # Check if config has AWS credentials
-    access_key_id = config.get('aws', 'access_key_id')
-    config_region = config.get('aws', 'region') or region
-    session_token = config.get('aws', 'session_token')
+    # Check for SSO configuration first
+    sso_session = config.get('aws', 'sso_session', '').strip()
+    if sso_session:
+        print("--- AWS設定 (SSO) ---")
+        print(f"SSOセッション: {sso_session}")
+        config_region = config.get('aws', 'region') or region
+        try:
+            session = boto3.Session(sso_session=sso_session, region=config_region)
+            # Test credentials to trigger browser authentication if needed
+            sts = session.client('sts')
+            sts.get_caller_identity()
+            return session, f"SSO認証 ({sso_session})"
+        except Exception as e:
+            print(f"SSO認証失敗: {e}")
+            print("設定ファイル認証にフォールバックします...")
 
+    # Check for config-based credentials
+    access_key_id = config.get('aws', 'access_key_id', '').strip()
     if access_key_id:
-        # Use config-based authentication
         print("--- AWS設定 (設定ファイル) ---")
         print(f"アクセスキーID: {access_key_id}")
-        print(f"リージョン: {config_region}")
+        config_region = config.get('aws', 'region') or region
+        session_token = config.get('aws', 'session_token', '').strip()
 
         # Prompt for secret access key (not stored in config for security)
         secret_access_key = input("シークレットアクセスキー: ").strip()
@@ -172,19 +189,20 @@ def create_aws_session(region="us-east-1"):
             return session, f"設定ファイル認証 ({access_key_id[:8]}...)"
 
         except (NoCredentialsError, PartialCredentialsError) as e:
-            raise Exception(f"AWS認証エラー: {e}")
+            print(f"設定ファイル認証失敗: {e}")
+            print("プロファイル認証にフォールバックします...")
 
-    else:
-        # Fall back to AWS CLI profile authentication
-        profile_name = get_profile_name()
-        try:
-            session = boto3.Session(profile_name=profile_name, region_name=config_region)
-            # Test the profile credentials
-            sts = session.client('sts')
-            sts.get_caller_identity()
-            return session, f"プロファイル認証 ({profile_name})"
+    # Fall back to AWS CLI profile authentication
+    profile_name = get_profile_name()
+    try:
+        config_region = config.get('aws', 'region') or region
+        session = boto3.Session(profile_name=profile_name, region_name=config_region)
+        # Test the profile credentials
+        sts = session.client('sts')
+        sts.get_caller_identity()
+        return session, f"プロファイル認証 ({profile_name})"
 
-        except (NoCredentialsError, PartialCredentialsError) as e:
-            raise Exception(f"AWSプロファイル認証エラー: {e}")
-        except Exception as e:
-            raise Exception(f"プロファイル '{profile_name}' の認証エラー: {e}")
+    except (NoCredentialsError, PartialCredentialsError) as e:
+        raise Exception(f"AWSプロファイル認証エラー: {e}")
+    except Exception as e:
+        raise Exception(f"プロファイル '{profile_name}' の認証エラー: {e}")

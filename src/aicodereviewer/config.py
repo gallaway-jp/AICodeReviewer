@@ -89,6 +89,14 @@ class Config:
         self.config.set('aws', 'access_key_id', '')
         self.config.set('aws', 'region', 'us-east-1')
         self.config.set('aws', 'session_token', '')
+        # AWS SSO configuration (optional - requires SSO session configured in AWS CLI)
+        self.config.set('aws', 'sso_session', '')
+        self.config.set('aws', 'sso_account_id', '')
+        self.config.set('aws', 'sso_role_name', '')
+        self.config.set('aws', 'sso_region', 'us-east-1')
+        self.config.set('aws', 'sso_start_url', '')
+        self.config.set('aws', 'sso_registration_scopes', 'sso:account:access')
+        self.config.set('aws', 'output', 'json')
 
     def get(self, section: str, key: str, fallback: Any = None) -> Any:
         """
