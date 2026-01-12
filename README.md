@@ -80,6 +80,7 @@ dist\AICodeReviewer.exe /path/to/your/project
   - `complexity`: Evaluate code complexity and suggest simplifications
   - `architecture`: Review code structure and design patterns
   - `license`: Review third-party library usage and license compliance
+  - `localization`: Review code for internationalization readiness, hardcoded strings needing translation, regional formatting, and cultural compliance
   - `specification`: Compare code against feature specifications (requires --spec-file)
 - `--spec-file FILE`: Path to specification document file (required when using --type specification)
 - `--lang`: Output language - `en` (English), `ja` (Japanese), or `default` (auto-detect system language)
