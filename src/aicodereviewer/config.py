@@ -31,17 +31,29 @@ class Config:
         """
         Initialize configuration with defaults and load user config file.
 
-        Looks for config.ini in the project root directory and merges
-        user settings with default values.
+        Looks for config.ini in the project root directory and the current
+        working directory, merging user settings with default values.
         """
         self.config = configparser.ConfigParser()
-        self.config_path = Path(__file__).parent.parent / "config.ini"
-
+        
+        # Search paths: current working directory first, then project root
+        search_paths = [
+            Path.cwd() / "config.ini",  # Current working directory
+            Path(__file__).parent.parent.parent / "config.ini"  # Project root
+        ]
+        
+        # Load config file from first existing path
+        self.config_path = None
+        for path in search_paths:
+            if path.exists():
+                self.config_path = path
+                break
+        
         # Set defaults
         self._set_defaults()
 
-        # Load config file if it exists
-        if self.config_path.exists():
+        # Load config file if found
+        if self.config_path:
             self.config.read(self.config_path)
 
     def _set_defaults(self):
@@ -69,6 +81,9 @@ class Config:
         self.config.add_section('logging')
         self.config.set('logging', 'log_level', 'INFO')
         self.config.set('logging', 'enable_performance_logging', 'true')
+
+        self.config.add_section('model')
+        self.config.set('model', 'model_id', 'anthropic.claude-3-5-sonnet-20240620-v1:0')
 
     def get(self, section: str, key: str, fallback: Any = None) -> Any:
         """
@@ -109,6 +124,9 @@ class Config:
             elif section == 'logging':
                 if key == 'enable_performance_logging':
                     return value.lower() == 'true'
+            elif section == 'model':
+                # Model ID is returned as string
+                return value
 
             return value
         except (configparser.NoSectionError, configparser.NoOptionError):

@@ -60,7 +60,7 @@ class BedrockClient:
                 connect_timeout=config.get('performance', 'connect_timeout_seconds')
             )
             self.client = self.session.client("bedrock-runtime", config=config_settings)
-            self.model_id = "anthropic.claude-3-5-sonnet-20240620-v1:0"
+            self.model_id = config.get('model', 'model_id')
 
             # Rate limiting from config
             self.last_request_time = 0
