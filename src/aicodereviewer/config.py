@@ -108,6 +108,8 @@ class Config:
         """
         try:
             value = self.config.get(section, key)
+            # Strip inline comments (everything after #)
+            value = value.split('#')[0].strip()
             # Type conversion based on defaults
             if section == 'performance':
                 if key.endswith('_mb'):
