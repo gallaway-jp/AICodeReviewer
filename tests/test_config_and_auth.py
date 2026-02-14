@@ -1,5 +1,8 @@
 """
-Tests for configuration, authentication language detection, and performance utilities.
+Tests for configuration, authentication, language detection, and performance utilities.
+
+Updated for v2.0: Config has new sections (backend, kiro, copilot),
+auth module is English-first with get/set/clear profile functions.
 """
 import time
 from unittest.mock import patch
@@ -8,6 +11,8 @@ from aicodereviewer.config import Config
 from aicodereviewer.auth import get_system_language, set_profile_name
 from aicodereviewer.performance import PerformanceMonitor
 
+
+# ── Config ─────────────────────────────────────────────────────────────────
 
 def test_config_type_conversions_and_fallback():
     config = Config()
@@ -21,6 +26,23 @@ def test_config_type_conversions_and_fallback():
     # Missing keys fall back cleanly
     assert config.get('missing', 'key', fallback=123) == 123
 
+
+def test_config_new_sections():
+    """v2.0 new sections should have defaults."""
+    config = Config()
+
+    assert config.get('backend', 'type') == 'bedrock'
+    assert config.get('kiro', 'cli_command') == 'kiro'
+    assert config.get('copilot', 'gh_path') == 'gh'
+
+
+def test_config_set_value():
+    config = Config()
+    config.set_value('backend', 'type', 'kiro')
+    assert config.get('backend', 'type') == 'kiro'
+
+
+# ── Auth / Language ────────────────────────────────────────────────────────
 
 def test_get_system_language_prefers_japanese():
     with patch('aicodereviewer.auth.locale.setlocale') as _setloc, \
@@ -44,13 +66,13 @@ def test_set_profile_name_uses_keyring_without_prompt():
     mock_set_password.assert_called_once_with('AICodeReviewer', 'aws_profile', 'test-profile')
 
 
+# ── PerformanceMonitor ─────────────────────────────────────────────────────
+
 def test_performance_monitor_collects_metrics():
     monitor = PerformanceMonitor()
 
     context = monitor.track_operation('unit_test_op')
 
-    # When monitoring is disabled, context manager still functions
-    # Default config enables logging, but we allow for either case
     with context:
         time.sleep(0.01)
 

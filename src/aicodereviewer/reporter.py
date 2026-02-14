@@ -1,90 +1,115 @@
 # src/aicodereviewer/reporter.py
 """
-Report generation and formatting for code review results.
+Report generation for code review results.
 
-This module handles the creation of comprehensive review reports in both
-JSON format (for programmatic access) and human-readable text format
-(for easy review and sharing).
-
-Functions:
-    generate_review_report: Create and save detailed review reports
+Produces JSON (machine-readable) and plain-text summary reports with
+support for multi-type review sessions.
 """
 import json
 import logging
+from typing import Optional, Dict
 
 from .models import ReviewReport
+from .i18n import t
 
 logger = logging.getLogger(__name__)
 
 
-def generate_review_report(report: ReviewReport, output_file: str = None) -> str:
+def generate_review_report(
+    report: ReviewReport,
+    output_file: Optional[str] = None,
+) -> str:
     """
-    Generate and save comprehensive review reports in JSON and text formats.
-
-    Creates two output files:
-    1. JSON file with complete structured data for programmatic access
-    2. Human-readable summary text file with key findings and statistics
+    Save the review report as JSON and a human-readable summary.
 
     Args:
-        report (ReviewReport): The complete review report to save
-        output_file (str, optional): Custom output filename. If None, generates
-                                   timestamped filename automatically.
+        report: The complete :class:`ReviewReport`.
+        output_file: Custom path for the JSON file. Auto‑generated if *None*.
 
     Returns:
-        str: Path to the generated JSON report file
-
-    Note:
-        Also creates a corresponding '_summary.txt' file with human-readable content.
+        Path to the JSON report file.
     """
     if not output_file:
-        timestamp = report.generated_at.strftime("%Y%m%d_%H%M%S")
-        output_file = f"review_report_{timestamp}.json"
+        ts = report.generated_at.strftime("%Y%m%d_%H%M%S")
+        output_file = f"review_report_{ts}.json"
 
-    # Save JSON report
-    with open(output_file, 'w', encoding='utf-8') as f:
-        json.dump(report.to_dict(), f, indent=2, ensure_ascii=False)
-    logger.info(f"Saved JSON review report to {output_file}")
+    # JSON
+    with open(output_file, "w", encoding="utf-8") as fh:
+        json.dump(report.to_dict(), fh, indent=2, ensure_ascii=False)
+    logger.info("JSON report saved to %s", output_file)
 
-    # Generate human-readable summary
-    summary_file = output_file.replace('.json', '_summary.txt')
-    with open(summary_file, 'w', encoding='utf-8') as f:
-        f.write("AI Code Review Report\n")
-        f.write("="*50 + "\n\n")
-        f.write(f"Project: {report.project_path}\n")
-        f.write(f"Review Type: {report.review_type}\n")
-        f.write(f"Scope: {report.scope}\n")
-        f.write(f"Files Scanned: {report.total_files_scanned}\n")
-        f.write(f"Quality Score: {report.quality_score}/100\n")
-        f.write(f"Programmers: {', '.join(report.programmers)}\n")
-        f.write(f"Reviewers: {', '.join(report.reviewers)}\n")
-        f.write(f"Generated: {report.generated_at.strftime('%Y-%m-%d %H:%M:%S')}\n")
-        f.write(f"Language: {report.language}\n")
-        if report.diff_source:
-            f.write(f"Diff Source: {report.diff_source}\n")
-        f.write("\nIssues Summary:\n")
-        f.write("-"*30 + "\n")
-
-        status_counts = {}
-        for issue in report.issues_found:
-            status_counts[issue.status] = status_counts.get(issue.status, 0) + 1
-
-        for status, count in status_counts.items():
-            f.write(f"{status.capitalize()}: {count}\n")
-
-        f.write("\nDetailed Issues:\n")
-        f.write("="*50 + "\n")
-
-        for i, issue in enumerate(report.issues_found, 1):
-            f.write(f"\nIssue {i}:\n")
-            f.write(f"  File: {issue.file_path}\n")
-            f.write(f"  Type: {issue.issue_type}\n")
-            f.write(f"  Severity: {issue.severity}\n")
-            f.write(f"  Status: {issue.status}\n")
-            if issue.resolution_reason:
-                f.write(f"  Resolution: {issue.resolution_reason}\n")
-            f.write(f"  Description: {issue.description}\n")
-            f.write(f"  Code: {issue.code_snippet}\n")
-            f.write(f"  AI Feedback: {issue.ai_feedback[:200]}...\n")
-    logger.info(f"Saved human-readable summary to {summary_file}")
+    # Text summary
+    summary_file = output_file.replace(".json", "_summary.txt")
+    with open(summary_file, "w", encoding="utf-8") as fh:
+        _write_summary(fh, report)
+    logger.info("Summary saved to %s", summary_file)
 
     return output_file
+
+
+def _write_summary(fh, report: ReviewReport):
+    """Write a human-readable summary to an open file handle."""
+    # Use the report language for the summary text
+    lang = report.language or "en"
+
+    w = fh.write
+    w(t("report.title", lang=lang) + "\n")
+    w("=" * 60 + "\n\n")
+    w(f"{t('report.project', lang=lang):13s}: {report.project_path}\n")
+    w(f"{t('report.review_types', lang=lang):13s}: {', '.join(report.review_types) if report.review_types else report.review_type}\n")
+    w(f"{t('report.scope', lang=lang):13s}: {report.scope}\n")
+    w(f"{t('report.backend', lang=lang):13s}: {report.backend}\n")
+    w(f"{t('report.files_scanned', lang=lang):13s}: {report.total_files_scanned}\n")
+    w(f"{t('report.quality_score', lang=lang):13s}: {report.quality_score}/100\n")
+    w(f"{t('report.programmers', lang=lang):13s}: {', '.join(report.programmers) or '—'}\n")
+    w(f"{t('report.reviewers', lang=lang):13s}: {', '.join(report.reviewers) or '—'}\n")
+    w(f"{t('report.generated', lang=lang):13s}: {report.generated_at.strftime('%Y-%m-%d %H:%M:%S')}\n")
+    w(f"{t('report.language', lang=lang):13s}: {report.language}\n")
+    if report.diff_source:
+        w(f"{t('report.diff_source', lang=lang):13s}: {report.diff_source}\n")
+
+    # Status breakdown
+    w(f"\n{t('report.issue_summary', lang=lang)}\n")
+    w("-" * 40 + "\n")
+    status_counts: Dict[str, int] = {}
+    severity_counts: Dict[str, int] = {}
+    type_counts: Dict[str, int] = {}
+    for issue in report.issues_found:
+        status_counts[issue.status] = status_counts.get(issue.status, 0) + 1
+        severity_counts[issue.severity] = severity_counts.get(issue.severity, 0) + 1
+        type_counts[issue.issue_type] = type_counts.get(issue.issue_type, 0) + 1
+
+    w(f"  {t('report.total_issues', lang=lang)}: {len(report.issues_found)}\n")
+    for status, cnt in sorted(status_counts.items()):
+        w(f"  {status.capitalize():12s}: {cnt}\n")
+
+    if severity_counts:
+        w(f"\n{t('report.by_severity', lang=lang)}\n")
+        w("-" * 40 + "\n")
+        for sev in ("critical", "high", "medium", "low", "info"):
+            if sev in severity_counts:
+                w(f"  {sev.capitalize():12s}: {severity_counts[sev]}\n")
+
+    if type_counts:
+        w(f"\n{t('report.by_review_type', lang=lang)}\n")
+        w("-" * 40 + "\n")
+        for rtype, cnt in sorted(type_counts.items()):
+            w(f"  {rtype:20s}: {cnt}\n")
+
+    # Detailed issues
+    w(f"\n\n{t('report.detailed_issues', lang=lang)}\n")
+    w("=" * 60 + "\n")
+    for i, issue in enumerate(report.issues_found, 1):
+        w(f"\n--- {t('report.issue_n', lang=lang, n=i)} ---\n")
+        w(f"  {t('report.file', lang=lang):9s}: {issue.file_path}\n")
+        w(f"  {t('report.type', lang=lang):9s}: {issue.issue_type}\n")
+        w(f"  {t('report.severity', lang=lang):9s}: {issue.severity}\n")
+        w(f"  {t('report.status', lang=lang):9s}: {issue.status}\n")
+        if issue.resolution_reason:
+            w(f"  {t('report.reason', lang=lang):9s}: {issue.resolution_reason}\n")
+        w(f"  {t('report.desc', lang=lang):9s}: {issue.description}\n")
+        w(f"  {t('report.snippet', lang=lang):9s}: {issue.code_snippet[:120]}\n")
+        feedback_preview = issue.ai_feedback[:300]
+        if len(issue.ai_feedback) > 300:
+            feedback_preview += "…"
+        w(f"  {t('report.feedback', lang=lang):9s}: {feedback_preview}\n")

@@ -1,187 +1,185 @@
 # src/aicodereviewer/interactive.py
 """
-Interactive user interface for code review confirmation and resolution.
+Interactive CLI workflow for reviewing AI-identified issues.
 
-This module provides the interactive workflow for users to review AI-identified
-issues, mark them as resolved, apply AI fixes, or ignore them with reasons.
-Includes file backup functionality and comprehensive user input validation.
-
-Functions:
-    get_valid_choice: Get validated user input with error handling
-    interactive_review_confirmation: Main interactive review workflow
+Users can resolve, ignore, request AI fixes, or view source code for
+each issue, with backup creation and diff preview for fixes.
 """
 import shutil
 import logging
-from datetime import datetime
-from typing import List
 import difflib
+from datetime import datetime
 from pathlib import Path
+from typing import List
 
 from .models import ReviewIssue
 from .reviewer import verify_issue_resolved
 from .fixer import apply_ai_fix
+from .i18n import t
 
 logger = logging.getLogger(__name__)
 
 
 def get_valid_choice(prompt: str, valid_options: List[str]) -> str:
-    """
-    Get validated user input with comprehensive error handling.
-
-    Continuously prompts user until valid input is provided or operation
-    is cancelled via keyboard interrupt.
-
-    Args:
-        prompt (str): The prompt message to display to user
-        valid_options (List[str]): List of valid input options
-
-    Returns:
-        str: User's validated choice, or "cancel" if operation cancelled
-    """
+    """Prompt until a valid option is chosen or the user cancels."""
     while True:
         try:
-            choice = input(prompt).strip()
-            if choice in valid_options:
+            choice = input(prompt).strip().lower()
+            if choice in [v.lower() for v in valid_options]:
                 return choice
-            logger.warning(f"Invalid choice. Please select from: {', '.join(valid_options)}")
-        except KeyboardInterrupt:
-            logger.info("Operation cancelled by user.")
-            return "cancel"
-        except EOFError:
-            logger.info("Input stream ended. Operation cancelled.")
+            logger.warning(t("interactive.invalid_choice", options=", ".join(valid_options)))
+        except (KeyboardInterrupt, EOFError):
+            logger.info(t("interactive.cancelled"))
             return "cancel"
 
 
-def interactive_review_confirmation(issues: List[ReviewIssue], client, review_type: str, lang: str) -> List[ReviewIssue]:
+def interactive_review_confirmation(
+    issues: List[ReviewIssue],
+    client,
+    review_type: str,
+    lang: str,
+) -> List[ReviewIssue]:
     """
-    Interactive workflow for confirming and resolving code review issues.
+    Walk through each issue interactively and let the user decide.
 
-    Presents each issue to the user with options to:
-    - Mark as resolved (with verification)
-    - Ignore with reason
-    - Apply AI-generated fix
-    - View full file content
+    Actions per issue:
+        1. RESOLVED  – mark resolved (re-verifies with AI)
+        2. IGNORE    – ignore with a reason
+        3. AI FIX    – generate and preview an AI-suggested fix
+        4. VIEW CODE – display the full file
+        5. SKIP      – leave pending and move on
 
-    Includes automatic backup creation before applying fixes.
-
-    Args:
-        issues (List[ReviewIssue]): List of issues to review
-        client: AI review client instance
-        review_type (str): Type of review being performed
-        lang (str): Language for AI responses
-
-    Returns:
-        List[ReviewIssue]: Updated issues with user resolutions applied
+    Returns the (mutated) list of issues.
     """
-    for i, issue in enumerate(issues, 1):
-        logger.info("\n" + ("=" * 80))
-        logger.info(f"ISSUE {i}/{len(issues)}")
-        logger.info("" + ("=" * 80))
-        logger.info(f"File: {issue.file_path}")
-        logger.info(f"Type: {issue.issue_type}")
-        logger.info(f"Severity: {issue.severity}")
-        logger.info(f"Code snippet:\n{issue.code_snippet}")
-        logger.info(f"\nAI Feedback:\n{issue.ai_feedback}")
-        logger.info(f"\nStatus: {issue.status}")
+    total = len(issues)
+    for idx, issue in enumerate(issues, 1):
+        _print_issue_header(idx, total, issue)
 
         while issue.status == "pending":
-            logger.info("\nActions:")
-            logger.info("  1. RESOLVED - Mark as resolved (program will verify)")
-            logger.info("  2. IGNORE - Ignore this issue (requires reason)")
-            logger.info("  3. AI FIX - Let AI fix the code")
-            logger.info("  4. VIEW CODE - Show full file content")
+            print(f"\n{t('interactive.actions')}")
+            print(t("interactive.opt_resolved"))
+            print(t("interactive.opt_ignore"))
+            print(t("interactive.opt_ai_fix"))
+            print(t("interactive.opt_view_code"))
+            print(t("interactive.opt_skip"))
 
-            choice = get_valid_choice("Choose action (1-4): ", ["1", "2", "3", "4"])
+            choice = get_valid_choice(t("interactive.choose"), ["1", "2", "3", "4", "5"])
             if choice == "cancel":
+                return issues
+            if choice == "5":
                 break
 
             if choice == "1":
-                # RESOLVED - verify the issue is actually resolved
-                if verify_issue_resolved(issue, client, review_type, lang):
-                    issue.status = "resolved"
-                    issue.resolved_at = datetime.now()
-                    logger.info("✅ Issue marked as resolved!")
-                else:
-                    logger.warning("❌ Issue verification failed. Issue may not be fully resolved.")
-
+                _action_resolve(issue, client, review_type, lang)
             elif choice == "2":
-                # IGNORE - require reason
-                reason = input("Enter reason for ignoring this issue: ").strip()
-                if reason and len(reason) >= 3:  # Minimum 3 characters for a valid reason
-                    issue.status = "ignored"
-                    issue.resolution_reason = reason
-                    issue.resolved_at = datetime.now()
-                    logger.info("✅ Issue ignored with reason provided.")
-                else:
-                    logger.warning("❌ Reason must be at least 3 characters long.")
-
+                _action_ignore(issue)
             elif choice == "3":
-                # AI FIX - apply AI-generated fix with confirmation
-                fix_result = apply_ai_fix(issue, client, review_type, lang)
-                if fix_result:
-                    # Read current file content for diff generation
-                    try:
-                        with open(issue.file_path, "r", encoding="utf-8", errors="ignore") as f:
-                            current_content = f.read()
-                    except Exception as e:
-                        logger.error(f"❌ Error reading current file for diff: {e}")
-                        continue
-
-                    # Generate unified diff
-                    current_lines = current_content.splitlines(keepends=True)
-                    fixed_lines = fix_result.splitlines(keepends=True)
-                    diff = list(difflib.unified_diff(
-                        current_lines,
-                        fixed_lines,
-                        fromfile=f"a/{Path(issue.file_path).name}",
-                        tofile=f"b/{Path(issue.file_path).name}",
-                        lineterm=""
-                    ))
-
-                    logger.info("\n🤖 AI suggests the following fix:")
-                    logger.info("=" * 80)
-                    if diff:
-                        logger.info("".join(diff))
-                    else:
-                        logger.info("No changes detected in diff (files may be identical)")
-                    logger.info("=" * 80)
-
-                    confirm = get_valid_choice("Apply this AI fix? (y/n): ", ["y", "n", "yes", "no"])
-                    if confirm.lower() in ["y", "yes"]:
-                        # Create backup before applying
-                        backup_path = f"{issue.file_path}.backup"
-                        try:
-                            shutil.copy2(issue.file_path, backup_path)
-                            logger.info(f"📁 Backup created: {backup_path}")
-
-                            # Apply the fix
-                            with open(issue.file_path, "w", encoding="utf-8") as f:
-                                f.write(fix_result)
-
-                            issue.status = "ai_fixed"
-                            issue.ai_fix_applied = fix_result
-                            issue.resolved_at = datetime.now()
-                            logger.info("✅ AI fix applied successfully!")
-                        except Exception as e:
-                            logger.error(f"❌ Error applying fix: {e}")
-                    else:
-                        logger.info("❌ AI fix cancelled by user.")
-                else:
-                    logger.error("❌ AI fix could not be generated.")
-
+                _action_ai_fix(issue, client, review_type, lang)
             elif choice == "4":
-                # VIEW CODE - show full file content
-                try:
-                    with open(issue.file_path, "r", encoding="utf-8", errors="ignore") as f:
-                        full_content = f.read()
-                    logger.info(f"\nFull file content ({issue.file_path}):")
-                    logger.info("-" * 50)
-                    logger.info(full_content)
-                    logger.info("-" * 50)
-                except Exception as e:
-                    logger.error(f"Error reading file: {e}")
-
-            else:
-                logger.warning("Invalid choice. Please select 1-4.")
+                _action_view_code(issue)
 
     return issues
+
+
+# ── actions ────────────────────────────────────────────────────────────────
+
+def _action_resolve(issue, client, review_type, lang):
+    if verify_issue_resolved(issue, client, review_type, lang):
+        issue.status = "resolved"
+        issue.resolved_at = datetime.now()
+        print(t("interactive.verified"))
+    else:
+        print(t("interactive.verify_failed"))
+        force = get_valid_choice(t("interactive.force_resolve"), ["y", "n"])
+        if force == "y":
+            issue.status = "resolved"
+            issue.resolved_at = datetime.now()
+            issue.resolution_reason = t("interactive.force_reason")
+            print(t("interactive.force_resolved"))
+
+
+def _action_ignore(issue):
+    try:
+        reason = input(t("interactive.ignore_reason")).strip()
+    except (KeyboardInterrupt, EOFError):
+        return
+    if len(reason) >= 3:
+        issue.status = "ignored"
+        issue.resolution_reason = reason
+        issue.resolved_at = datetime.now()
+        print(t("interactive.ignored"))
+    else:
+        print(t("interactive.reason_too_short"))
+
+
+def _action_ai_fix(issue, client, review_type, lang):
+    fix_result = apply_ai_fix(issue, client, review_type, lang)
+    if not fix_result:
+        print(t("interactive.fix_failed"))
+        return
+
+    try:
+        with open(issue.file_path, "r", encoding="utf-8", errors="ignore") as fh:
+            current = fh.read()
+    except Exception as exc:
+        print(t("interactive.diff_read_error", error=exc))
+        return
+
+    _show_diff(current, fix_result, issue.file_path)
+
+    confirm = get_valid_choice(t("interactive.apply_fix"), ["y", "n"])
+    if confirm == "y":
+        backup = f"{issue.file_path}.backup"
+        try:
+            shutil.copy2(issue.file_path, backup)
+            print(t("interactive.backup_created", path=backup))
+            with open(issue.file_path, "w", encoding="utf-8") as fh:
+                fh.write(fix_result)
+            issue.status = "ai_fixed"
+            issue.ai_fix_applied = fix_result
+            issue.resolved_at = datetime.now()
+            print(t("interactive.fix_applied"))
+        except Exception as exc:
+            print(t("interactive.fix_error", error=exc))
+    else:
+        print(t("interactive.fix_cancelled"))
+
+
+def _action_view_code(issue):
+    try:
+        with open(issue.file_path, "r", encoding="utf-8", errors="ignore") as fh:
+            content = fh.read()
+        print(f"\n{'─' * 60}")
+        print(content)
+        print(f"{'─' * 60}")
+    except Exception as exc:
+        print(t("interactive.view_error", error=exc))
+
+
+# ── helpers ────────────────────────────────────────────────────────────────
+
+def _print_issue_header(idx, total, issue):
+    print(f"\n{'=' * 80}")
+    print(t("interactive.header", idx=idx, total=total, type=issue.issue_type, severity=issue.severity))
+    print(f"{'=' * 80}")
+    print(t("interactive.file", path=issue.file_path))
+    print(t("interactive.snippet", snippet=issue.code_snippet[:120]))
+    print(t("interactive.feedback", feedback=issue.ai_feedback))
+
+
+def _show_diff(original: str, fixed: str, filepath: str):
+    name = Path(filepath).name
+    diff = list(
+        difflib.unified_diff(
+            original.splitlines(keepends=True),
+            fixed.splitlines(keepends=True),
+            fromfile=f"a/{name}",
+            tofile=f"b/{name}",
+        )
+    )
+    print(f"\n{'=' * 60}")
+    if diff:
+        print("".join(diff))
+    else:
+        print("(no changes detected)")
+    print(f"{'=' * 60}")

@@ -1,257 +1,308 @@
-# AICodeReviewer
+# AICodeReviewer v2.0
 
-An AI-powered code review tool that analyzes your codebase for security, performance, and best practices issues. Supports 12+ programming languages including Python, JavaScript, TypeScript, Java, C/C++, C#, Go, Ruby, PHP, Rust, Swift, Kotlin, and Objective-C. Includes framework support for React (.jsx, .tsx), Laravel (.blade.php), Vue, Svelte, and Astro, plus web technologies like HTML, CSS, Sass, Less, JSON, XML, and YAML.
+AI-powered code review tool that analyses your codebase for security, performance, maintainability, and 16 more quality dimensions.  Supports **AWS Bedrock**, **Kiro CLI (WSL)**, and **GitHub Copilot CLI** backends, with both a full-featured **CLI** and a **CustomTkinter GUI**.
+
+Supports 12+ programming languages: Python, JavaScript/TypeScript, Java, C/C++, C#, Go, Ruby, PHP, Rust, Swift, Kotlin, Objective-C, plus frameworks (React, Vue, Svelte, Astro, Laravel) and web technologies (HTML, CSS, Sass/Less, JSON, XML, YAML).
+
+---
+
+## What's New in v2.0
+
+| Feature | Description |
+|---------|-------------|
+| **Multi-type reviews** | Combine any number of review types in a single session (`--type security,performance,testing`) |
+| **AWS Bedrock improvements** | Exponential back-off retry, lazy connection validation, support for all Bedrock-provisioned models |
+| **Kiro CLI backend** | Run reviews via Amazon Kiro CLI through WSL, with automatic Windows→WSL path conversion |
+| **GitHub Copilot CLI backend** | Run reviews via `gh copilot` on Windows |
+| **CustomTkinter GUI** | Full-featured graphical interface with live log, results viewer, and settings editor |
+| **4 new review types** | `dependency`, `concurrency`, `api_design`, `data_validation` |
+| **Skip action** | Leave issues pending during interactive review without being forced to act |
+| **Force resolve** | Override failed verification when you know the issue is fixed |
+| **English-first messages** | All user-facing messages default to English (Japanese still supported via `--lang ja`) |
+
+---
 
 ## Installation
 
-1. Clone or download this repository
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+```bash
+# Clone the repository
+git clone <repo-url>
+cd AICodeReviewer
 
-## Usage
+# Install core + GUI
+pip install -e ".[gui]"
 
-### Running with Python Interpreter
+# Or core only (no GUI)
+pip install -e .
+```
 
-You can run the program directly using Python:
+### Backend-Specific Prerequisites
+
+| Backend | Requirements |
+|---------|-------------|
+| **Bedrock** | AWS CLI configured (`aws configure sso` or credentials in `config.ini`) |
+| **Kiro** | WSL installed (`wsl --install`), Kiro CLI installed inside WSL |
+| **Copilot** | GitHub CLI (`gh`) + Copilot extension (`gh extension install github/gh-copilot`), active Copilot subscription |
+
+---
+
+## Quick Start
+
+### CLI
 
 ```bash
-# From the project root (after installing with pip install -e .)
-python -m aicodereviewer /path/to/your/project
+# Basic project review (best practices, Bedrock)
+aicodereviewer /path/to/project --programmers Alice --reviewers Bob
 
-# Or directly
-python src/aicodereviewer/main.py /path/to/your/project
+# Multi-type review
+aicodereviewer . --type security,performance,testing --programmers Alice --reviewers Bob
+
+# All review types at once
+aicodereviewer . --type all --programmers Alice --reviewers Bob
+
+# Use Kiro backend via WSL
+aicodereviewer . --backend kiro --type security --programmers Alice --reviewers Bob
+
+# Use GitHub Copilot backend
+aicodereviewer . --backend copilot --type best_practices --programmers Alice --reviewers Bob
+
+# Diff-based review (Git)
+aicodereviewer . --scope diff --commits HEAD~3..HEAD --type security,maintainability \
+    --programmers Alice --reviewers Bob
+
+# Diff-based review (SVN)
+aicodereviewer . --scope diff --commits 100:105 --type performance --programmers Alice --reviewers Bob
+
+# Dry run (list files, no API calls)
+aicodereviewer . --type all --dry-run
+
+# Specification comparison
+aicodereviewer . --type specification --spec-file requirements.md --programmers Alice --reviewers Bob
+
+# Launch the GUI
+aicodereviewer --gui
 ```
 
-## Logging
-
-Console output is tuned to keep the interactive UI crisp — only the message is shown without timestamps or levels. You can control verbosity via `config.ini`.
-
-- **Console**: Minimal formatter showing just messages for clean interactive experience
-- **Levels**: `DEBUG`, `INFO` (default), `WARNING`, `ERROR`
-- **File logging** (optional): Enable for debugging; saves detailed logs with timestamps and module names to a file
-
-Example configuration:
-
-```ini
-[logging]
-log_level = INFO                 # DEBUG for detailed trace, INFO for normal use
-enable_file_logging = false      # Enable to write detailed logs to file (useful for debugging)
-log_file = aicodereviewer.log    # File path for debug logs (when enable_file_logging = true)
-```
-
-To enable debug file logging, set `enable_file_logging = true` in `config.ini`. This creates a timestamped log file with detailed information about each module's operations, useful for troubleshooting.
-
-### Running the Windows Executable
-
-After building with `build_exe.bat`, you can run the standalone executable:
+### GUI
 
 ```bash
-dist\AICodeReviewer.exe /path/to/your/project
+aicodereviewer --gui
+# or
+python -m aicodereviewer --gui
 ```
 
-### Command Line Options
+The GUI provides:
+- **Review tab** – project browser, scope selector, review type checkboxes, backend picker, metadata fields, Start/Dry-Run buttons with progress bar
+- **Settings tab** – edit config.ini values and save
+- **Results tab** – scrollable issue cards with severity colouring and detail popups
+- **Output Log tab** – real-time log stream
 
-- `path`: Path to the project folder to review (required for project scope, optional for diff scope to provide additional context)
-- `--scope`: Review scope - `project` (default, entire project) or `diff` (changes only)
-- `--diff-file FILE`: Path to diff file (TortoiseSVN/TortoiseGit format) when using diff scope
-- `--commits RANGE`: Commit/revision range for diff generation when using diff scope
-  - Git format: `HEAD~1..HEAD` or `abc123..def456`
-  - SVN format: `PREV:HEAD` or `100:101`
-  - Automatically detects whether project uses Git or SVN
-   - VCS diff behavior: When you run from a subdirectory inside a repository, AICodeReviewer scopes the diff to that directory. At the repository root, the diff covers the whole repo.
-      - Git (subdirectory): `git diff HEAD~1..HEAD -- .`
-      - Git (repo root): `git diff HEAD~1..HEAD`
-      - SVN (subdirectory): `svn diff -r REV1:REV2 .`
-      - SVN (repo root): `svn diff -r REV1:REV2`
-      - SVN ranges: You can use `REV1..REV2` or `REV1:REV2`; both are accepted and normalized.
-- `--type`: Review type (default: best_practices)
-  - `security`: Comprehensive security analysis covering OWASP Top 10 vulnerabilities and additional security risks including injection attacks, authentication issues, XSS, CSRF, insecure configurations, and secure coding practices with severity levels
-  - `performance`: Optimize efficiency and resources
-  - `best_practices`: Review for clean code and SOLID principles
-  - `maintainability`: Analyze code for readability and long-term sustainability
-  - `documentation`: Review documentation, comments, and docstrings
-  - `testing`: Analyze testability and suggest testing improvements
-  - `accessibility`: Review for accessibility compliance
-  - `scalability`: Analyze for scalability and resource management
-  - `compatibility`: Review cross-platform and version compatibility
-  - `error_handling`: Analyze error handling and fault tolerance
-  - `complexity`: Evaluate code complexity and suggest simplifications
-  - `architecture`: Review code structure and design patterns
-  - `license`: Review third-party library usage and license compliance
-  - `localization`: Review code for internationalization readiness, hardcoded strings needing translation, regional formatting, and cultural compliance
-  - `specification`: Compare code against feature specifications (requires --spec-file)
-- `--spec-file FILE`: Path to specification document file (required when using --type specification)
-- `--lang`: Output language - `en` (English), `ja` (Japanese), or `default` (auto-detect system language)
-- `--set-profile PROFILE`: Set or change the AWS profile name
-- `--clear-profile`: Remove the stored AWS profile from keyring
-- `--output FILE`: Output file path for the review report (JSON format, default: auto-generated timestamped file)
-- `--programmers NAME [NAME ...]`: Names of programmers who worked on the code (required, space-separated)
-- `--reviewers NAME [NAME ...]`: Names of reviewers performing the review (required, space-separated)
+---
+
+## CLI Reference
+
+```
+aicodereviewer [path] [options]
+```
+
+### Positional
+
+| Argument | Description |
+|----------|-------------|
+| `path` | Project directory (required for `--scope project`) |
+
+### Options
+
+| Flag | Description |
+|------|-------------|
+| `--scope {project,diff}` | Review scope (default: `project`) |
+| `--diff-file FILE` | Unified diff / patch file |
+| `--commits RANGE` | Git or SVN commit range |
+| `--type TYPES` | Comma-separated review types, or `all` (default: `best_practices`) |
+| `--spec-file FILE` | Specification doc (required with `specification` type) |
+| `--backend {bedrock,kiro,copilot}` | AI backend (default: from `config.ini`) |
+| `--lang {en,ja,default}` | Output language (default: auto-detect) |
+| `--output FILE` | Custom JSON report path |
+| `--programmers NAME…` | Code authors (required) |
+| `--reviewers NAME…` | Reviewers (required) |
+| `--dry-run` | List files without API calls |
+| `--gui` | Launch graphical interface |
+| `--set-profile PROFILE` | Store AWS profile in keyring |
+| `--clear-profile` | Remove stored AWS profile |
+
+---
+
+## Review Types
+
+| Key | Category | Description |
+|-----|----------|-------------|
+| `security` | Quality | OWASP / CWE vulnerability audit |
+| `performance` | Quality | Algorithmic efficiency, N+1 queries, caching |
+| `best_practices` | Quality | SOLID, DRY, clean code |
+| `maintainability` | Quality | Readability, coupling, tech debt |
+| `documentation` | Quality | Docstrings, comments, README |
+| `testing` | Quality | Coverage gaps, testability |
+| `error_handling` | Quality | Exception handling, resilience |
+| `complexity` | Quality | Cyclomatic / cognitive complexity |
+| `concurrency` | Quality | Thread safety, race conditions |
+| `data_validation` | Quality | Input validation, sanitisation |
+| `accessibility` | Compliance | WCAG 2.1 AA, ARIA, keyboard nav |
+| `license` | Compliance | OSS license compatibility |
+| `localization` | Compliance | i18n readiness, hardcoded strings |
+| `specification` | Compliance | Code vs requirements comparison |
+| `scalability` | Architecture | Horizontal scaling bottlenecks |
+| `compatibility` | Architecture | Cross-platform, version compat |
+| `architecture` | Architecture | Layer separation, design patterns |
+| `dependency` | Architecture | Outdated / vulnerable dependencies |
+| `api_design` | Architecture | REST/GraphQL design quality |
+
+---
 
 ## Interactive Review Workflow
 
-AICodeReviewer now features an interactive review process that requires you to actively confirm each AI-identified issue before generating a final report. For each issue found, you have four options:
+For each issue the AI finds, you choose:
 
-1. **RESOLVED** - Mark the issue as resolved (program will verify the fix)
-2. **IGNORE** - Ignore the issue (requires providing a reason)
-3. **AI FIX** - Let AI automatically fix the code issue (shows before/after diff for review before applying)
-4. **VIEW CODE** - Display the full file content for context
+| Action | Description |
+|--------|-------------|
+| **1. RESOLVED** | Mark resolved (AI re-verifies); force-resolve option on failure |
+| **2. IGNORE** | Ignore with a reason (≥ 3 chars) |
+| **3. AI FIX** | Generate a fix, preview the diff, apply or cancel |
+| **4. VIEW CODE** | Print the full file for context |
+| **5. SKIP** | Leave pending and move to next issue |
 
-The program will not generate a final report until all issues have been addressed through one of these actions. This ensures thorough review and prevents overlooking important issues.
+---
 
-### Report Generation
+## Configuration (`config.ini`)
 
-After completing the interactive review, AICodeReviewer generates two output files:
+```ini
+[backend]
+type = bedrock              # bedrock | kiro | copilot
 
-- **JSON Report** (`review_report_YYYYMMDD_HHMMSS.json`): Complete structured data including all issues, resolutions, and metadata
-- **Summary Report** (`review_report_YYYYMMDD_HHMMSS_summary.txt`): Human-readable summary with issue counts and details
+[model]
+model_id = anthropic.claude-3-5-sonnet-20240620-v1:0
 
-You can specify a custom output filename using the `--output` option.
+[aws]
+region = us-east-1
+# access_key_id = ...
+# sso_session = my-sso
 
-Examples:
-```bash
-# Review entire project for security issues
-python -m aicodereviewer . --type security --lang ja --programmers "Alice Bob" --reviewers "Charlie"
+[kiro]
+# wsl_distro = Ubuntu       # leave blank for default
+cli_command = kiro
+timeout = 300
 
-# Review performance aspects of a specific project
-python -m aicodereviewer /path/to/project --type performance --programmers "Alice" --reviewers "Charlie Dave"
+[copilot]
+gh_path = gh
+timeout = 300
+# model =                   # leave blank for default
 
-# Review only changes from a diff file (with project context)
-python -m aicodereviewer . --scope diff --diff-file changes.patch --type best_practices --programmers "Alice Bob" --reviewers "Charlie"
+[performance]
+max_file_size_mb = 10
+min_request_interval_seconds = 6.0
+max_requests_per_minute = 10
+api_timeout_seconds = 300
 
-# Review only changes from a diff file (without project context)
-python -m aicodereviewer --scope diff --diff-file changes.patch --type best_practices --programmers "Alice" --reviewers "Charlie"
+[processing]
+batch_size = 5
+enable_parallel_processing = false
 
-# Review changes between two commits (Git)
-python -m aicodereviewer . --scope diff --commits HEAD~1..HEAD --type maintainability --programmers "Alice" --reviewers "Charlie"
-
-# Review changes between two revisions (SVN)
-python -m aicodereviewer . --scope diff --commits 100:101 --type maintainability --programmers "Alice" --reviewers "Charlie"
-
-# Review code against feature specifications
-python -m aicodereviewer . --type specification --spec-file requirements.txt --programmers "Alice" --reviewers "Charlie"
-
-# Review recent changes in a pull request style
-python -m aicodereviewer . --scope diff --commits main..feature-branch --type testing --programmers "Alice" --reviewers "Charlie"
-
-# Generate a custom-named report
-python -m aicodereviewer . --type best_practices --output my_review_report.json
+[logging]
+log_level = INFO
+enable_file_logging = false
 ```
+
+---
+
+## Kiro CLI (WSL) Setup
+
+Kiro is Amazon's AI development tool. On Windows, AICodeReviewer runs Kiro inside WSL and automatically translates Windows paths to `/mnt/` mount paths.
+
+```bash
+# 1. Install WSL (if not already)
+wsl --install
+
+# 2. Inside WSL, install Kiro CLI
+#    (follow Kiro installation docs for your distro)
+
+# 3. Verify
+wsl -- kiro --version
+
+# 4. Configure AICodeReviewer
+#    In config.ini:
+#    [backend]
+#    type = kiro
+#    [kiro]
+#    wsl_distro = Ubuntu
+```
+
+### Path Translation
+
+| Windows Path | WSL Path |
+|-------------|----------|
+| `D:\Projects\myapp` | `/mnt/d/Projects/myapp` |
+| `C:\Users\me\code` | `/mnt/c/Users/me/code` |
+
+> **Network paths** (`\\server\share\...`) require the share to be mounted inside WSL or mapped to a drive letter.
+
+---
+
+## GitHub Copilot CLI Setup
+
+```bash
+# 1. Install GitHub CLI
+winget install GitHub.cli
+
+# 2. Authenticate
+gh auth login
+
+# 3. Install Copilot extension
+gh extension install github/gh-copilot
+
+# 4. Verify
+gh copilot --version
+
+# 5. Configure AICodeReviewer
+#    In config.ini:
+#    [backend]
+#    type = copilot
+```
+
+---
 
 ## Building Windows Executable
 
-To create a standalone Windows executable with custom icon:
-
-1. Run the build script:
-   ```bash
-   build_exe.bat
-   ```
-
-2. The build script will:
-   - Generate the application icon from `tools/convert_icon.py`
-   - Bundle all dependencies into a single executable
-   - Create `AICodeReviewer.exe` in the `dist` folder
-
-### Icon Generation
-
-The application icon is converted from the SVG design to ICO format:
-
 ```bash
-# Convert SVG to ICO
-python tools/convert_icon.py
+build_exe.bat
+# Output: dist\AICodeReviewer.exe
 ```
 
-This creates `build/icon.ico` with multiple resolutions for optimal display across different Windows contexts. The script tries multiple conversion methods (cairosvg, ImageMagick, Inkscape) and falls back to a programmatic placeholder if needed.
-
-## Performance Optimizations
-
-AICodeReviewer includes several performance optimizations to handle large codebases efficiently:
-
-### Resource Management
-- **File Size Limits**: Automatically skips files larger than 10MB to prevent memory issues
-- **Content Length Limits**: Restricts API requests to 100KB to stay within model limits
-- **File Caching**: Caches up to 100 recently read files to avoid redundant I/O operations
-- **Memory Monitoring**: Tracks memory usage during operations (optional)
-
-### API Efficiency
-- **Rate Limiting**: Maintains 6-second intervals between API calls (10 requests/minute max)
-- **Connection Pooling**: Reuses AWS connections with automatic retry logic
-- **Request Batching**: Optimized prompt sizes to maximize API efficiency
-- **Error Handling**: Graceful handling of API timeouts and throttling
-
-### Processing Optimizations
-- **Efficient File Scanning**: Uses `os.walk()` with filtered directory pruning
-- **Batch Processing**: Groups files into configurable batches (default: 5) for efficient review
-- **Parallel Processing**: Optional parallel batch processing via ThreadPoolExecutor for large projects
-- **Optimized Diff Parsing**: Streamlined parsing logic for large diff files
-
-### Configuration
-
-Performance settings can be customized in `config.ini`:
-
-```ini
-[performance]
-max_file_size_mb = 10          # Maximum file size to process
-max_fix_file_size_mb = 5       # Maximum file size for AI fixes
-file_cache_size = 100          # Number of files to cache in memory
-min_request_interval_seconds = 6.0  # API rate limiting
-max_requests_per_minute = 10   # API request limit per minute
-api_timeout_seconds = 300      # API request timeout in seconds
-connect_timeout_seconds = 30   # Connection timeout in seconds
-max_content_length = 100000    # Maximum content length for API
-max_fix_content_length = 50000 # Maximum content for fix operations
-
-[processing]
-batch_size = 5                 # Files per batch (for batch processing)
-enable_parallel_processing = false  # Enable parallel batch processing (faster for large projects)
-
-[logging]
-log_level = INFO                 # Logging level: DEBUG, INFO, WARNING, ERROR
-enable_performance_logging = true  # Enable performance monitoring
-enable_file_logging = false      # Enable to write detailed logs to file (for debugging)
-log_file = aicodereviewer.log    # File path for debug logs (when enable_file_logging = true)
-```
-
-### Performance Tips
-
-1. **Large Codebases**: Use `--scope diff` to review only changed files instead of entire projects
-2. **Parallel Processing**: Enable `enable_parallel_processing = true` in `config.ini` for 2-4x speedup on projects with 100+ files
-3. **Batch Size**: Increase `batch_size` (default: 5) to process more files concurrently when parallel processing is enabled
-4. **File Types**: The scanner automatically excludes common build/dependency directories
-5. **Memory Usage**: Monitor memory usage with `enable_performance_logging = true`
-6. **API Limits**: The tool automatically handles AWS Bedrock rate limits and retries
-7. **Timeouts**: Adjust `api_timeout_seconds` and `connect_timeout_seconds` if working with slow networks
+---
 
 ## Development
 
-### Running Tests
-
-The project includes a comprehensive test suite for the diff functionality:
-
 ```bash
-# Install development dependencies
-pip install -e ".[dev]"
+# Install with dev dependencies
+pip install -e ".[all]"
 
-# Run all tests
-pytest
-
-# Run with verbose output
+# Run tests
 pytest -v
 
-# Run specific test file
-pytest tests/test_diff_functionality.py
+# Run specific test
+pytest tests/test_scanner.py -v
 ```
 
-### Profile Management
+---
 
-You can manage your AWS profile settings using these commands:
+## Performance Tips
 
-```bash
-# Set or change your AWS profile
-python -m aicodereviewer --set-profile myprofile
+1. **Large codebases** – use `--scope diff` to review only changed files
+2. **Parallel processing** – set `enable_parallel_processing = true` for 2-4× speedup
+3. **Multiple types** – combining types in one session reuses file scanning
+4. **Batch size** – increase `batch_size` for projects with 100+ files
+5. **Rate limits** – handled automatically with exponential back-off
 
-# Remove stored profile (will prompt for new one on next run)
-python -m aicodereviewer --clear-profile
-```
+---
+
+## License
+
+See [LICENSE](LICENSE) for details.

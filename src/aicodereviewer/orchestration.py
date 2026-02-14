@@ -1,6 +1,13 @@
+# src/aicodereviewer/orchestration.py
+"""
+High-level orchestration for a code review session.
+
+Coordinates scanning, multi-type review collection, interactive
+confirmation, and report generation.
+"""
 import logging
 from datetime import datetime
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Callable
 
 from .backup import cleanup_old_backups
 from .scanner import scan_project_with_scope as default_scan
@@ -8,14 +15,25 @@ from .reviewer import collect_review_issues
 from .interactive import interactive_review_confirmation
 from .reporter import generate_review_report
 from .models import ReviewReport, ReviewIssue, calculate_quality_score
+from .i18n import t
 
 logger = logging.getLogger(__name__)
 
 
 class AppRunner:
-    def __init__(self, client, scan_fn=default_scan):
+    """
+    Orchestrates a complete review session.
+
+    Args:
+        client: An :class:`AIBackend` instance.
+        scan_fn: File-scanning function (default: ``scan_project_with_scope``).
+        backend_name: Name of the active backend for report metadata.
+    """
+
+    def __init__(self, client, *, scan_fn=None, backend_name: str = "bedrock"):
         self.client = client
-        self.scan_fn = scan_fn
+        self.scan_fn = scan_fn or default_scan
+        self.backend_name = backend_name
 
     def run(
         self,
@@ -23,69 +41,102 @@ class AppRunner:
         scope: str,
         diff_file: Optional[str],
         commits: Optional[str],
-        review_type: str,
+        review_types: List[str],
         spec_content: Optional[str],
         target_lang: str,
         programmers: List[str],
         reviewers: List[str],
         dry_run: bool = False,
+        output_file: Optional[str] = None,
+        progress_callback: Optional[Callable] = None,
     ) -> Optional[str]:
+        """
+        Execute a full review session and return the report path (or None).
+
+        Args:
+            review_types: One or more review type keys.
+            progress_callback: Optional ``(current, total, message)`` callable
+                               used by the GUI progress bar.
+        """
         # Clean old backups
         if path and not dry_run:
             cleanup_old_backups(path)
 
-        scope_desc = "entire project" if scope == 'project' else f"changes ({diff_file or commits})"
-        logger.info(f"Scanning {path} - Scope: {scope_desc} (Output Language: {target_lang})...")
-        target_files: List[Any] = self.scan_fn(path, scope, diff_file, commits)
+        type_label = ", ".join(review_types)
+        scope_desc = (
+            t("orch.scope_project") if scope == "project"
+            else t("orch.scope_diff", source=diff_file or commits)
+        )
+        logger.info(
+            t("orch.scanning", path=path, scope=scope_desc, types=type_label, lang=target_lang),
+        )
 
+        target_files: List[Any] = self.scan_fn(path, scope, diff_file, commits)
         if not target_files:
-            logger.info("No files found to review.")
+            logger.info(t("orch.no_files"))
             return None
 
         num_files = len(target_files)
-        estimated_time = num_files * 8
-        logger.info(f"Found {num_files} files to review (estimated time: {estimated_time // 60}m {estimated_time % 60}s)")
+        est = num_files * len(review_types) * 8
+        logger.info(
+            t("orch.found_files", files=num_files, types=len(review_types),
+              minutes=est // 60, seconds=est % 60),
+        )
 
-        # Dry-run mode: show files and exit without API calls
+        # ── dry run ───────────────────────────────────────────────────────
         if dry_run:
-            logger.info("\n=== DRY RUN MODE - Files that would be analyzed ===")
-            for i, file_info in enumerate(target_files, 1):
-                file_path = file_info.get('path', file_info) if isinstance(file_info, dict) else file_info
-                logger.info(f"  {i}. {file_path}")
-            logger.info(f"\nTotal: {num_files} files")
-            logger.info(f"Review type: {review_type}")
-            logger.info(f"Language: {target_lang}")
-            logger.info("\nNo API calls made. Use without --dry-run to perform actual analysis.")
+            logger.info(t("orch.dry_run_header"))
+            for i, fi in enumerate(target_files, 1):
+                fp = fi.get("path", fi) if isinstance(fi, dict) else fi
+                logger.info("  %d. %s", i, fp)
+            logger.info(t("orch.dry_run_total", count=num_files))
+            logger.info(t("orch.dry_run_types", types=type_label))
+            logger.info(t("orch.dry_run_lang", lang=target_lang))
+            logger.info(t("orch.dry_run_no_api"))
             return None
 
-        logger.info(f"Collecting review issues from {num_files} files...")
-        issues: List[ReviewIssue] = collect_review_issues(target_files, review_type, self.client, target_lang, spec_content)
+        # ── collect issues ────────────────────────────────────────────────
+        logger.info(t("orch.collecting"))
+        issues: List[ReviewIssue] = collect_review_issues(
+            target_files,
+            review_types,
+            self.client,
+            target_lang,
+            spec_content,
+            progress_callback=progress_callback,
+        )
 
         if not issues:
-            logger.info("No review issues found!")
+            logger.info(t("orch.no_issues"))
             return None
 
-        logger.info(f"Found {len(issues)} review issues. Starting interactive confirmation...")
-        resolved_issues = interactive_review_confirmation(issues, self.client, review_type, target_lang)
+        logger.info(t("orch.found_issues", count=len(issues)))
+
+        # The interactive step uses the first review_type for verification
+        # prompts; individual issues carry their own issue_type.
+        resolved_issues = interactive_review_confirmation(
+            issues, self.client, review_types[0], target_lang
+        )
 
         quality_score = calculate_quality_score(resolved_issues)
+        diff_source = (diff_file or commits) if scope == "diff" else None
 
-        diff_source = diff_file or commits if scope == 'diff' else None
         report = ReviewReport(
             project_path=path or "",
-            review_type=review_type,
+            review_type=", ".join(review_types),
             scope=scope,
-            total_files_scanned=len(target_files),
+            total_files_scanned=num_files,
             issues_found=resolved_issues,
             generated_at=datetime.now(),
             language=target_lang,
+            review_types=list(review_types),
             diff_source=diff_source,
             quality_score=quality_score,
             programmers=programmers,
             reviewers=reviewers,
+            backend=self.backend_name,
         )
 
-        output_file = generate_review_report(report)
-        logger.info(f"Review complete! Report saved to: {output_file}")
-        logger.info(f"Summary: {output_file.replace('.json', '_summary.txt')}")
-        return output_file
+        out = generate_review_report(report, output_file)
+        logger.info(t("orch.complete", path=out))
+        return out

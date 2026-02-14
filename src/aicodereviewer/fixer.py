@@ -2,83 +2,79 @@
 """
 AI-powered code fix generation.
 
-This module handles the generation of automated code fixes using AI analysis.
-It includes size validation, focused prompts, and error handling to ensure
-safe and effective fix generation.
-
-Functions:
-    apply_ai_fix: Generate AI-powered fixes for code issues
+Delegates to the active :class:`AIBackend` to produce corrected source code
+for a given review issue.
 """
 import os
-from typing import Optional
-from botocore.exceptions import ClientError
 import logging
+from typing import Optional
 
 from .models import ReviewIssue
 from .config import config
+
 logger = logging.getLogger(__name__)
 
 
-def apply_ai_fix(issue: ReviewIssue, client, review_type: str, lang: str) -> Optional[str]:
+def apply_ai_fix(
+    issue: ReviewIssue,
+    client,
+    review_type: str,
+    lang: str,
+) -> Optional[str]:
     """
-    Generate an AI-powered fix for a code review issue.
-
-    Creates a focused prompt for the AI to generate a complete corrected version
-    of the code. Includes multiple size and content validations to prevent
-    issues with large files or excessive API usage.
+    Ask the AI backend to produce a fixed version of the file.
 
     Args:
-        issue (ReviewIssue): The issue to generate a fix for
-        client: AI review client instance
-        review_type (str): Type of review the issue came from
-        lang (str): Language for AI responses ('en' or 'ja')
+        issue: The issue to fix.
+        client: An :class:`AIBackend` instance.
+        review_type: The review category.
+        lang: Response language.
 
     Returns:
-        Optional[str]: The fixed code as a string, or None if fix generation failed
-
-    Note:
-        This function only generates the fix - it does not apply it to the file.
-        Size limits prevent processing of very large files to avoid API issues.
+        Fixed code string, or *None* on failure.
     """
     try:
-        # Check file size before processing
         file_size = os.path.getsize(issue.file_path)
-        max_fix_size = config.get('performance', 'max_fix_file_size_mb')
+        max_fix_size = config.get("performance", "max_fix_file_size_mb")
         if file_size > max_fix_size:
-            logger.warning(f"File too large for AI fix: {issue.file_path} ({file_size} bytes > {max_fix_size} bytes)")
+            logger.warning(
+                "File too large for AI fix: %s (%d bytes)", issue.file_path, file_size
+            )
             return None
 
-        with open(issue.file_path, "r", encoding="utf-8", errors="ignore") as f:
-            current_code = f.read()
+        with open(issue.file_path, "r", encoding="utf-8", errors="ignore") as fh:
+            current_code = fh.read()
 
-        # Skip if file is empty or too large for the model
-        max_fix_content = config.get('performance', 'max_fix_content_length')
-        if not current_code or len(current_code) > max_fix_content:
-            logger.warning(f"File content too large for AI processing: {issue.file_path} ({len(current_code)} chars > {max_fix_content})")
+        max_content = config.get("performance", "max_fix_content_length")
+        if not current_code or len(current_code) > max_content:
+            logger.warning(
+                "Content too large for fix: %s (%d chars)", issue.file_path, len(current_code)
+            )
             return None
 
-        # Create a more focused prompt for the AI to generate a fix
-        fix_prompt = f"""You are an expert code fixer. Fix this specific issue in the code:
+        # Use the backend's dedicated get_fix method if available,
+        # falling back to get_review with a fix prompt.
+        if hasattr(client, "get_fix"):
+            result = client.get_fix(
+                current_code,
+                issue_feedback=issue.ai_feedback,
+                review_type=review_type,
+                lang=lang,
+            )
+        else:
+            fix_prompt = (
+                f"You are an expert code fixer. Fix this specific issue:\n\n"
+                f"ISSUE TYPE: {review_type}\n"
+                f"FEEDBACK: {issue.ai_feedback}\n\n"
+                f"CODE TO FIX:\n{current_code}\n\n"
+                "Return ONLY the complete corrected code, no explanations or markdown."
+            )
+            result = client.get_review(fix_prompt, review_type="fix", lang=lang)
 
-ISSUE TYPE: {review_type}
-FEEDBACK: {issue.ai_feedback}
-
-CODE TO FIX:
-{current_code}
-
-Return ONLY the complete corrected code, no explanations or markdown."""
-
-        # Use the bedrock client to get the fix
-        fix_result = client.get_review(fix_prompt, review_type="fix", lang=lang)
-
-        if fix_result and not fix_result.startswith("Error:"):
-            return fix_result.strip()  # Remove extra whitespace
-
+        if result and not result.startswith("Error:"):
+            return result.strip()
         return None
 
-    except (OSError, UnicodeDecodeError, ClientError) as e:
-        logger.error(f"Error generating AI fix: {e}")
-        return None
-    except Exception as e:
-        logger.error(f"Error generating AI fix: {e}")
+    except Exception as exc:
+        logger.error("Error generating AI fix: %s", exc)
         return None

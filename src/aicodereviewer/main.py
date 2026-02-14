@@ -1,215 +1,296 @@
 # src/aicodereviewer/main.py
 """
-Main entry point for AICodeReviewer.
+CLI entry point for AICodeReviewer.
 
-This module provides the command-line interface and orchestrates the complete
-code review workflow including file scanning, issue collection, interactive
-review, and report generation.
-
-The workflow follows these steps:
-1. Parse command-line arguments
-2. Validate scope and authentication
-3. Scan project files or parse diffs
-4. Collect review issues from AI analysis
-5. Interactive review confirmation
-6. Generate and save reports
+Supports:
+- Multiple review types per session (``--type security,performance``)
+- Backend selection (``--backend bedrock|kiro|copilot|local``)
+- Full-project and diff-based scopes
+- Dry-run mode
+- Profile management
+- Connection testing (``--check-connection``)
+- GUI launcher (``--gui``)
 """
 import argparse
 import logging
-from datetime import datetime
+import sys
 
-from aicodereviewer.auth import get_profile_name, set_profile_name, clear_profile, get_system_language
-from aicodereviewer.bedrock import BedrockClient
+from aicodereviewer.auth import get_system_language, set_profile_name, clear_profile
+from aicodereviewer.backends import create_backend
+from aicodereviewer.backends.base import REVIEW_TYPE_KEYS, REVIEW_TYPE_META
 from aicodereviewer.backup import cleanup_old_backups
 from aicodereviewer.scanner import scan_project_with_scope
 from aicodereviewer.orchestration import AppRunner
-from aicodereviewer.orchestration import AppRunner
-from aicodereviewer.models import ReviewReport, calculate_quality_score
+from aicodereviewer.i18n import t, set_locale
 
 logger = logging.getLogger(__name__)
 
 
+def _build_epilog() -> str:
+    """Generate CLI epilog with review type listing."""
+    lines = [
+        t("cli.epilog_types"),
+    ]
+    for key in REVIEW_TYPE_KEYS:
+        meta = REVIEW_TYPE_META.get(key, {})
+        label = meta.get("label", key)
+        group = meta.get("group", "")
+        lines.append(f"  {key:20s}  {label}  [{group}]")
+
+    lines += [
+        "",
+        t("cli.epilog_vcs"),
+        t("cli.epilog_subdir"),
+        t("cli.epilog_git"),
+        t("cli.epilog_svn"),
+    ]
+    return "\n".join(lines)
+
+
 def main():
-    """
-    Main entry point for AICodeReviewer.
-
-    Parses command-line arguments, sets up AWS authentication, scans the codebase,
-    performs AI-powered code review, and generates comprehensive reports.
-
-    Command-line options support different review scopes (project vs diff),
-    review types (security, performance, etc.), and output formats.
-    """
     parser = argparse.ArgumentParser(
-        description="AICodeReviewer - Multi-language AI Review",
+        description=t("cli.desc"),
         formatter_class=argparse.RawTextHelpFormatter,
-        epilog=(
-            "VCS diff behavior:\n"
-            "- When you run from a subdirectory inside a repository, diffs are scoped to that directory.\n"
-            "  Git (subdirectory): git diff RANGE -- .\n"
-            "  Git (repo root):    git diff RANGE\n"
-            "  SVN (subdirectory): svn diff -r REV1:REV2 .\n"
-            "  SVN (repo root):    svn diff -r REV1:REV2\n"
-            "- SVN ranges accept REV1..REV2 or REV1:REV2; both are normalized."
-        )
+        epilog=_build_epilog(),
     )
 
-    # Profile management options
+    # ── profile management ─────────────────────────────────────────────────
     parser.add_argument("--set-profile", metavar="PROFILE",
-                        help="Set or change AWS profile name")
+                        help=t("cli.help_set_profile"))
     parser.add_argument("--clear-profile", action="store_true",
-                        help="Remove stored AWS profile from keyring")
+                        help=t("cli.help_clear_profile"))
 
-    # Review scope options
-    parser.add_argument("--scope", choices=['project', 'diff'], default='project',
-                        help="Review scope: 'project' for entire project, 'diff' for changes only")
+    # ── scope ──────────────────────────────────────────────────────────────
+    parser.add_argument("--scope", choices=["project", "diff"], default="project",
+                        help=t("cli.help_scope"))
     parser.add_argument("--diff-file", metavar="FILE",
-                        help="Path to diff file (TortoiseSVN/TortoiseGit format) for diff scope")
+                        help=t("cli.help_diff_file"))
     parser.add_argument("--commits", metavar="RANGE",
-                        help=(
-                            "Commit/revision range for diff. Examples:\n"
-                            "  Git: HEAD~1..HEAD or abc123..def456\n"
-                            "  SVN: PREV:HEAD or 100:101 (also accepts 100..101)\n"
-                            "Behavior: If run from a subdirectory, diff is scoped to that directory."
-                        ))
+                        help=t("cli.help_commits"))
 
-    # Code review options
-    parser.add_argument("path", nargs="?", help="Path to the project folder (required for project scope, optional for diff scope to provide additional context)")
-    parser.add_argument("--type", choices=['security', 'performance', 'best_practices', 'maintainability', 'documentation', 'testing', 'accessibility', 'scalability', 'compatibility', 'error_handling', 'complexity', 'architecture', 'license', 'specification', 'localization'],
-                        default='best_practices')
+    # ── review ─────────────────────────────────────────────────────────────
+    parser.add_argument("path", nargs="?",
+                        help=t("cli.help_path"))
+    parser.add_argument(
+        "--type", dest="review_types", default="best_practices",
+        help=t("cli.help_type"),
+    )
     parser.add_argument("--spec-file", metavar="FILE",
-                        help="Path to specification document file (required when using --type specification)")
-    # Manual language override
-    parser.add_argument("--lang", choices=['en', 'ja', 'default'], default='default',
-                        help="Review language (en: English, ja: Japanese)")
+                        help=t("cli.help_spec_file"))
 
-    # Report output options
+    # ── backend ────────────────────────────────────────────────────────────
+    parser.add_argument("--backend", choices=["bedrock", "kiro", "copilot", "local"],
+                        default=None,
+                        help=t("cli.help_backend"))
+
+    # ── language ───────────────────────────────────────────────────────────
+    parser.add_argument("--lang", choices=["en", "ja", "default"], default="default",
+                        help=t("cli.help_lang"))
+
+    # ── output ─────────────────────────────────────────────────────────────
     parser.add_argument("--output", metavar="FILE",
-                        help="Output file path for the review report (JSON format)")
+                        help=t("cli.help_output"))
 
-    # Review metadata options
-    parser.add_argument("--programmers", nargs='+', metavar="NAME",
-                        help="Names of programmers who worked on the code (space-separated)")
-    parser.add_argument("--reviewers", nargs='+', metavar="NAME",
-                        help="Names of reviewers performing the review (space-separated)")
+    # ── metadata ───────────────────────────────────────────────────────────
+    parser.add_argument("--programmers", nargs="+", metavar="NAME",
+                        help=t("cli.help_programmers"))
+    parser.add_argument("--reviewers", nargs="+", metavar="NAME",
+                        help=t("cli.help_reviewers"))
 
-    # Dry run option
+    # ── flags ──────────────────────────────────────────────────────────────
     parser.add_argument("--dry-run", action="store_true",
-                        help="Show files that would be analyzed without making API calls")
+                        help=t("cli.help_dry_run"))
+    parser.add_argument("--gui", action="store_true",
+                        help=t("cli.help_gui"))
+    parser.add_argument("--check-connection", action="store_true",
+                        help=t("cli.help_check_connection"))
 
     args = parser.parse_args()
 
-    # Configure logging: crisp console output for interactive UI
-    try:
-        log_level_name = 'INFO'
-        from aicodereviewer.config import config as _config
-        lvl = _config.get('logging', 'log_level', 'INFO')
-        if isinstance(lvl, str):
-            log_level_name = lvl.upper()
+    # ── logging setup ──────────────────────────────────────────────────────
+    _setup_logging()
 
-        level = getattr(logging, log_level_name, logging.INFO)
-        root_logger = logging.getLogger()
-        root_logger.setLevel(level)
+    # ── language / locale ──────────────────────────────────────────────────
+    target_lang = args.lang if args.lang != "default" else get_system_language()
+    set_locale(target_lang)
 
-        # Clear existing handlers to avoid duplicate logs
-        root_logger.handlers.clear()
+    # ── GUI shortcut ───────────────────────────────────────────────────────
+    if args.gui:
+        _launch_gui()
+        return
 
-        # Console handler with minimal formatting to keep UI clean
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(level)
-        console_handler.setFormatter(logging.Formatter('%(message)s'))
-        root_logger.addHandler(console_handler)
-
-        # Optional file handler for debugging with detailed format
-        try:
-            enable_file_logging = _config.get('logging', 'enable_file_logging', 'false').lower() == 'true'
-            if enable_file_logging:
-                log_file = _config.get('logging', 'log_file', 'aicodereviewer.log')
-                file_handler = logging.FileHandler(log_file, encoding='utf-8')
-                file_handler.setLevel(level)
-                file_handler.setFormatter(logging.Formatter(
-                    '[%(asctime)s] [%(levelname)s] %(name)s: %(message)s',
-                    datefmt='%Y-%m-%d %H:%M:%S'
-                ))
-                root_logger.addHandler(file_handler)
-                logger.debug(f"File logging enabled: {log_file}")
-        except Exception as e:
-            logger.warning(f"Could not enable file logging: {e}")
-    except Exception:
-        logging.basicConfig(level=logging.INFO, format='%(message)s')
-
-    # Handle profile management commands first
+    # ── profile commands ───────────────────────────────────────────────────
     if args.set_profile:
         set_profile_name(args.set_profile)
         return
-    elif args.clear_profile:
+    if args.clear_profile:
         clear_profile()
         return
 
-    # Validate scope and diff options for diff-based reviews
-    if args.scope == 'diff':
-        if not args.diff_file and not args.commits:
-            parser.error("--diff-file or --commits is required when using --scope diff")
-        if args.diff_file and args.commits:
-            parser.error("Cannot specify both --diff-file and --commits")
+    # ── connection check ───────────────────────────────────────────────────
+    if args.check_connection:
+        _check_connection(args.backend)
+        return
 
-    # Require path for project scope, optional for diff scope
-    if args.scope == 'project' and not args.path:
-        parser.error("path is required for project scope (or use --set-profile or --clear-profile)")
+    # ── parse review types ─────────────────────────────────────────────────
+    review_types = _parse_review_types(args.review_types)
 
-    # Require programmers and reviewers for code review operations (not needed for dry-run)
+    # ── validation ─────────────────────────────────────────────────────────
+    if args.scope == "diff" and not args.diff_file and not args.commits:
+        parser.error("--diff-file or --commits required for diff scope")
+    if args.scope == "diff" and args.diff_file and args.commits:
+        parser.error("Cannot use both --diff-file and --commits")
+    if args.scope == "project" and not args.path:
+        parser.error("path is required for project scope")
     if not args.dry_run:
         if not args.programmers:
-            parser.error("--programmers is required for code review")
+            parser.error("--programmers is required for a review")
         if not args.reviewers:
-            parser.error("--reviewers is required for code review")
+            parser.error("--reviewers is required for a review")
+    if "specification" in review_types and not args.spec_file:
+        parser.error("--spec-file required when using specification type")
 
-    # Require spec-file when using specification review type
-    if args.type == 'specification' and not args.spec_file:
-        parser.error("--spec-file is required when using --type specification")
-
-    # Determine final language for AI responses
-    target_lang = args.lang
-    if target_lang == 'default':
-        target_lang = get_system_language()
-
-    # Initialize AWS Bedrock client with configured authentication (skip for dry-run)
+    # ── backend ────────────────────────────────────────────────────────────
     client = None
+    backend_name = args.backend or "bedrock"
     if not args.dry_run:
-        client = BedrockClient()
+        client = create_backend(backend_name)
 
-    # Load specification document if provided
+    # ── spec file ──────────────────────────────────────────────────────────
     spec_content = None
     if args.spec_file and not args.dry_run:
         try:
-            with open(args.spec_file, 'r', encoding='utf-8') as f:
-                spec_content = f.read()
+            with open(args.spec_file, "r", encoding="utf-8") as fh:
+                spec_content = fh.read()
         except FileNotFoundError:
-            logger.error(f"Error: Specification file not found: {args.spec_file}")
+            logger.error(t("cli.spec_not_found", path=args.spec_file))
             return
-        except Exception as e:
-            logger.error(f"Error reading specification file: {e}")
+        except Exception as exc:
+            logger.error(t("cli.spec_read_error", error=exc))
             return
 
-    # Clean up old backup files to manage disk space
-    if args.path and not args.dry_run:
-        cleanup_old_backups(args.path)
-
-    # Run orchestration
-    runner = AppRunner(client, scan_fn=scan_project_with_scope)
+    # ── run ────────────────────────────────────────────────────────────────
+    runner = AppRunner(client, scan_fn=scan_project_with_scope, backend_name=backend_name)
     runner.run(
         path=args.path,
         scope=args.scope,
         diff_file=args.diff_file,
         commits=args.commits,
-        review_type=args.type,
+        review_types=review_types,
         spec_content=spec_content,
         target_lang=target_lang,
         programmers=args.programmers or [],
         reviewers=args.reviewers or [],
         dry_run=args.dry_run,
+        output_file=args.output,
     )
 
-    # Orchestration handles reporting/logging
+
+# ── helpers ────────────────────────────────────────────────────────────────
+
+def _parse_review_types(raw: str) -> list:
+    """
+    Parse a comma-separated (or 'all') review type string.
+
+    Returns a validated and deduplicated list.
+    """
+    parts = [p.strip().lower() for p in raw.replace("+", ",").split(",") if p.strip()]
+    if "all" in parts:
+        return list(REVIEW_TYPE_KEYS)
+    seen = set()
+    result = []
+    for p in parts:
+        if p in REVIEW_TYPE_KEYS and p not in seen:
+            result.append(p)
+            seen.add(p)
+        elif p not in REVIEW_TYPE_KEYS:
+            logger.warning(t("cli.unknown_type", type=p))
+    return result or ["best_practices"]
+
+
+def _check_connection(backend_name: str | None):
+    """Test connectivity for the selected backend with diagnostic output."""
+    from aicodereviewer.config import config as _cfg
+
+    backend_name = backend_name or _cfg.get("backend", "type", "bedrock")
+    print(t("conn.checking", backend=backend_name))
+
+    try:
+        client = create_backend(backend_name)
+        ok = client.validate_connection()
+    except Exception as exc:
+        ok = False
+        logger.error("%s", exc)
+
+    if ok:
+        print(t("conn.success"))
+        # Show extra details per backend
+        if backend_name == "bedrock":
+            model = _cfg.get("model", "model_id", "")
+            region = _cfg.get("aws", "region", "")
+            print(t("conn.details_model", model=model))
+            print(t("conn.details_region", region=region))
+        elif backend_name == "local":
+            url = _cfg.get("local_llm", "api_url", "")
+            model = _cfg.get("local_llm", "model", "")
+            print(t("conn.details_url", url=url))
+            print(t("conn.details_model", model=model))
+    else:
+        print(t("conn.failure"))
+        # Provide helpful hints
+        if backend_name == "bedrock":
+            print(t("conn.hint_bedrock_sso"))
+            print(t("conn.hint_bedrock_profile"))
+            print(t("conn.hint_bedrock_model"))
+        elif backend_name == "kiro":
+            print(t("conn.hint_kiro_wsl"))
+            print(t("conn.hint_kiro_cli"))
+        elif backend_name == "copilot":
+            print(t("conn.hint_copilot_gh"))
+            print(t("conn.hint_copilot_auth"))
+            print(t("conn.hint_copilot_ext"))
+        elif backend_name == "local":
+            print(t("conn.hint_local_url"))
+            print(t("conn.hint_local_model"))
+            print(t("conn.hint_local_api_type"))
+
+
+def _setup_logging():
+    from aicodereviewer.config import config as _cfg
+
+    level_name = (_cfg.get("logging", "log_level", "INFO") or "INFO").upper()
+    level = getattr(logging, level_name, logging.INFO)
+
+    root = logging.getLogger()
+    root.setLevel(level)
+    root.handlers.clear()
+
+    console = logging.StreamHandler()
+    console.setLevel(level)
+    console.setFormatter(logging.Formatter("%(message)s"))
+    root.addHandler(console)
+
+    try:
+        if _cfg.get("logging", "enable_file_logging", False):
+            log_file = _cfg.get("logging", "log_file", "aicodereviewer.log")
+            fh = logging.FileHandler(log_file, encoding="utf-8")
+            fh.setLevel(level)
+            fh.setFormatter(
+                logging.Formatter("[%(asctime)s] %(levelname)s %(name)s: %(message)s")
+            )
+            root.addHandler(fh)
+    except Exception:
+        pass
+
+
+def _launch_gui():
+    """Import and start the CustomTkinter GUI."""
+    try:
+        from aicodereviewer.gui.app import launch
+        launch()
+    except ImportError as exc:
+        logger.error("%s\n%s", t("cli.gui_missing"), exc)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

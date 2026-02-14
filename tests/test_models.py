@@ -1,6 +1,9 @@
 # tests/test_models.py
 """
-Tests for AI Code Reviewer data models
+Tests for AI Code Reviewer data models.
+
+Covers ReviewIssue, ReviewReport (including new v2.0 fields review_types,
+backend, programmers, reviewers, quality_score), and calculate_quality_score.
 """
 import pytest
 from datetime import datetime
@@ -53,7 +56,7 @@ class TestReviewReport:
     """Test ReviewReport dataclass"""
 
     def test_review_report_creation(self):
-        """Test creating a ReviewReport"""
+        """Test creating a ReviewReport with v2 fields"""
         issues = [
             ReviewIssue(
                 file_path="/path/to/file.py",
@@ -73,17 +76,62 @@ class TestReviewReport:
             total_files_scanned=5,
             issues_found=issues,
             generated_at=generated_at,
-            language="en"
+            language="en",
+            review_types=["security"],
+            backend="bedrock",
         )
 
         assert report.project_path == "/path/to/project"
         assert report.review_type == "security"
+        assert report.review_types == ["security"]
+        assert report.backend == "bedrock"
         assert report.scope == "project"
         assert report.total_files_scanned == 5
         assert len(report.issues_found) == 1
         assert report.generated_at == generated_at
         assert report.language == "en"
         assert report.diff_source is None
+
+    def test_review_report_multi_type(self):
+        """Test ReviewReport with multiple review types."""
+        report = ReviewReport(
+            project_path="/p",
+            review_type="security, performance",
+            scope="project",
+            total_files_scanned=3,
+            issues_found=[],
+            generated_at=datetime.now(),
+            language="en",
+            review_types=["security", "performance"],
+            backend="kiro",
+            programmers=["Alice"],
+            reviewers=["Bob"],
+            quality_score=95,
+        )
+
+        assert report.review_types == ["security", "performance"]
+        assert report.backend == "kiro"
+        assert report.programmers == ["Alice"]
+        assert report.reviewers == ["Bob"]
+        assert report.quality_score == 95
+
+    def test_review_report_defaults_for_new_fields(self):
+        """Old-style construction still works – defaults for new fields."""
+        report = ReviewReport(
+            project_path="/p",
+            review_type="security",
+            scope="project",
+            total_files_scanned=1,
+            issues_found=[],
+            generated_at=datetime.now(),
+            language="en",
+        )
+
+        assert report.review_types == []
+        assert report.backend == "bedrock"
+        assert report.programmers == []
+        assert report.reviewers == []
+        assert report.quality_score is None
 
     def test_review_report_to_dict(self):
         """Test converting ReviewReport to dictionary"""
@@ -108,13 +156,17 @@ class TestReviewReport:
             total_files_scanned=5,
             issues_found=issues,
             generated_at=generated_at,
-            language="en"
+            language="en",
+            review_types=["security"],
+            backend="bedrock",
         )
 
         data = report.to_dict()
 
         assert data['project_path'] == "/path/to/project"
         assert data['review_type'] == "security"
+        assert data['review_types'] == ["security"]
+        assert data['backend'] == "bedrock"
         assert isinstance(data['generated_at'], str)  # Should be ISO string
         assert len(data['issues_found']) == 1
 
@@ -144,16 +196,41 @@ class TestReviewReport:
             'issues_found': issues_data,
             'generated_at': datetime.now().isoformat(),
             'language': "en",
-            'diff_source': None
+            'diff_source': None,
+            'review_types': ["security"],
+            'backend': "bedrock",
+            'programmers': [],
+            'reviewers': [],
+            'quality_score': 80,
         }
 
         report = ReviewReport.from_dict(data)
 
         assert report.project_path == "/path/to/project"
         assert report.review_type == "security"
+        assert report.review_types == ["security"]
+        assert report.backend == "bedrock"
         assert len(report.issues_found) == 1
         assert isinstance(report.generated_at, datetime)
         assert isinstance(report.issues_found[0].resolved_at, datetime)
+
+    def test_review_report_from_dict_legacy(self):
+        """Old v1 dicts without review_types/backend still deserialise cleanly."""
+        data = {
+            'project_path': "/p",
+            'review_type': "security",
+            'scope': "project",
+            'total_files_scanned': 1,
+            'issues_found': [],
+            'generated_at': datetime.now().isoformat(),
+            'language': "en",
+            'diff_source': None,
+        }
+
+        report = ReviewReport.from_dict(data)
+
+        assert report.review_types == []
+        assert report.backend == "bedrock"
 
 
 class TestCalculateQualityScore:

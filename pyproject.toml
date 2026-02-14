@@ -1,29 +1,35 @@
 [build-system]
-requires = ["setuptools", "wheel"]
+requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "aicodereviewer"
-version = "0.1.0"
-description = "AI Code Review Program"
-authors = [
-    {name = "Your Name", email = "your.email@example.com"},
-]
+version = "2.0.0"
+description = "AI-powered multi-backend code review tool"
+readme = "README.md"
 license = { file = "LICENSE" }
+requires-python = ">=3.10"
+authors = [
+    {name = "AICodeReviewer Team"},
+]
 dependencies = [
     "boto3",
     "keyring",
-    "psutil",
+    "psutil>=5.9",
 ]
 
 [project.optional-dependencies]
+gui = [
+    "customtkinter>=5.2",
+]
 dev = [
-    "pytest>=9.0.2",
+    "pytest>=9.0",
     "pytest-cov",
     "pip-licenses",
 ]
-
-requires-python = ">=3.8"
+all = [
+    "aicodereviewer[gui,dev]",
+]
 
 [project.scripts]
 aicodereviewer = "aicodereviewer.main:main"

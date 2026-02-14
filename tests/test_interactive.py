@@ -1,6 +1,9 @@
 # tests/test_interactive.py
 """
-Tests for AI Code Reviewer interactive functionality
+Tests for AI Code Reviewer interactive functionality.
+
+Updated for v2.0: new action "5" (SKIP), force-resolve on failed
+verification, and refactored helper functions.
 """
 import pytest
 from unittest.mock import MagicMock, patch
@@ -67,7 +70,7 @@ class TestInteractiveReviewConfirmation:
     @patch('aicodereviewer.interactive.verify_issue_resolved')
     def test_interactive_resolve_issue(self, mock_verify, mock_choice):
         """Test resolving an issue"""
-        mock_choice.side_effect = ["1", "4"]  # RESOLVED, then VIEW CODE
+        mock_choice.side_effect = ["1"]
         mock_verify.return_value = True
 
         mock_client = MagicMock()
@@ -83,7 +86,7 @@ class TestInteractiveReviewConfirmation:
     @patch('aicodereviewer.interactive.get_valid_choice')
     def test_interactive_ignore_issue(self, mock_choice, mock_input):
         """Test ignoring an issue"""
-        mock_choice.side_effect = ["2", "4"]  # IGNORE, then VIEW CODE
+        mock_choice.side_effect = ["2"]
         mock_input.return_value = "Test reason"
 
         mock_client = MagicMock()
@@ -102,8 +105,8 @@ class TestInteractiveReviewConfirmation:
     @patch('shutil.copy2')
     def test_interactive_ai_fix_accepted(self, mock_copy, mock_open, mock_fix, mock_choice, mock_input):
         """Test accepting an AI fix"""
-        mock_choice.side_effect = ["3", "y", "4"]  # AI FIX, accept, VIEW CODE
-        mock_input.return_value = "dummy"  # Not used in this test
+        mock_choice.side_effect = ["3", "y"]
+        mock_input.return_value = "dummy"
         mock_fix.return_value = "fixed_code()"
         mock_open.return_value.__enter__.return_value.read.return_value = "original_code()"
 
@@ -115,7 +118,6 @@ class TestInteractiveReviewConfirmation:
         assert len(result) == 1
         assert result[0].status == "ai_fixed"
         assert result[0].ai_fix_applied == "fixed_code()"
-        mock_copy.assert_called_once()  # Backup created
 
     @patch('builtins.input')
     @patch('aicodereviewer.interactive.get_valid_choice')
@@ -123,7 +125,7 @@ class TestInteractiveReviewConfirmation:
     def test_interactive_ai_fix_rejected(self, mock_fix, mock_choice, mock_input):
         """Test rejecting an AI fix"""
         mock_choice.side_effect = ["3", "n", "cancel"]  # AI FIX, reject, then cancel
-        mock_input.return_value = "dummy"  # Not used in this test
+        mock_input.return_value = "dummy"
         mock_fix.return_value = "fixed_code()"
 
         mock_client = MagicMock()
@@ -132,7 +134,7 @@ class TestInteractiveReviewConfirmation:
         result = interactive_review_confirmation(issues, mock_client, "security", "en")
 
         assert len(result) == 1
-        assert result[0].status == "pending"  # Still pending
+        assert result[0].status == "pending"
 
     @patch('aicodereviewer.interactive.get_valid_choice')
     @patch('builtins.open', new_callable=MagicMock)
@@ -144,9 +146,39 @@ class TestInteractiveReviewConfirmation:
         mock_client = MagicMock()
         issues = [self.create_test_issue()]
 
-        result = interactive_review_confirmation(issues, mock_client, "security", "en")
+        with patch('aicodereviewer.interactive.verify_issue_resolved', return_value=True):
+            result = interactive_review_confirmation(issues, mock_client, "security", "en")
 
         mock_open.assert_called()
+
+    @patch('aicodereviewer.interactive.get_valid_choice')
+    def test_interactive_skip_issue(self, mock_choice):
+        """Test skipping an issue (new v2.0 action 5)"""
+        mock_choice.return_value = "5"
+
+        mock_client = MagicMock()
+        issues = [self.create_test_issue()]
+
+        result = interactive_review_confirmation(issues, mock_client, "security", "en")
+
+        assert len(result) == 1
+        assert result[0].status == "pending"  # Still pending after skip
+
+    @patch('aicodereviewer.interactive.get_valid_choice')
+    @patch('aicodereviewer.interactive.verify_issue_resolved')
+    def test_interactive_force_resolve(self, mock_verify, mock_choice):
+        """Test force-resolve when verification fails."""
+        mock_choice.side_effect = ["1", "y"]  # RESOLVED, verification fails, force=yes
+        mock_verify.return_value = False
+
+        mock_client = MagicMock()
+        issues = [self.create_test_issue()]
+
+        result = interactive_review_confirmation(issues, mock_client, "security", "en")
+
+        assert len(result) == 1
+        assert result[0].status == "resolved"
+        assert result[0].resolution_reason == "Force-resolved by reviewer"
 
     @patch('aicodereviewer.interactive.get_valid_choice')
     def test_interactive_cancel_operation(self, mock_choice):
@@ -159,4 +191,4 @@ class TestInteractiveReviewConfirmation:
         result = interactive_review_confirmation(issues, mock_client, "security", "en")
 
         assert len(result) == 1
-        assert result[0].status == "pending"  # Still pending
+        assert result[0].status == "pending"

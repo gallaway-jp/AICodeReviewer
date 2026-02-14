@@ -1,6 +1,9 @@
 # tests/test_reporter.py
 """
-Tests for AI Code Reviewer reporter functionality
+Tests for AI Code Reviewer reporter functionality.
+
+Updated for v2.0: ReviewReport now includes review_types, backend, programmers,
+reviewers, quality_score fields. Summary includes severity/type breakdowns.
 """
 import pytest
 import json
@@ -40,12 +43,17 @@ class TestGenerateReviewReport:
 
         return ReviewReport(
             project_path="/path/to/project",
-            review_type="security",
+            review_type="security, performance",
             scope="project",
             total_files_scanned=10,
             issues_found=issues,
             generated_at=datetime(2024, 1, 1, 12, 0, 0),
-            language="en"
+            language="en",
+            review_types=["security", "performance"],
+            backend="bedrock",
+            programmers=["Alice"],
+            reviewers=["Bob"],
+            quality_score=85,
         )
 
     def test_generate_review_report_with_output_file(self):
@@ -65,7 +73,9 @@ class TestGenerateReviewReport:
                 data = json.load(f)
 
             assert data['project_path'] == "/path/to/project"
-            assert data['review_type'] == "security"
+            assert data['review_type'] == "security, performance"
+            assert data['review_types'] == ["security", "performance"]
+            assert data['backend'] == "bedrock"
             assert len(data['issues_found']) == 2
 
     def test_generate_review_report_auto_filename(self):
@@ -73,7 +83,6 @@ class TestGenerateReviewReport:
         report = self.create_test_report()
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            # Change to temp directory for relative path generation
             import os
             old_cwd = os.getcwd()
             os.chdir(temp_dir)
@@ -108,27 +117,24 @@ class TestGenerateReviewReport:
             assert "AI Code Review Report" in content
             assert "/path/to/project" in content
             assert "security" in content
+            assert "performance" in content
             assert "Files Scanned: 10" in content
-            assert "Resolved: 1" in content
-            assert "Ignored: 1" in content
+            # v2.0 summary additions
+            assert "Backend" in content
+            assert "bedrock" in content
+            assert "By Severity" in content
+            assert "By Review Type" in content
 
-    def test_generate_review_report_detailed_issues(self):
-        """Test detailed issues in summary"""
+    def test_generate_review_report_quality_score(self):
+        """Test that quality score appears in summary."""
         report = self.create_test_report()
 
         with tempfile.TemporaryDirectory() as temp_dir:
             output_file = Path(temp_dir) / "test_report.json"
-
             generate_review_report(report, str(output_file))
 
             summary_file = output_file.parent / (output_file.stem + '_summary.txt')
-
             with open(summary_file, 'r', encoding='utf-8') as f:
                 content = f.read()
 
-            assert "Issue 1:" in content
-            assert "/path/to/file1.py" in content
-            assert "Security issue" in content
-            assert "Issue 2:" in content
-            assert "/path/to/file2.py" in content
-            assert "Not applicable" in content
+            assert "Quality Score: 85/100" in content

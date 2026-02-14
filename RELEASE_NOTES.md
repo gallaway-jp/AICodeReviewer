@@ -1,3 +1,27 @@
+# AICodeReviewer v2.0.0
+
+Major upgrade with multi-backend support, multi-type reviews, and a graphical interface.
+
+## New Features
+- **Multi-type reviews** – combine any review types in one session (`--type security,performance,testing` or `--type all`)
+- **AWS Bedrock improvements** – exponential back-off retry, lazy connection validation, multi-model support
+- **Kiro CLI backend** – run reviews via Amazon Kiro CLI through WSL with automatic Windows→WSL path translation
+- **GitHub Copilot CLI backend** – run reviews via `gh copilot` on Windows
+- **CustomTkinter GUI** – full-featured graphical interface (`--gui`) with live log, results viewer, settings editor
+- **4 new review types** – `dependency`, `concurrency`, `api_design`, `data_validation` (19 total)
+- **Skip action** – leave issues pending during interactive review
+- **Force resolve** – override failed verification when you know an issue is fixed
+- **English-first messages** – all output defaults to English (Japanese via `--lang ja`)
+- **Improved reporter** – breakdowns by severity and review type in summary reports
+
+## Breaking Changes
+- `--type` now accepts comma-separated values; old single-value usage still works
+- Review types list expanded from 15 to 19
+- `BedrockClient` import path changed to `aicodereviewer.backends.bedrock.BedrockBackend` (backward-compat shim at old path)
+- Minimum Python version raised to 3.10
+
+---
+
 # AICodeReviewer v0.1.0 — First Release
 
 This is the first public release of AICodeReviewer for Windows.
