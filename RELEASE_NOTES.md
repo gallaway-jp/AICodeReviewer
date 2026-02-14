@@ -6,7 +6,7 @@ Major upgrade with multi-backend support, multi-type reviews, and a graphical in
 - **Multi-type reviews** – combine any review types in one session (`--type security,performance,testing` or `--type all`)
 - **AWS Bedrock improvements** – exponential back-off retry, lazy connection validation, multi-model support
 - **Kiro CLI backend** – run reviews via Amazon Kiro CLI through WSL with automatic Windows→WSL path translation
-- **GitHub Copilot CLI backend** – run reviews via `gh copilot` on Windows
+- **GitHub Copilot CLI backend** – run reviews via standalone GitHub Copilot CLI (`copilot -p`) in programmatic mode
 - **CustomTkinter GUI** – full-featured graphical interface (`--gui`) with live log, results viewer, settings editor
 - **4 new review types** – `dependency`, `concurrency`, `api_design`, `data_validation` (19 total)
 - **Skip action** – leave issues pending during interactive review

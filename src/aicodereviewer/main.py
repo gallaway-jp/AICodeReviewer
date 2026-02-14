@@ -246,9 +246,8 @@ def _check_connection(backend_name: str | None):
             print(t("conn.hint_kiro_wsl"))
             print(t("conn.hint_kiro_cli"))
         elif backend_name == "copilot":
-            print(t("conn.hint_copilot_gh"))
+            print(t("conn.hint_copilot_install"))
             print(t("conn.hint_copilot_auth"))
-            print(t("conn.hint_copilot_ext"))
         elif backend_name == "local":
             print(t("conn.hint_local_url"))
             print(t("conn.hint_local_model"))

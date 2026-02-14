@@ -53,12 +53,9 @@ class TestCollectReviewIssues:
         assert "performance issues" in issues[0].ai_feedback
 
     def test_collect_review_issues_multiple_types(self):
-        """Test collecting issues across multiple review types."""
+        """Test collecting issues across multiple review types (combined prompt)."""
         mock_client = MagicMock()
-        mock_client.get_review.side_effect = [
-            "Security vulnerability found",
-            "Performance bottleneck detected",
-        ]
+        mock_client.get_review.return_value = "Security vulnerability found"
 
         target_files = [{
             'path': Path("/path/to/test.py"),
@@ -70,9 +67,10 @@ class TestCollectReviewIssues:
             target_files, ["security", "performance"], mock_client, "en"
         )
 
-        assert len(issues) == 2
-        types = {i.issue_type for i in issues}
-        assert types == {"security", "performance"}
+        # Combined into a single prompt, so one call and one issue
+        assert len(issues) == 1
+        assert issues[0].issue_type == "security+performance"
+        mock_client.get_review.assert_called_once()
 
     def test_collect_review_issues_no_feedback(self):
         """Test collecting issues when AI returns error"""

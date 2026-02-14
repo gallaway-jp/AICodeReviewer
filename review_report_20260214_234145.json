@@ -1,0 +1,87 @@
+{
+  "project_path": "D:/Development/SVN/SVNCheckout/sample_project",
+  "review_type": "best_practices",
+  "scope": "project",
+  "total_files_scanned": 5,
+  "issues_found": [
+    {
+      "file_path": "D:\\Development\\SVN\\SVNCheckout\\sample_project\\api_handler.py",
+      "line_number": null,
+      "issue_type": "best_practices",
+      "severity": "low",
+      "description": "Review feedback for D:\\Development\\SVN\\SVNCheckout\\sample_project\\api_handler.py",
+      "code_snippet": "```python\n\"\"\"\nRefactored API handler with proper error handling and SOLID principles.\n\"\"\"\nimport requests\nimport json\nimport logging\nfrom pathlib import Path\nfrom typing import Dict, List, Any, Option…",
+      "ai_feedback": "APIClient, DataProcessor, FileStorage and ConfigParser follow Single Responsibility and the APIHandler facade is a good pattern, but: inject requests.Session (Dependency Inversion) and/or accept an interface for easier testing; avoid relying on __del__ for session cleanup (use context managers or explicit close), don't catch overly broad Exception in connect_to_service and implement exponential backoff for retries, and be careful using e.response without None checks when handling HTTPError; DataProcessor should model the payload (dataclass/DTO) and validate types instead of ad-hoc dict access (encapsulation, Single Responsibility), FileStorage and ConfigParser should prefer raising typed exceptions or returning Result objects rather than silently returning None to make failures explicit (Open/Closed, robust error handling).",
+      "status": "pending",
+      "resolution_reason": null,
+      "resolved_at": null,
+      "ai_fix_applied": null
+    },
+    {
+      "file_path": "D:\\Development\\SVN\\SVNCheckout\\sample_project\\calculator.py",
+      "line_number": null,
+      "issue_type": "best_practices",
+      "severity": "medium",
+      "description": "Review feedback for D:\\Development\\SVN\\SVNCheckout\\sample_project\\calculator.py",
+      "code_snippet": "\"\"\"\nCalculator module with best practices violations.\n\"\"\"\n\n# BEST PRACTICES ISSUE: Magic numbers without constants\ndef calculate_tax(amount):\n    return amount * 0.175\n\n\n# BEST PRACTICES ISSUE: Poor n…",
+      "ai_feedback": "Many violations: replace magic constant 0.175 with a named constant, rename f, calc, val and single-letter variables to descriptive PascalCase/names (naming conventions), split doEverything into focused methods or classes (Single Responsibility) and remove print side-effects (pure functions vs I/O), factor duplicate area logic into shape-specific classes or strategy functions (DRY, Strategy pattern), eliminate global mutable state (use instance or encapsulated counter), reduce long parameter lists (create_user) by using dataclasses or builder pattern, and add error handling for divide (avoid ZeroDivisionError).",
+      "status": "pending",
+      "resolution_reason": null,
+      "resolved_at": null,
+      "ai_fix_applied": null
+    },
+    {
+      "file_path": "D:\\Development\\SVN\\SVNCheckout\\sample_project\\data_processor.py",
+      "line_number": null,
+      "issue_type": "best_practices",
+      "severity": "medium",
+      "description": "Review feedback for D:\\Development\\SVN\\SVNCheckout\\sample_project\\data_processor.py",
+      "code_snippet": "\"\"\"\nData processing module with intentional performance issues.\n\"\"\"\nimport time\n\n\nclass DataProcessor:\n    def __init__(self):\n        self.data = []\n    \n    def process_large_dataset(self, items):\n …",
+      "ai_feedback": "This module has clear performance anti-patterns: use ''.join(...) or io.StringIO for concatenation, replace O(nﾂｲ) duplicate search with collections.Counter or set-based detection, read config.txt once instead of 100 times, precompute repetitive temp_list work (or avoid creating it per item), fuse the multiple passes in filter_data into a single comprehension/map/filter pipeline, and make wait_for_data async if waiting for I/O (performance, scalability; also split responsibilities into smaller functions).",
+      "status": "pending",
+      "resolution_reason": null,
+      "resolved_at": null,
+      "ai_fix_applied": null
+    },
+    {
+      "file_path": "D:\\Development\\SVN\\SVNCheckout\\sample_project\\user_auth.py",
+      "line_number": null,
+      "issue_type": "best_practices",
+      "severity": "critical",
+      "description": "Review feedback for D:\\Development\\SVN\\SVNCheckout\\sample_project\\user_auth.py",
+      "code_snippet": "\"\"\"\nUser authentication module with intentional security vulnerabilities.\n\"\"\"\nimport pickle\nimport hashlib\nimport sqlite3\n\n\nclass UserAuth:\n    def __init__(self, db_path=\"users.db\"):\n        self.db_…",
+      "ai_feedback": "Critical security issues: eliminate string-built SQL and use parameterized queries or an ORM to prevent SQL injection, stop using pickle for untrusted data (use JSON or other safe formats), replace MD5 with a salted, adaptive KDF (bcrypt/argon2/scrypt), generate cryptographically random session tokens (separate session management), avoid hardcoded admin credentials, and ensure DB connections and cursors are managed with context managers and thread-safety in mind (Security, Single Responsibility, least privilege).",
+      "status": "pending",
+      "resolution_reason": null,
+      "resolved_at": null,
+      "ai_fix_applied": null
+    },
+    {
+      "file_path": "D:\\Development\\SVN\\SVNCheckout\\sample_project\\utils.py",
+      "line_number": null,
+      "issue_type": "best_practices",
+      "severity": "medium",
+      "description": "Review feedback for D:\\Development\\SVN\\SVNCheckout\\sample_project\\utils.py",
+      "code_snippet": "\"\"\"\nUtility functions with maintainability issues.\n\"\"\"\n\n\n# MAINTAINABILITY ISSUE: Complex nested conditions\ndef check_eligibility(age, income, credit_score, employment_status, has_collateral):\n    if …",
+      "ai_feedback": "The functions are overly long and nested窶排efactor check_eligibility with guard clauses and small predicate helpers, decompose process_order into services (validation, pricing, shipping, payment, notification) and apply SRP and the Strategy pattern for shipping/payment, replace single-letter names with descriptive identifiers and add type hints, avoid side-effecting global helpers and make behavior explicit/testable; overall apply DRY, extract reusable pieces, and add input validation and unit tests.",
+      "status": "pending",
+      "resolution_reason": null,
+      "resolved_at": null,
+      "ai_fix_applied": null
+    }
+  ],
+  "generated_at": "2026-02-14T23:41:45.654040",
+  "language": "en",
+  "review_types": [
+    "best_practices"
+  ],
+  "diff_source": null,
+  "quality_score": 63,
+  "programmers": [
+    "p1"
+  ],
+  "reviewers": [
+    "r1"
+  ],
+  "backend": "copilot"
+}

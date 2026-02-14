@@ -1,0 +1,77 @@
+AI Code Review Report
+============================================================
+
+Project      : D:/Development/SVN/SVNCheckout/sample_project
+Review Types : best_practices
+Scope        : project
+Backend      : copilot
+Files Scanned: 5
+Quality Score: 60/100
+Programmers  : p1
+Reviewers    : r1
+Generated    : 2026-02-14 22:48:20
+Language     : en
+
+Issue Summary
+----------------------------------------
+  Total issues: 2
+  Pending     : 2
+
+By Severity
+----------------------------------------
+  Critical    : 2
+
+By Review Type
+----------------------------------------
+  best_practices      : 2
+
+
+Detailed Issues
+============================================================
+
+--- Issue 1 ---
+  File     : D:\Development\SVN\SVNCheckout\sample_project\api_handler.py
+  Type     : best_practices
+  Severity : critical
+  Status   : pending
+  Desc     : Review feedback for D:\Development\SVN\SVNCheckout\sample_project\api_handler.py
+  Snippet  : """
+API handler with error handling issues.
+"""
+import requests
+import json
+
+
+class APIHandler:
+    def __init__(self, b
+  Feedback : ## Code Review: APIHandler Class
+
+### Critical Issues
+
+#### **1. Error Handling (Violates Fail-Safe Defaults & Defensive Programming)**
+
+- **`fetch_data()`**: No exception handling for network failures, timeouts, or HTTP errors
+  - Missing status code validation (4xx, 5xx responses)
+  - No timeout c…
+
+--- Issue 2 ---
+  File     : D:\Development\SVN\SVNCheckout\sample_project\utils.py
+  Type     : best_practices
+  Severity : critical
+  Status   : pending
+  Desc     : Review feedback for D:\Development\SVN\SVNCheckout\sample_project\utils.py
+  Snippet  : """
+Utility functions with maintainability issues.
+"""
+
+
+# MAINTAINABILITY ISSUE: Complex nested conditions
+def check_el
+  Feedback : I'll review this code for maintainability issues, SOLID principles, and clean code practices.
+
+## Code Review: Maintainability & Design Issues
+
+### 1. **check_eligibility** - Arrow Anti-Pattern & Violation of Guard Clause Pattern
+
+**Issues:**
+- **Deep Nesting (Cyclomatic Complexity)**: Violates the …

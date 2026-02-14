@@ -15,8 +15,12 @@ Provides full feature parity with the CLI:
 """
 import logging
 import os
+import re
+import subprocess
 import threading
 import queue
+import tkinter as tk
+import webbrowser
 from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox
@@ -35,6 +39,10 @@ from aicodereviewer.models import ReviewIssue
 from aicodereviewer.i18n import t, set_locale, get_locale
 
 logger = logging.getLogger(__name__)
+
+
+class _CancelledError(Exception):
+    """Raised when the user cancels a running operation."""
 
 
 # ── queue-based log handler for the GUI ────────────────────────────────────
@@ -141,6 +149,8 @@ class App(ctk.CTk):
         self._issues: List[ReviewIssue] = []
         self._running = False
         self._review_client = None  # keep reference for AI fix
+        self._health_check_backend = None  # Track which backend is being checked
+        self._health_check_timer = None    # Timeout timer for health checks
 
         # Layout
         self._build_ui()
@@ -159,13 +169,25 @@ class App(ctk.CTk):
         self.tabs.grid(row=0, column=0, sticky="nsew", padx=10, pady=(10, 0))
 
         self._build_review_tab()
+        self._build_results_tab()
         self._build_settings_tab()
         self._build_log_tab()
 
-        # Bottom status
+        # Bottom status bar with cancel button
+        status_frame = ctk.CTkFrame(self, fg_color="transparent")
+        status_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=(2, 6))
+        status_frame.grid_columnconfigure(0, weight=1)
+
         self.status_var = ctk.StringVar(value=t("common.ready"))
-        status = ctk.CTkLabel(self, textvariable=self.status_var, anchor="w")
-        status.grid(row=1, column=0, sticky="ew", padx=10, pady=(2, 6))
+        status = ctk.CTkLabel(status_frame, textvariable=self.status_var,
+                              anchor="w")
+        status.grid(row=0, column=0, sticky="ew")
+
+        self.cancel_btn = ctk.CTkButton(
+            status_frame, text=t("gui.cancel_btn"), width=80,
+            fg_color="#dc2626", hover_color="#b91c1c",
+            state="disabled", command=self._cancel_operation)
+        self.cancel_btn.grid(row=0, column=1, padx=(8, 0))
 
     # ══════════════════════════════════════════════════════════════════════
     #  REVIEW TAB  – includes inline results panel
@@ -174,7 +196,6 @@ class App(ctk.CTk):
     def _build_review_tab(self):
         tab = self.tabs.add(t("gui.tab.review"))
         tab.grid_columnconfigure(0, weight=1)
-        tab.grid_rowconfigure(9, weight=1)  # results area gets leftover space
 
         row = 0
 
@@ -320,30 +341,52 @@ class App(ctk.CTk):
         self.dry_btn = ctk.CTkButton(btn_frame, text=t("gui.review.dry_run"),
                                       command=self._start_dry_run)
         self.dry_btn.grid(row=0, column=1, padx=6)
-        self.conn_btn = ctk.CTkButton(btn_frame, text=t("gui.review.test_connection"),
-                                       command=self._test_connection)
-        self.conn_btn.grid(row=0, column=2, padx=6)
         self.health_btn = ctk.CTkButton(btn_frame, text=t("health.check_btn"),
                                          command=self._check_backend_health)
-        self.health_btn.grid(row=0, column=3, padx=6)
+        self.health_btn.grid(row=0, column=2, padx=6)
 
         self.progress = ctk.CTkProgressBar(tab, width=400)
         self.progress.grid(row=row + 1, column=0, sticky="ew", padx=6, pady=3)
         self.progress.set(0)
-        row += 2
 
-        # ── Inline Results Panel ──────────────────────────────────────────
-        self._results_row = row
-        self.results_summary = ctk.CTkLabel(tab, text="", anchor="w",
+    # ══════════════════════════════════════════════════════════════════════
+    #  RESULTS TAB  – full-page issue cards
+    # ══════════════════════════════════════════════════════════════════════
+
+    def _build_results_tab(self):
+        tab = self.tabs.add(t("gui.tab.results"))
+        tab.grid_columnconfigure(0, weight=1)
+        tab.grid_rowconfigure(1, weight=1)
+
+        self.results_summary = ctk.CTkLabel(tab, text=t("gui.results.no_results"),
+                                             anchor="w",
                                              font=ctk.CTkFont(weight="bold"))
-        self.results_summary.grid(row=row, column=0, sticky="ew", padx=8, pady=(6, 2))
-        self.results_summary.grid_remove()  # hidden until results exist
-        row += 1
+        self.results_summary.grid(row=0, column=0, sticky="ew",
+                                   padx=8, pady=(6, 2))
 
         self.results_frame = ctk.CTkScrollableFrame(tab)
-        self.results_frame.grid(row=row, column=0, sticky="nsew", padx=8, pady=(0, 4))
+        self.results_frame.grid(row=1, column=0, sticky="nsew",
+                                 padx=8, pady=(0, 4))
         self.results_frame.grid_columnconfigure(0, weight=1)
-        self.results_frame.grid_remove()
+
+        # Bottom action buttons
+        btn_frame = ctk.CTkFrame(tab, fg_color="transparent")
+        btn_frame.grid(row=2, column=0, sticky="ew", padx=8, pady=(0, 6))
+
+        self.review_changes_btn = ctk.CTkButton(
+            btn_frame, text=t("gui.results.review_changes"),
+            fg_color="#2563eb", hover_color="#1d4ed8",
+            state="disabled", command=self._review_changes)
+        self.review_changes_btn.grid(row=0, column=0, padx=6)
+
+        self.finalize_btn = ctk.CTkButton(
+            btn_frame, text=t("gui.results.finalize"),
+            fg_color="green", hover_color="#228B22",
+            state="disabled", command=self._finalize_report)
+        self.finalize_btn.grid(row=0, column=1, padx=6)
+
+        # Tracking state for issue cards
+        self._issue_cards: List[dict] = []  # {issue, card, status_lbl, skip_frame, ...}
 
     # ══════════════════════════════════════════════════════════════════════
     #  SETTINGS TAB  – sectioned with tooltips
@@ -398,6 +441,22 @@ class App(ctk.CTk):
             self._setting_entries[(section, key)] = var  # StringVar for dropdowns
             if var_store_name:
                 setattr(self, var_store_name, var)
+            row[0] += 1
+
+        def _add_combobox(label: str, section: str, key: str, default: str,
+                          values: list, tooltip_key: str = "",
+                          widget_store_name: str = ""):
+            """Editable combobox – user can type freely or pick from the list."""
+            InfoTooltip.add(scroll, t(tooltip_key) if tooltip_key else label,
+                            row=row[0], column=0)
+            ctk.CTkLabel(scroll, text=label + ":").grid(
+                row=row[0], column=1, sticky="w", padx=(0, 4), pady=3)
+            combo = ctk.CTkComboBox(scroll, values=values, width=200)
+            combo.set(default)
+            combo.grid(row=row[0], column=2, sticky="ew", padx=6, pady=3)
+            self._setting_entries[(section, key)] = combo
+            if widget_store_name:
+                setattr(self, widget_store_name, combo)
             row[0] += 1
 
         # ── General section ────────────────────────────────────────────────
@@ -464,15 +523,17 @@ class App(ctk.CTk):
 
         # ── GitHub Copilot section ─────────────────────────────────────────
         _section_header(t("gui.settings.section_copilot"))
-        _add_entry(t("gui.settings.gh_path"), "copilot", "gh_path",
-                   config.get("copilot", "gh_path", "gh"),
-                   tooltip_key="gui.tip.gh_path")
+        _add_entry(t("gui.settings.copilot_path"), "copilot", "copilot_path",
+                   config.get("copilot", "copilot_path", "copilot"),
+                   tooltip_key="gui.tip.copilot_path")
         _add_entry(t("gui.settings.copilot_timeout"), "copilot", "timeout",
                    config.get("copilot", "timeout", "300"),
                    tooltip_key="gui.tip.copilot_timeout")
-        _add_entry(t("gui.settings.copilot_model"), "copilot", "model",
-                   config.get("copilot", "model", ""),
-                   tooltip_key="gui.tip.copilot_model")
+        _add_combobox(t("gui.settings.copilot_model"), "copilot", "model",
+                      config.get("copilot", "model", "auto"),
+                      ["auto"],  # populated after Check Setup
+                      tooltip_key="gui.tip.copilot_model",
+                      widget_store_name="_copilot_model_combo")
 
         # ── Local LLM section ─────────────────────────────────────────────
         _section_header(t("gui.settings.section_local"))
@@ -513,6 +574,17 @@ class App(ctk.CTk):
         _add_entry(t("gui.settings.batch_size"), "processing", "batch_size",
                    str(config.get("processing", "batch_size", 5)),
                    tooltip_key="gui.tip.batch_size")
+        combine_val = str(config.get("processing", "combine_files", "true")).lower()
+        _add_dropdown(t("gui.settings.combine_files"), "processing",
+                      "combine_files", combine_val,
+                      ["true", "false"],
+                      tooltip_key="gui.tip.combine_files")
+
+        # ── Editor section ────────────────────────────────────────────────
+        _section_header(t("gui.settings.section_editor"))
+        _add_entry(t("gui.settings.editor_command"), "gui", "editor_command",
+                   config.get("gui", "editor_command", ""),
+                   tooltip_key="gui.tip.editor_command")
 
         # ── Note + save button ─────────────────────────────────────────────
         note = ctk.CTkLabel(scroll, text=t("gui.settings.restart_note"),
@@ -573,22 +645,22 @@ class App(ctk.CTk):
         commits = self.commits_entry.get().strip() or None
 
         if scope == "project" and not path:
-            messagebox.showerror(t("common.validation"), t("gui.val.path_required"))
+            self._show_toast(t("gui.val.path_required"), error=True)
             return None
         if scope == "diff" and not diff_file and not commits:
-            messagebox.showerror(t("common.validation"), t("gui.val.diff_required"))
+            self._show_toast(t("gui.val.diff_required"), error=True)
             return None
 
         review_types = self._get_selected_types()
         if not review_types:
-            messagebox.showerror(t("common.validation"), t("gui.val.type_required"))
+            self._show_toast(t("gui.val.type_required"), error=True)
             return None
 
         programmers = [n.strip() for n in self.programmers_entry.get().split(",") if n.strip()] if not dry_run else []
         reviewers = [n.strip() for n in self.reviewers_entry.get().split(",") if n.strip()] if not dry_run else []
 
         if not dry_run and (not programmers or not reviewers):
-            messagebox.showerror(t("common.validation"), t("gui.val.meta_required"))
+            self._show_toast(t("gui.val.meta_required"), error=True)
             return None
 
         spec_content = None
@@ -598,8 +670,7 @@ class App(ctk.CTk):
                 with open(spec_path, "r", encoding="utf-8") as fh:
                     spec_content = fh.read()
             except Exception as exc:
-                messagebox.showerror(t("common.validation"),
-                                      t("gui.val.spec_read_error", error=exc))
+                self._show_toast(t("gui.val.spec_read_error", error=exc), error=True)
                 return None
 
         # Resolve review language display label to language code
@@ -644,11 +715,36 @@ class App(ctk.CTk):
             return
         self._run_review(params, dry_run=True)
 
+    def _set_action_buttons_state(self, state: str):
+        """Enable or disable all action buttons together."""
+        self.run_btn.configure(state=state)
+        self.dry_btn.configure(state=state)
+        self.health_btn.configure(state=state)
+
+    def _cancel_operation(self):
+        """Cancel the currently running operation."""
+        # Signal review/dry-run cancellation
+        if hasattr(self, '_cancel_event'):
+            self._cancel_event.set()
+
+        # Signal health-check cancellation
+        if self._health_check_backend:
+            if self._health_check_timer:
+                self._health_check_timer.cancel()
+                self._health_check_timer = None
+            self._health_check_backend = None
+            self._running = False
+            self._set_action_buttons_state("normal")
+            self.status_var.set(t("gui.val.cancelled"))
+
+        self.cancel_btn.configure(state="disabled")
+
     def _run_review(self, params: dict, dry_run: bool):
         """Execute the review in a background thread."""
         self._running = True
-        self.run_btn.configure(state="disabled")
-        self.dry_btn.configure(state="disabled")
+        self._cancel_event = threading.Event()
+        self._set_action_buttons_state("disabled")
+        self.cancel_btn.configure(state="normal")
         self.progress.set(0)
         self.status_var.set(t("common.running"))
 
@@ -661,83 +757,103 @@ class App(ctk.CTk):
                                    backend_name=backend_name)
 
                 def progress_cb(current, total, msg):
+                    if self._cancel_event.is_set():
+                        raise _CancelledError(t("gui.val.cancelled"))
                     if total > 0:
                         self.progress.set(current / total)
                     self.status_var.set(f"{msg} {current}/{total}")
 
-                report_path = runner.run(
+                result = runner.run(
                     **params,
                     dry_run=dry_run,
                     progress_callback=progress_cb,
+                    interactive=False,
+                    cancel_check=self._cancel_event.is_set,
                 )
-                self._issues = (runner.client
-                                and getattr(runner, '_last_issues', [])
-                                or [])
-                if report_path:
-                    self.after(0, lambda: self._show_inline_results(report_path))
-                else:
+
+                if dry_run:
+                    self.after(0, lambda: self._show_dry_run_complete())
+                elif isinstance(result, list):
+                    # GUI mode: got list of issues; defer report generation
+                    self._issues = result
+                    self._review_runner = runner
+                    self.after(0, lambda: self._show_issues(result))
+                elif result is None:
                     self.after(0, lambda: self.status_var.set(t("gui.val.no_report")))
+            except _CancelledError:
+                logger.info(t("gui.val.cancelled"))
+                self.after(0, lambda: self.status_var.set(t("gui.val.cancelled")))
             except Exception as exc:
                 logger.error("Review failed: %s", exc)
                 self.after(0, lambda: messagebox.showerror(t("common.error"),
                                                             str(exc)))
             finally:
                 self._running = False
-                self.after(0, lambda: self.run_btn.configure(state="normal"))
-                self.after(0, lambda: self.dry_btn.configure(state="normal"))
+                self.after(0, lambda: self._set_action_buttons_state("normal"))
+                self.after(0, lambda: self.cancel_btn.configure(state="disabled"))
                 self.after(0, lambda: self.progress.set(1.0))
 
         threading.Thread(target=_worker, daemon=True).start()
 
+    def _show_dry_run_complete(self):
+        """Switch to the Log tab and update status after a dry run."""
+        self.status_var.set(t("gui.val.dry_run_done"))
+        # Switch to the Log tab so the user can see the file listing
+        self.tabs.set(t("gui.tab.log"))
+
     # ══════════════════════════════════════════════════════════════════════
-    #  INLINE RESULTS  – displayed below the review form
+    #  RESULTS  – displayed on the Results tab
     # ══════════════════════════════════════════════════════════════════════
 
-    def _show_inline_results(self, report_path: str):
-        """Load a JSON report and populate inline results on the Review tab."""
-        import json
-        from aicodereviewer.models import ReviewReport
-
-        self.status_var.set(t("gui.val.report_saved", path=report_path))
-
-        try:
-            with open(report_path, "r", encoding="utf-8") as fh:
-                data = json.load(fh)
-            report = ReviewReport.from_dict(data)
-        except Exception as exc:
-            self.results_summary.configure(
-                text=t("gui.val.report_load_error", error=exc))
-            self.results_summary.grid()
-            return
-
-        # Show results panel
-        self.results_summary.grid()
-        self.results_frame.grid()
-
+    def _show_issues(self, issues: List[ReviewIssue]):
+        """Populate the Results tab with issue cards (no report saved yet)."""
         # Clear old results
         for w in self.results_frame.winfo_children():
             w.destroy()
+        self._issue_cards.clear()
 
-        types_str = (", ".join(report.review_types)
-                     if report.review_types else report.review_type)
-        self.results_summary.configure(
-            text=t("gui.results.summary",
-                   score=report.quality_score,
-                   issues=len(report.issues_found),
-                   types=types_str,
-                   backend=report.backend))
-
-        if not report.issues_found:
-            ctk.CTkLabel(self.results_frame,
-                          text=t("gui.results.no_results")).grid(
-                row=0, column=0, padx=8, pady=8)
+        if not issues:
+            self.results_summary.configure(text=t("gui.results.no_results"))
+            self.review_changes_btn.configure(state="disabled")
+            self.finalize_btn.configure(state="disabled")
+            self.tabs.set(t("gui.tab.results"))
             return
 
-        for i, issue in enumerate(report.issues_found):
-            self._add_issue_card(i, issue)
+        self.results_summary.configure(
+            text=t("gui.results.summary",
+                   score="—",
+                   issues=len(issues),
+                   types=", ".join(set(
+                       it for iss in issues
+                       for it in (iss.issue_type.split("+")
+                                  if "+" in iss.issue_type
+                                  else [iss.issue_type])
+                   )),
+                   backend=self.backend_var.get()))
+
+        # Issues section header
+        self._issues_header = ctk.CTkLabel(
+            self.results_frame, text=t("gui.results.issues_section"),
+            font=ctk.CTkFont(size=13, weight="bold"), anchor="w")
+        self._issues_header.grid(row=0, column=0, sticky="w", padx=6, pady=(4, 2))
+
+        for i, issue in enumerate(issues):
+            self._add_issue_card(i + 1, issue)
+
+        # Fixed section header (hidden initially)
+        self._fixed_header_row = len(issues) + 2
+        self._fixed_header = ctk.CTkLabel(
+            self.results_frame, text=t("gui.results.fixed_section"),
+            font=ctk.CTkFont(size=13, weight="bold"), anchor="w")
+        # Will be shown later: self._fixed_header.grid(...)
+
+        self._update_bottom_buttons()
+        self.tabs.set(t("gui.tab.results"))
+
+    # ── Issue card ─────────────────────────────────────────────────────────
 
     def _add_issue_card(self, index: int, issue: ReviewIssue):
-        """Add a single issue card to the inline results frame."""
+        """Add a single issue card to the results frame."""
         sev_colors = {
             "critical": "#dc2626", "high": "#ea580c",
             "medium": "#ca8a04", "low": "#2563eb", "info": "#6b7280",
@@ -760,19 +876,12 @@ class App(ctk.CTk):
             row=1, column=0, columnspan=6, sticky="w", padx=6)
 
         # Status label
-        status_map = {
-            "resolved": ("gui.results.resolved", "green"),
-            "ignored": ("gui.results.ignored", "gray50"),
-            "skipped": ("gui.results.skipped", "gray50"),
-        }
-        s_key, s_color = status_map.get(
-            issue.status, ("gui.results.pending", color))
+        s_key, s_color = self._status_display(issue, color)
         status_lbl = ctk.CTkLabel(card, text=t(s_key), text_color=s_color)
         status_lbl.grid(row=2, column=0, sticky="w", padx=6, pady=(0, 4))
 
         # Action buttons
-        btn_kw = dict(width=65, height=26,
-                      font=ctk.CTkFont(size=11))
+        btn_kw = dict(width=65, height=26, font=ctk.CTkFont(size=11))
         ctk.CTkButton(
             card, text=t("gui.results.action_view"), **btn_kw,
             command=lambda iss=issue: self._show_issue_detail(iss),
@@ -781,39 +890,183 @@ class App(ctk.CTk):
         ctk.CTkButton(
             card, text=t("gui.results.action_fix"), **btn_kw,
             fg_color="#2563eb",
-            command=lambda iss=issue, c=card, sl=status_lbl:
-                self._ai_fix_issue(iss, c, sl),
+            command=lambda idx=len(self._issue_cards):
+                self._ai_fix_issue(idx),
         ).grid(row=2, column=3, padx=2, pady=(0, 4))
 
-        ctk.CTkButton(
+        resolve_btn = ctk.CTkButton(
             card, text=t("gui.results.action_resolve"), **btn_kw,
             fg_color="green",
-            command=lambda iss=issue, sl=status_lbl:
-                self._resolve_issue(iss, sl),
-        ).grid(row=2, column=4, padx=2, pady=(0, 4))
+            command=lambda idx=len(self._issue_cards):
+                self._resolve_issue(idx),
+        )
+        resolve_btn.grid(row=2, column=4, padx=2, pady=(0, 4))
 
-        ctk.CTkButton(
+        skip_btn = ctk.CTkButton(
             card, text=t("gui.results.action_skip"), **btn_kw,
             fg_color="gray50",
-            command=lambda iss=issue, sl=status_lbl:
-                self._skip_issue(iss, sl),
-        ).grid(row=2, column=5, padx=2, pady=(0, 4))
+            command=lambda idx=len(self._issue_cards):
+                self._toggle_skip(idx),
+        )
+        skip_btn.grid(row=2, column=5, padx=2, pady=(0, 4))
 
-    def _resolve_issue(self, issue: ReviewIssue, status_lbl):
-        issue.status = "resolved"
-        status_lbl.configure(text=t("gui.results.resolved"),
-                              text_color="green")
+        # Skip reason frame (hidden by default) — indented below card
+        skip_frame = ctk.CTkFrame(card, fg_color="transparent")
+        skip_entry = ctk.CTkEntry(skip_frame, width=500,
+                                   placeholder_text=t("gui.results.skip_reason_ph"))
+        skip_entry.grid(row=0, column=0, sticky="ew", padx=(20, 6), pady=4)
+        skip_frame.grid_columnconfigure(0, weight=1)
+        # Not gridded yet — toggled by _toggle_skip
 
-    def _skip_issue(self, issue: ReviewIssue, status_lbl):
-        issue.status = "skipped"
-        status_lbl.configure(text=t("gui.results.skipped"),
-                              text_color="gray50")
+        self._issue_cards.append(dict(
+            issue=issue,
+            card=card,
+            status_lbl=status_lbl,
+            skip_frame=skip_frame,
+            skip_entry=skip_entry,
+            color=color,
+        ))
 
-    def _ai_fix_issue(self, issue: ReviewIssue, card, status_lbl):
+    @staticmethod
+    def _status_display(issue: ReviewIssue, default_color: str):
+        """Return (i18n_key, color) for the issue's current status."""
+        m = {
+            "resolved": ("gui.results.resolved", "green"),
+            "ignored":  ("gui.results.ignored", "gray50"),
+            "skipped":  ("gui.results.skipped", "gray50"),
+            "fixed":    ("gui.results.fixed", "green"),
+        }
+        return m.get(issue.status, ("gui.results.pending", default_color))
+
+    def _refresh_status(self, idx: int):
+        """Update the status label and bottom buttons for a card."""
+        rec = self._issue_cards[idx]
+        s_key, s_color = self._status_display(rec["issue"], rec["color"])
+        rec["status_lbl"].configure(text=t(s_key), text_color=s_color)
+        self._update_bottom_buttons()
+
+    def _update_bottom_buttons(self):
+        """Enable/disable Review Changes and Finalize based on issue states."""
+        all_done = all(c["issue"].status != "pending" for c in self._issue_cards)
+        all_skipped = all(c["issue"].status == "skipped" for c in self._issue_cards)
+        any_to_check = any(c["issue"].status in ("resolved",) for c in self._issue_cards)
+
+        if all_done and any_to_check:
+            self.review_changes_btn.configure(state="normal")
+        else:
+            self.review_changes_btn.configure(state="disabled")
+
+        if all_done:
+            self.finalize_btn.configure(state="normal")
+        else:
+            self.finalize_btn.configure(state="disabled")
+
+    # ── Resolve: open editor ───────────────────────────────────────────────
+
+    def _resolve_issue(self, idx: int):
+        """Open the file in an editor so the user can fix the issue."""
+        rec = self._issue_cards[idx]
+        issue = rec["issue"]
+        editor_cmd = config.get("gui", "editor_command", "").strip()
+
+        if editor_cmd:
+            # Open in external editor
+            try:
+                subprocess.Popen([editor_cmd, issue.file_path])
+            except Exception as exc:
+                logger.error("Cannot open editor '%s': %s", editor_cmd, exc)
+                self._show_toast(str(exc), error=True)
+                return
+            issue.status = "resolved"
+        else:
+            # Built-in text editor
+            self._open_builtin_editor(idx)
+            return  # status updated on save
+
+        self._refresh_status(idx)
+
+    def _open_builtin_editor(self, idx: int):
+        """Open a built-in text editor in a Toplevel window."""
+        rec = self._issue_cards[idx]
+        issue = rec["issue"]
+        fname = Path(issue.file_path).name
+
+        win = ctk.CTkToplevel(self)
+        win.title(t("gui.results.editor_title", file=fname))
+        win.geometry("850x600")
+        win.grab_set()
+
+        # Show AI feedback at top for context
+        fb_lbl = ctk.CTkLabel(win, text=issue.ai_feedback[:200],
+                               wraplength=800, anchor="w",
+                               text_color=("gray30", "gray70"),
+                               font=ctk.CTkFont(size=11))
+        fb_lbl.pack(fill="x", padx=10, pady=(8, 2))
+
+        text = ctk.CTkTextbox(win, wrap="none",
+                               font=ctk.CTkFont(family="Consolas", size=12))
+        text.pack(fill="both", expand=True, padx=10, pady=4)
+
+        try:
+            with open(issue.file_path, "r", encoding="utf-8", errors="replace") as fh:
+                content = fh.read()
+            text.insert("0.0", content)
+        except Exception as exc:
+            text.insert("0.0", f"Error reading file: {exc}")
+
+        btn_frame = ctk.CTkFrame(win, fg_color="transparent")
+        btn_frame.pack(pady=8)
+
+        def _save():
+            try:
+                with open(issue.file_path, "w", encoding="utf-8") as fh:
+                    fh.write(text.get("0.0", "end").rstrip("\n") + "\n")
+                issue.status = "resolved"
+                self._refresh_status(idx)
+                self._show_toast(t("gui.results.editor_saved"))
+            except Exception as exc:
+                self._show_toast(str(exc), error=True)
+            win.destroy()
+
+        ctk.CTkButton(btn_frame, text=t("gui.results.editor_save"),
+                       fg_color="green", command=_save).grid(
+            row=0, column=0, padx=6)
+        ctk.CTkButton(btn_frame, text=t("common.cancel"),
+                       command=win.destroy).grid(row=0, column=1, padx=6)
+
+    # ── Skip: inline reason toggle ─────────────────────────────────────────
+
+    def _toggle_skip(self, idx: int):
+        """Toggle skip state: show/hide reason textbox inline."""
+        rec = self._issue_cards[idx]
+        issue = rec["issue"]
+
+        if issue.status == "skipped":
+            # Revert to pending — hide reason box
+            issue.status = "pending"
+            issue.resolution_reason = None
+            rec["skip_frame"].grid_remove()
+        else:
+            # Mark as skipped — show reason box
+            issue.status = "skipped"
+            rec["skip_frame"].grid(row=3, column=0, columnspan=6, sticky="ew")
+            # Capture reason on every keystroke
+            def _on_reason_change(*_a, _entry=rec["skip_entry"], _iss=issue):
+                _iss.resolution_reason = _entry.get().strip() or None
+            rec["skip_entry"].bind("<KeyRelease>", _on_reason_change)
+
+        self._refresh_status(idx)
+
+    # ── AI Fix ─────────────────────────────────────────────────────────────
+
+    def _ai_fix_issue(self, idx: int):
         """Generate an AI fix for an issue in a background thread."""
+        rec = self._issue_cards[idx]
+        issue = rec["issue"]
+        status_lbl = rec["status_lbl"]
+
         if not self._review_client:
-            messagebox.showinfo(t("common.error"),
-                                 t("gui.results.no_fix"))
+            self._show_toast(t("gui.results.no_fix"), error=True)
             return
 
         status_lbl.configure(text=t("gui.results.applying_fix"),
@@ -836,7 +1089,7 @@ class App(ctk.CTk):
                 )
                 if fix:
                     self.after(0, lambda: self._show_fix_popup(
-                        issue, fix, status_lbl))
+                        idx, fix))
                 else:
                     self.after(0, lambda: status_lbl.configure(
                         text=t("gui.results.no_fix"),
@@ -849,8 +1102,11 @@ class App(ctk.CTk):
 
         threading.Thread(target=_worker, daemon=True).start()
 
-    def _show_fix_popup(self, issue: ReviewIssue, fix: str, status_lbl):
+    def _show_fix_popup(self, idx: int, fix: str):
         """Show a popup with the proposed fix."""
+        rec = self._issue_cards[idx]
+        issue = rec["issue"]
+
         win = ctk.CTkToplevel(self)
         win.title(t("gui.results.fix_ready"))
         win.geometry("750x500")
@@ -873,16 +1129,18 @@ class App(ctk.CTk):
                 with open(issue.file_path, "w", encoding="utf-8") as fh:
                     fh.write(fix)
                 issue.status = "resolved"
-                status_lbl.configure(text=t("gui.results.resolved"),
-                                      text_color="green")
+                issue.ai_fix_applied = fix
+                self._refresh_status(idx)
             except Exception as exc:
-                messagebox.showerror(t("common.error"), str(exc))
+                self._show_toast(str(exc), error=True)
             win.destroy()
 
         ctk.CTkButton(btn_frame, text=t("common.yes"), fg_color="green",
                        command=_apply).grid(row=0, column=0, padx=6)
         ctk.CTkButton(btn_frame, text=t("common.cancel"),
                        command=win.destroy).grid(row=0, column=1, padx=6)
+
+    # ── View detail ────────────────────────────────────────────────────────
 
     def _show_issue_detail(self, issue: ReviewIssue):
         """Show a detail popup for an issue."""
@@ -908,6 +1166,117 @@ class App(ctk.CTk):
 
         ctk.CTkButton(win, text=t("common.close"),
                        command=win.destroy).pack(pady=8)
+
+    # ── Review Changes ─────────────────────────────────────────────────────
+
+    def _review_changes(self):
+        """Re-check resolved issues to verify fixes, then update the UI."""
+        if self._running or not self._review_client:
+            return
+        self._running = True
+        self._set_action_buttons_state("disabled")
+        self.review_changes_btn.configure(state="disabled")
+        self.finalize_btn.configure(state="disabled")
+        self.cancel_btn.configure(state="normal")
+        self.status_var.set(t("gui.results.reviewing"))
+
+        resolved_cards = [
+            (i, c) for i, c in enumerate(self._issue_cards)
+            if c["issue"].status == "resolved"
+        ]
+
+        def _worker():
+            from aicodereviewer.reviewer import verify_issue_resolved
+            for i, rec in resolved_cards:
+                issue = rec["issue"]
+                try:
+                    ok = verify_issue_resolved(
+                        issue, self._review_client,
+                        issue.issue_type, self.lang_var.get(),
+                    )
+                    if ok:
+                        issue.status = "fixed"
+                        self.after(0, lambda idx=i: self._refresh_status(idx))
+                except Exception as exc:
+                    logger.error("Verify failed for %s: %s", issue.file_path, exc)
+
+            # Check if all issues are now fixed or skipped
+            all_done = all(
+                c["issue"].status in ("fixed", "skipped")
+                for c in self._issue_cards
+            )
+            if all_done:
+                self.after(0, self._auto_finalize)
+            else:
+                self.after(0, self._update_bottom_buttons)
+                self.after(0, lambda: self.status_var.set(t("common.ready")))
+
+            self._running = False
+            self.after(0, lambda: self._set_action_buttons_state("normal"))
+            self.after(0, lambda: self.cancel_btn.configure(state="disabled"))
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _auto_finalize(self):
+        """All issues verified — save and reset."""
+        self._do_finalize()
+        self._show_toast(t("gui.results.all_fixed"))
+
+    # ── Finalize ───────────────────────────────────────────────────────────
+
+    def _finalize_report(self):
+        """Save the report with current issue states and reset the Results page."""
+        self._do_finalize()
+        self._show_toast(t("gui.results.finalized"))
+
+    def _do_finalize(self):
+        """Generate the report and reset the results page."""
+        runner = getattr(self, "_review_runner", None)
+        if runner:
+            issues = [c["issue"] for c in self._issue_cards]
+            report_path = runner.generate_report(issues)
+            if report_path:
+                self.status_var.set(t("gui.val.report_saved", path=report_path))
+            else:
+                self.status_var.set(t("common.ready"))
+        else:
+            self.status_var.set(t("common.ready"))
+
+        # Reset results page
+        for w in self.results_frame.winfo_children():
+            w.destroy()
+        self._issue_cards.clear()
+        self.results_summary.configure(text=t("gui.results.no_results"))
+        self.review_changes_btn.configure(state="disabled")
+        self.finalize_btn.configure(state="disabled")
+
+    # ══════════════════════════════════════════════════════════════════════
+    #  TOAST NOTIFICATIONS
+    # ══════════════════════════════════════════════════════════════════════
+
+    def _show_toast(self, message: str, *, duration: int = 6000,
+                    error: bool = False):
+        """Show a transient toast notification at the bottom of the window."""
+        bg = "#dc2626" if error else ("#1a7f37", "#2ea043")
+        fg = "white"
+
+        toast = ctk.CTkFrame(self, corner_radius=8,
+                              fg_color=bg, border_width=0)
+        toast.place(relx=0.5, rely=0.96, anchor="s")
+        toast.lift()
+
+        lbl = ctk.CTkLabel(toast, text=message, text_color=fg,
+                            font=ctk.CTkFont(size=12),
+                            wraplength=600, anchor="center")
+        lbl.pack(padx=16, pady=8)
+
+        def _dismiss():
+            try:
+                toast.destroy()
+            except Exception:
+                pass
+
+        self.after(duration, _dismiss)
 
     # ══════════════════════════════════════════════════════════════════════
     #  SETTINGS save
@@ -945,73 +1314,10 @@ class App(ctk.CTk):
 
         try:
             config.save()
-            messagebox.showinfo(t("common.settings"),
-                                 t("gui.settings.saved_ok"))
+            self._show_toast(t("gui.settings.saved_ok"))
         except Exception as exc:
-            messagebox.showerror(t("common.error"),
-                                  t("gui.settings.save_error", error=exc))
-
-    # ══════════════════════════════════════════════════════════════════════
-    #  CONNECTION TEST
-    # ══════════════════════════════════════════════════════════════════════
-
-    def _test_connection(self):
-        """Test the selected backend's connectivity in a background thread."""
-        if self._running:
-            return
-        backend_name = self.backend_var.get()
-        self.status_var.set(t("gui.conn.testing", backend=backend_name))
-        self.conn_btn.configure(state="disabled")
-
-        def _worker():
-            details = ""
-            try:
-                client = create_backend(backend_name)
-                ok = client.validate_connection()
-
-                if backend_name == "bedrock":
-                    details = (
-                        f"{t('conn.details_model', model=config.get('model', 'model_id', ''))}\n"
-                        f"{t('conn.details_region', region=config.get('aws', 'region', ''))}")
-                elif backend_name == "local":
-                    details = (
-                        f"{t('conn.details_url', url=config.get('local_llm', 'api_url', ''))}\n"
-                        f"{t('conn.details_model', model=config.get('local_llm', 'model', ''))}")
-            except Exception as exc:
-                ok = False
-                details = str(exc)
-
-            if ok:
-                msg = t("gui.conn.success", backend=backend_name,
-                        details=details)
-                self.after(0, lambda: messagebox.showinfo(
-                    t("gui.conn.title"), msg))
-            else:
-                hints = ""
-                if backend_name == "bedrock":
-                    hints = (f"\n{t('conn.hint_bedrock_sso')}\n"
-                             f"{t('conn.hint_bedrock_profile')}\n"
-                             f"{t('conn.hint_bedrock_model')}")
-                elif backend_name == "kiro":
-                    hints = (f"\n{t('conn.hint_kiro_wsl')}\n"
-                             f"{t('conn.hint_kiro_cli')}")
-                elif backend_name == "copilot":
-                    hints = (f"\n{t('conn.hint_copilot_gh')}\n"
-                             f"{t('conn.hint_copilot_auth')}\n"
-                             f"{t('conn.hint_copilot_ext')}")
-                elif backend_name == "local":
-                    hints = (f"\n{t('conn.hint_local_url')}\n"
-                             f"{t('conn.hint_local_model')}\n"
-                             f"{t('conn.hint_local_api_type')}")
-                msg = t("gui.conn.failure", backend=backend_name,
-                        details=details + hints)
-                self.after(0, lambda: messagebox.showerror(
-                    t("gui.conn.title"), msg))
-
-            self.after(0, lambda: self.conn_btn.configure(state="normal"))
-            self.after(0, lambda: self.status_var.set(t("common.ready")))
-
-        threading.Thread(target=_worker, daemon=True).start()
+            self._show_toast(t("gui.settings.save_error", error=exc),
+                             error=True)
 
     # ══════════════════════════════════════════════════════════════════════
     #  BACKEND HEALTH CHECK
@@ -1033,16 +1339,73 @@ class App(ctk.CTk):
         if self._running:
             return
         backend_name = self.backend_var.get()
+        
+        # If already checking this backend, don't start another
+        if self._health_check_backend == backend_name:
+            return
+        
+        # Cancel any previous timeout timer
+        if self._health_check_timer:
+            self._health_check_timer.cancel()
+            self._health_check_timer = None
+        
+        self._health_check_backend = backend_name
+        self._set_action_buttons_state("disabled")
+        self.cancel_btn.configure(state="normal")
         self.status_var.set(t("health.checking", backend=backend_name))
+        
+        # Start 60-second timeout timer (includes connection test)
+        def _on_timeout():
+            if self._health_check_backend == backend_name:
+                self._health_check_backend = None
+                self._health_check_timer = None
+                self.after(0, lambda: self._show_health_error(
+                    t("health.timeout", backend=backend_name)))
+                self.after(0, lambda: self._set_action_buttons_state("normal"))
+                self.after(0, lambda: self.cancel_btn.configure(state="disabled"))
+                self.after(0, lambda: self.status_var.set(t("common.ready")))
+        
+        self._health_check_timer = threading.Timer(60, _on_timeout)
+        self._health_check_timer.daemon = True
+        self._health_check_timer.start()
 
         def _worker():
-            report = check_backend(backend_name)
-            if report.ready:
-                self.after(0, lambda: self.status_var.set(
-                    t("health.auto_ok", backend=backend_name)))
-            else:
-                self.after(0, lambda: self._show_health_dialog(report))
-                self.after(0, lambda: self.status_var.set(t("common.ready")))
+            try:
+                report = check_backend(backend_name)
+                
+                # Only process if still checking this backend
+                if self._health_check_backend == backend_name:
+                    # Cancel timeout timer
+                    if self._health_check_timer:
+                        self._health_check_timer.cancel()
+                        self._health_check_timer = None
+                    
+                    self._health_check_backend = None
+                    
+                    if report.ready:
+                        self.after(0, lambda: self.status_var.set(
+                            t("health.auto_ok", backend=backend_name)))
+                    else:
+                        self.after(0, lambda: self._show_health_dialog(report))
+                        self.after(0, lambda: self.status_var.set(t("common.ready")))
+
+                    # Refresh Copilot model combobox with discovered models
+                    if backend_name == "copilot":
+                        self.after(0, self._refresh_copilot_model_list)
+                    
+                    self.after(0, lambda: self._set_action_buttons_state("normal"))
+                    self.after(0, lambda: self.cancel_btn.configure(state="disabled"))
+            except Exception as exc:
+                if self._health_check_backend == backend_name:
+                    logger.error("Health check failed: %s", exc)
+                    if self._health_check_timer:
+                        self._health_check_timer.cancel()
+                        self._health_check_timer = None
+                    self._health_check_backend = None
+                    self.after(0, lambda: self._show_health_error(str(exc)))
+                    self.after(0, lambda: self._set_action_buttons_state("normal"))
+                    self.after(0, lambda: self.cancel_btn.configure(state="disabled"))
+                    self.after(0, lambda: self.status_var.set(t("common.ready")))
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -1051,14 +1414,64 @@ class App(ctk.CTk):
         if self._running:
             return
         backend_name = self.backend_var.get()
+        
+        # If already checking this backend, don't start another
+        if self._health_check_backend == backend_name:
+            return
+        
+        # Cancel any previous timeout timer
+        if self._health_check_timer:
+            self._health_check_timer.cancel()
+            self._health_check_timer = None
+        
+        self._health_check_backend = backend_name
+        self._set_action_buttons_state("disabled")
+        self.cancel_btn.configure(state="normal")
         self.status_var.set(t("health.checking", backend=backend_name))
-        self.health_btn.configure(state="disabled")
+        
+        # Start 60-second timeout timer (includes connection test)
+        def _on_timeout():
+            if self._health_check_backend == backend_name:
+                self._health_check_backend = None
+                self._health_check_timer = None
+                self.after(0, lambda: self._show_health_error(
+                    t("health.timeout", backend=backend_name)))
+                self.after(0, lambda: self._set_action_buttons_state("normal"))
+                self.after(0, lambda: self.cancel_btn.configure(state="disabled"))
+                self.after(0, lambda: self.status_var.set(t("common.ready")))
+        
+        self._health_check_timer = threading.Timer(60, _on_timeout)
+        self._health_check_timer.daemon = True
+        self._health_check_timer.start()
 
         def _worker():
-            report = check_backend(backend_name)
-            self.after(0, lambda: self._show_health_dialog(report))
-            self.after(0, lambda: self.health_btn.configure(state="normal"))
-            self.after(0, lambda: self.status_var.set(t("common.ready")))
+            try:
+                report = check_backend(backend_name)
+                
+                # Only process if still checking this backend
+                if self._health_check_backend == backend_name:
+                    # Cancel timeout timer
+                    if self._health_check_timer:
+                        self._health_check_timer.cancel()
+                        self._health_check_timer = None
+                    
+                    self._health_check_backend = None
+                    
+                    self.after(0, lambda: self._show_health_dialog(report))
+                    self.after(0, lambda: self._set_action_buttons_state("normal"))
+                    self.after(0, lambda: self.cancel_btn.configure(state="disabled"))
+                    self.after(0, lambda: self.status_var.set(t("common.ready")))
+            except Exception as exc:
+                if self._health_check_backend == backend_name:
+                    logger.error("Health check failed: %s", exc)
+                    if self._health_check_timer:
+                        self._health_check_timer.cancel()
+                        self._health_check_timer = None
+                    self._health_check_backend = None
+                    self.after(0, lambda: self._show_health_error(str(exc)))
+                    self.after(0, lambda: self._set_action_buttons_state("normal"))
+                    self.after(0, lambda: self.cancel_btn.configure(state="disabled"))
+                    self.after(0, lambda: self.status_var.set(t("common.ready")))
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -1097,15 +1510,62 @@ class App(ctk.CTk):
                 row=i * 3 + 1, column=1, sticky="w", padx=4)
 
             if check.fix_hint and not check.passed:
-                ctk.CTkLabel(scroll, text=f"💡 {check.fix_hint}",
-                              anchor="w", wraplength=450,
-                              text_color="#2563eb",
-                              font=ctk.CTkFont(size=11)).grid(
-                    row=i * 3 + 2, column=1, sticky="w", padx=4,
-                    pady=(0, 4))
+                # Check if the fix_hint contains a URL
+                url_match = re.search(r'https?://[^\s]+', check.fix_hint)
+                if url_match:
+                    # Split into text before URL and the URL itself
+                    url = url_match.group(0)
+                    text_before = check.fix_hint[:url_match.start()].rstrip(': ')
+                    
+                    # Create a frame to hold text + link horizontally
+                    hint_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+                    hint_frame.grid(row=i * 3 + 2, column=1, sticky="w", padx=4, pady=(0, 4))
+                    
+                    # Display the text part
+                    if text_before:
+                        ctk.CTkLabel(hint_frame, text=f"💡 {text_before}: ",
+                                      anchor="w",
+                                      text_color="#2563eb",
+                                      font=ctk.CTkFont(size=11)).pack(
+                            side="left", padx=(0, 2))
+                    else:
+                        ctk.CTkLabel(hint_frame, text="💡 ",
+                                      text_color="#2563eb",
+                                      font=ctk.CTkFont(size=11)).pack(
+                            side="left")
+                    
+                    # Display the URL as a clickable link
+                    link_label = ctk.CTkLabel(hint_frame, text=url,
+                                               anchor="w",
+                                               text_color="#0066cc",
+                                               font=ctk.CTkFont(size=11, underline=True),
+                                               cursor="hand2")
+                    link_label.pack(side="left")
+                    link_label.bind("<Button-1>", lambda e, u=url: webbrowser.open(u))
+                else:
+                    # No URL, display as regular text
+                    ctk.CTkLabel(scroll, text=f"💡 {check.fix_hint}",
+                                  anchor="w", wraplength=450,
+                                  text_color="#2563eb",
+                                  font=ctk.CTkFont(size=11)).grid(
+                        row=i * 3 + 2, column=1, sticky="w", padx=4,
+                        pady=(0, 4))
 
         ctk.CTkButton(win, text=t("common.close"),
                        command=win.destroy).pack(pady=8)
+
+    def _show_health_error(self, error_msg: str):
+        """Show an error dialog for health check failures."""
+        messagebox.showerror(t("health.dialog_title"), error_msg)
+
+    def _refresh_copilot_model_list(self):
+        """Update the Copilot model combobox with dynamically discovered models."""
+        from aicodereviewer.backends.health import get_copilot_models
+        models = get_copilot_models()
+        if models and hasattr(self, "_copilot_model_combo"):
+            current = self._copilot_model_combo.get()
+            self._copilot_model_combo.configure(values=["auto"] + models)
+            self._copilot_model_combo.set(current)
 
     # ══════════════════════════════════════════════════════════════════════
     #  LOG handling

@@ -13,7 +13,7 @@ Supports 12+ programming languages: Python, JavaScript/TypeScript, Java, C/C++, 
 | **Multi-type reviews** | Combine any number of review types in a single session (`--type security,performance,testing`) |
 | **AWS Bedrock improvements** | Exponential back-off retry, lazy connection validation, support for all Bedrock-provisioned models |
 | **Kiro CLI backend** | Run reviews via Amazon Kiro CLI through WSL, with automatic Windows→WSL path conversion |
-| **GitHub Copilot CLI backend** | Run reviews via `gh copilot` on Windows |
+| **GitHub Copilot CLI backend** | Run reviews via standalone GitHub Copilot CLI (`copilot -p`) in programmatic mode |
 | **CustomTkinter GUI** | Full-featured graphical interface with live log, results viewer, and settings editor |
 | **4 new review types** | `dependency`, `concurrency`, `api_design`, `data_validation` |
 | **Skip action** | Leave issues pending during interactive review without being forced to act |
@@ -42,7 +42,7 @@ pip install -e .
 |---------|-------------|
 | **Bedrock** | AWS CLI configured (`aws configure sso` or credentials in `config.ini`) |
 | **Kiro** | WSL installed (`wsl --install`), Kiro CLI installed inside WSL |
-| **Copilot** | GitHub CLI (`gh`) + Copilot extension (`gh extension install github/gh-copilot`), active Copilot subscription |
+| **Copilot** | GitHub Copilot CLI (`copilot`) installed, authenticated, active Copilot subscription |
 
 ---
 
@@ -192,9 +192,9 @@ cli_command = kiro
 timeout = 300
 
 [copilot]
-gh_path = gh
+copilot_path = copilot
 timeout = 300
-# model =                   # leave blank for default
+model = auto                 # 'auto' = default, or specify a model name
 
 [performance]
 max_file_size_mb = 10
@@ -249,19 +249,21 @@ wsl -- kiro --version
 ## GitHub Copilot CLI Setup
 
 ```bash
-# 1. Install GitHub CLI
-winget install GitHub.cli
+# 1. Install GitHub Copilot CLI (standalone)
+# Windows:
+winget install GitHub.Copilot
+# macOS / Linux:
+brew install copilot-cli
+# Or via npm:
+npm install -g @github/copilot
 
-# 2. Authenticate
-gh auth login
+# 2. Launch and authenticate
+copilot
+# Then use /login to sign in with your GitHub account
+# (Alternatively, set GH_TOKEN or GITHUB_TOKEN env-var with a PAT
+#  that has the "Copilot Requests" permission)
 
-# 3. Install Copilot extension
-gh extension install github/gh-copilot
-
-# 4. Verify
-gh copilot --version
-
-# 5. Configure AICodeReviewer
+# 3. Configure AICodeReviewer
 #    In config.ini:
 #    [backend]
 #    type = copilot

@@ -100,9 +100,9 @@ class Config:
         self._add("kiro", "timeout", "300")
 
         # ── copilot ────────────────────────────────────────────────────────
-        self._add("copilot", "gh_path", "gh")
+        self._add("copilot", "copilot_path", "copilot")
         self._add("copilot", "timeout", "300")
-        self._add("copilot", "model", "")
+        self._add("copilot", "model", "auto")
 
         # ── local_llm ─────────────────────────────────────────────────────
         self._add("local_llm", "api_url", "http://localhost:1234/v1")

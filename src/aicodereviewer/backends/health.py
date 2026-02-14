@@ -46,6 +46,8 @@ class HealthReport:
 def _check_command_exists(cmd: str, friendly_name: str) -> CheckResult:
     """Check if a CLI command is available on PATH."""
     path = shutil.which(cmd)
+    logger.debug("shutil.which('%s') returned: %s", cmd, path)
+    logger.debug("Current PATH: %s", os.environ.get("PATH", "")[:200])
     if path:
         return CheckResult(
             name=friendly_name,
@@ -75,6 +77,45 @@ def _run_quiet(cmd: list, timeout: int = 10) -> tuple:
         return -2, "", "Timeout"
     except Exception as e:
         return -3, "", str(e)
+
+
+# Module-level cache for discovered Copilot models
+_copilot_models_cache: List[str] = []
+
+
+def get_copilot_models() -> List[str]:
+    """Return cached list of Copilot models discovered during health check."""
+    return list(_copilot_models_cache)
+
+
+def _discover_copilot_models(copilot_path: str = "copilot") -> List[str]:
+    """Discover available models by parsing ``copilot --help`` output.
+
+    Looks for the ``--model`` option's choices list in the help text.
+    Results are cached in ``_copilot_models_cache``.
+    """
+    global _copilot_models_cache
+    import re
+
+    rc, stdout, stderr = _run_quiet([copilot_path, "--help"], timeout=5)
+    combined = (stdout or "") + "\n" + (stderr or "")
+
+    models: List[str] = []
+    # The help text shows: --model  ... {model1,model2,...}
+    # Look for a brace-enclosed, comma-separated list near "--model"
+    m = re.search(r"--model\b[^{]*\{([^}]+)\}", combined)
+    if m:
+        raw = m.group(1)
+        models = [s.strip() for s in raw.split(",") if s.strip()]
+
+    if models:
+        _copilot_models_cache = sorted(models)
+        logger.debug("Discovered %d Copilot models: %s",
+                     len(models), _copilot_models_cache)
+    else:
+        logger.debug("Could not parse model list from copilot --help")
+
+    return list(_copilot_models_cache)
 
 
 # ── AWS Bedrock health ─────────────────────────────────────────────────────
@@ -279,45 +320,110 @@ def check_kiro() -> HealthReport:
 # ── GitHub Copilot CLI health ──────────────────────────────────────────────
 
 def check_copilot() -> HealthReport:
-    """Check GitHub Copilot CLI prerequisites."""
+    """Check GitHub Copilot CLI (standalone) prerequisites."""
+    import time
+    start_time = time.time()
+    logger.debug("Starting Copilot health check...")
+    
     report = HealthReport(backend="copilot")
     checks = []
 
-    gh_path = config.get("copilot", "gh_path", "gh").strip()
+    copilot_path = config.get("copilot", "copilot_path", "copilot").strip()
 
-    # 1. gh CLI installed
-    gh_check = _check_command_exists(gh_path, "GitHub CLI (gh)")
-    if not gh_check.passed:
-        gh_check.fix_hint = t("health.hint_gh_install")
-    checks.append(gh_check)
+    # 1. Copilot CLI installed & verified as genuine standalone CLI
+    logger.debug("Checking if '%s' exists in PATH...", copilot_path)
+    cli_check = _check_command_exists(copilot_path, "GitHub Copilot CLI")
+    logger.debug("Command exists check took %.3f seconds", time.time() - start_time)
+    if not cli_check.passed:
+        cli_check.fix_hint = t("health.hint_copilot_install")
+        logger.debug("Copilot CLI not found in PATH")
+    else:
+        # Verify it is the real standalone CLI, not a leftover .BAT
+        # from the retired gh-copilot extension
+        # Use short timeout (3s) for version check to fail fast
+        found_path = shutil.which(copilot_path) or copilot_path
+        logger.debug("Found copilot at '%s', verifying with --version...", found_path)
+        verify_start = time.time()
+        rc, stdout, stderr = _run_quiet([found_path, "--version"], timeout=3)
+        verify_time = time.time() - verify_start
+        logger.debug("Version check took %.3f seconds (rc=%d)", verify_time, rc)
+        
+        version_out = stdout.strip() or stderr.strip()
+        if rc == 0 and version_out:
+            cli_check = CheckResult(
+                name="GitHub Copilot CLI",
+                passed=True,
+                detail=t("health.copilot_verified",
+                         version=version_out.splitlines()[0]),
+            )
+        elif rc == -2:  # Timeout
+            cli_check = CheckResult(
+                name="GitHub Copilot CLI",
+                passed=False,
+                detail=t("health.copilot_timeout", path=found_path),
+                fix_hint=t("health.hint_copilot_install"),
+            )
+        else:
+            cli_check = CheckResult(
+                name="GitHub Copilot CLI",
+                passed=False,
+                detail=t("health.copilot_not_genuine", path=found_path),
+                fix_hint=t("health.hint_copilot_install"),
+            )
+    checks.append(cli_check)
 
-    if gh_check.passed:
-        # 2. gh authenticated
-        rc, stdout, stderr = _run_quiet([gh_path, "auth", "status"])
-        auth_ok = rc == 0
+    if cli_check.passed:
+        # 2. Authentication – check config directory or env-var tokens
+        home = os.path.expanduser("~")
+        copilot_config_dirs = [
+            os.path.join(home, ".copilot"),
+            os.path.join(home, ".config", "github-copilot"),
+        ]
+        has_config = any(os.path.isdir(d) for d in copilot_config_dirs)
+        has_token = bool(os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN"))
+        auth_ok = has_config or has_token
         checks.append(CheckResult(
-            name=t("health.gh_auth"),
+            name=t("health.copilot_auth"),
             passed=auth_ok,
-            detail=(t("health.gh_auth_ok") if auth_ok
-                    else t("health.gh_auth_fail")),
-            fix_hint="" if auth_ok else t("health.hint_gh_auth"),
+            detail=(t("health.copilot_auth_ok") if auth_ok
+                    else t("health.copilot_auth_fail")),
+            fix_hint="" if auth_ok else t("health.hint_copilot_auth"),
         ))
 
-        # 3. Copilot extension installed
-        rc, stdout, _ = _run_quiet([gh_path, "extension", "list"])
-        copilot_ext = "copilot" in stdout.lower() if rc == 0 else False
-        checks.append(CheckResult(
-            name=t("health.copilot_ext"),
-            passed=copilot_ext,
-            detail=(t("health.copilot_ext_ok") if copilot_ext
-                    else t("health.copilot_ext_missing")),
-            fix_hint="" if copilot_ext else t("health.hint_copilot_ext"),
-        ))
+        # 3. Model availability
+        model = config.get("copilot", "model", "auto").strip()
+        if not model or model.lower() == "auto":
+            # Discover models even when auto, so the GUI combobox can use them
+            _discover_copilot_models(copilot_path)
+            checks.append(CheckResult(
+                name=t("health.copilot_model"),
+                passed=True,
+                detail=t("health.copilot_model_auto"),
+            ))
+        else:
+            # Dynamically discover valid models from copilot --help
+            discovered = _discover_copilot_models(copilot_path)
+            if discovered:
+                model_ok = model in discovered
+            else:
+                # If we couldn't discover models, accept anything
+                model_ok = True
+            checks.append(CheckResult(
+                name=t("health.copilot_model"),
+                passed=model_ok,
+                detail=(t("health.copilot_model_ok", model=model) if model_ok
+                        else t("health.copilot_model_fail", model=model)),
+                fix_hint="" if model_ok else t("health.hint_copilot_model"),
+            ))
 
     report.checks = checks
     report.ready = all(c.passed for c in checks)
     report.summary = (t("health.ready") if report.ready
                       else t("health.not_ready", count=len(report.failed_checks)))
+    
+    total_time = time.time() - start_time
+    logger.debug("Copilot health check completed in %.3f seconds (ready=%s)", 
+                 total_time, report.ready)
     return report
 
 
@@ -391,6 +497,34 @@ def check_local_llm() -> HealthReport:
 
 # ── Dispatcher ─────────────────────────────────────────────────────────────
 
+def _run_connection_test(backend_type: str) -> CheckResult:
+    """Create a backend instance and test actual connectivity."""
+    from aicodereviewer.backends import create_backend
+    try:
+        client = create_backend(backend_type)
+        ok = client.validate_connection()
+        if ok:
+            return CheckResult(
+                name=t("health.conn_test"),
+                passed=True,
+                detail=t("health.conn_test_ok"),
+            )
+        else:
+            return CheckResult(
+                name=t("health.conn_test"),
+                passed=False,
+                detail=t("health.conn_test_fail"),
+                fix_hint=t("health.hint_conn_test"),
+            )
+    except Exception as exc:
+        return CheckResult(
+            name=t("health.conn_test"),
+            passed=False,
+            detail=t("health.conn_test_error", error=str(exc)[:200]),
+            fix_hint=t("health.hint_conn_test"),
+        )
+
+
 def check_backend(backend_type: Optional[str] = None) -> HealthReport:
     """Run health checks for the given backend type."""
     if backend_type is None:
@@ -410,4 +544,15 @@ def check_backend(backend_type: Optional[str] = None) -> HealthReport:
             ready=False,
             summary=t("health.unknown_backend", backend=backend_type),
         )
-    return fn()
+    report = fn()
+
+    # If all prerequisite checks passed, run a live connection test
+    if report.ready:
+        conn_check = _run_connection_test(backend_type)
+        report.checks.append(conn_check)
+        report.ready = all(c.passed for c in report.checks)
+        report.summary = (t("health.ready") if report.ready
+                          else t("health.not_ready",
+                                 count=len(report.failed_checks)))
+
+    return report

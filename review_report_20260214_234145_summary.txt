@@ -1,0 +1,106 @@
+AI Code Review Report
+============================================================
+
+Project      : D:/Development/SVN/SVNCheckout/sample_project
+Review Types : best_practices
+Scope        : project
+Backend      : copilot
+Files Scanned: 5
+Quality Score: 63/100
+Programmers  : p1
+Reviewers    : r1
+Generated    : 2026-02-14 23:41:45
+Language     : en
+
+Issue Summary
+----------------------------------------
+  Total issues: 5
+  Pending     : 5
+
+By Severity
+----------------------------------------
+  Critical    : 1
+  Medium      : 3
+  Low         : 1
+
+By Review Type
+----------------------------------------
+  best_practices      : 5
+
+
+Detailed Issues
+============================================================
+
+--- Issue 1 ---
+  File     : D:\Development\SVN\SVNCheckout\sample_project\api_handler.py
+  Type     : best_practices
+  Severity : low
+  Status   : pending
+  Desc     : Review feedback for D:\Development\SVN\SVNCheckout\sample_project\api_handler.py
+  Snippet  : ```python
+"""
+Refactored API handler with proper error handling and SOLID principles.
+"""
+import requests
+import json
+im
+  Feedback : APIClient, DataProcessor, FileStorage and ConfigParser follow Single Responsibility and the APIHandler facade is a good pattern, but: inject requests.Session (Dependency Inversion) and/or accept an interface for easier testing; avoid relying on __del__ for session cleanup (use context managers or ex…
+
+--- Issue 2 ---
+  File     : D:\Development\SVN\SVNCheckout\sample_project\calculator.py
+  Type     : best_practices
+  Severity : medium
+  Status   : pending
+  Desc     : Review feedback for D:\Development\SVN\SVNCheckout\sample_project\calculator.py
+  Snippet  : """
+Calculator module with best practices violations.
+"""
+
+# BEST PRACTICES ISSUE: Magic numbers without constants
+def c
+  Feedback : Many violations: replace magic constant 0.175 with a named constant, rename f, calc, val and single-letter variables to descriptive PascalCase/names (naming conventions), split doEverything into focused methods or classes (Single Responsibility) and remove print side-effects (pure functions vs I/O),…
+
+--- Issue 3 ---
+  File     : D:\Development\SVN\SVNCheckout\sample_project\data_processor.py
+  Type     : best_practices
+  Severity : medium
+  Status   : pending
+  Desc     : Review feedback for D:\Development\SVN\SVNCheckout\sample_project\data_processor.py
+  Snippet  : """
+Data processing module with intentional performance issues.
+"""
+import time
+
+
+class DataProcessor:
+    def __init__(
+  Feedback : This module has clear performance anti-patterns: use ''.join(...) or io.StringIO for concatenation, replace O(nﾂｲ) duplicate search with collections.Counter or set-based detection, read config.txt once instead of 100 times, precompute repetitive temp_list work (or avoid creating it per item), fuse t…
+
+--- Issue 4 ---
+  File     : D:\Development\SVN\SVNCheckout\sample_project\user_auth.py
+  Type     : best_practices
+  Severity : critical
+  Status   : pending
+  Desc     : Review feedback for D:\Development\SVN\SVNCheckout\sample_project\user_auth.py
+  Snippet  : """
+User authentication module with intentional security vulnerabilities.
+"""
+import pickle
+import hashlib
+import sqlite
+  Feedback : Critical security issues: eliminate string-built SQL and use parameterized queries or an ORM to prevent SQL injection, stop using pickle for untrusted data (use JSON or other safe formats), replace MD5 with a salted, adaptive KDF (bcrypt/argon2/scrypt), generate cryptographically random session toke…
+
+--- Issue 5 ---
+  File     : D:\Development\SVN\SVNCheckout\sample_project\utils.py
+  Type     : best_practices
+  Severity : medium
+  Status   : pending
+  Desc     : Review feedback for D:\Development\SVN\SVNCheckout\sample_project\utils.py
+  Snippet  : """
+Utility functions with maintainability issues.
+"""
+
+
+# MAINTAINABILITY ISSUE: Complex nested conditions
+def check_el
+  Feedback : The functions are overly long and nested窶排efactor check_eligibility with guard clauses and small predicate helpers, decompose process_order into services (validation, pricing, shipping, payment, notification) and apply SRP and the Strategy pattern for shipping/payment, replace single-letter names wi…

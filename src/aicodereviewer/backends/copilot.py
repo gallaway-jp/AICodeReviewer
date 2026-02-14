@@ -2,14 +2,15 @@
 """
 GitHub Copilot CLI backend for code review.
 
-Uses the ``gh copilot`` extension (GitHub Copilot in the CLI) on Windows
-to perform AI-powered code review and fix generation.
+Uses the standalone GitHub Copilot CLI (``copilot``) in **programmatic mode**
+(``copilot -p "…"``) to perform AI-powered code review and fix generation.
 
 Prerequisites:
-    1. GitHub CLI installed (``gh``)
-    2. Copilot CLI extension installed (``gh extension install github/gh-copilot``)
-    3. Authenticated (``gh auth login``)
-    4. Active GitHub Copilot Pro / Business / Enterprise subscription
+    1. GitHub Copilot CLI installed (``winget install GitHub.Copilot`` on Windows,
+       ``brew install copilot-cli`` on macOS/Linux, or ``npm install -g @github/copilot``)
+    2. Authenticated (run ``copilot`` and use ``/login``, or set ``GH_TOKEN``
+       / ``GITHUB_TOKEN`` env-var with a PAT that has *Copilot Requests* permission)
+    3. Active GitHub Copilot Pro / Business / Enterprise subscription
 """
 import json
 import logging
@@ -26,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 class CopilotBackend(AIBackend):
     """
-    AI backend that delegates to GitHub Copilot via the ``gh`` CLI.
+    AI backend that delegates to the standalone GitHub Copilot CLI.
 
     Configuration (``config.ini``):
 
@@ -36,15 +37,15 @@ class CopilotBackend(AIBackend):
         type = copilot
 
         [copilot]
-        gh_path = gh
+        copilot_path = copilot
         timeout = 300
-        model = gpt-4
+        model = auto
     """
 
     def __init__(self, **kwargs):
-        self.gh_path: str = config.get("copilot", "gh_path", "gh").strip()
+        self.copilot_path: str = config.get("copilot", "copilot_path", "copilot").strip()
         self.timeout: int = int(config.get("copilot", "timeout", "300"))
-        self.model: str = config.get("copilot", "model", "").strip()
+        self.model: str = config.get("copilot", "model", "auto").strip()
 
     # ── AIBackend interface ────────────────────────────────────────────────
 
@@ -76,50 +77,52 @@ class CopilotBackend(AIBackend):
         return None
 
     def validate_connection(self) -> bool:
-        """Check gh CLI is installed, authenticated, and Copilot extension is available."""
-        # 1. Check gh CLI exists
-        if not shutil.which(self.gh_path):
-            logger.error("GitHub CLI ('%s') not found in PATH.", self.gh_path)
+        """Check Copilot CLI is installed and authenticated."""
+        # 1. Check copilot CLI exists and is the genuine standalone CLI
+        found = shutil.which(self.copilot_path)
+        if not found:
             logger.error(
-                "Install from https://cli.github.com/ and run 'gh auth login'."
+                "GitHub Copilot CLI ('%s') not found in PATH.", self.copilot_path
+            )
+            logger.error(
+                "Install from https://docs.github.com/en/copilot/github-copilot-in-the-cli"
             )
             return False
 
-        # 2. Check authentication
+        # Verify it responds to --version (filters out leftover .BAT stubs)
         try:
             result = subprocess.run(
-                [self.gh_path, "auth", "status"],
-                capture_output=True,
-                text=True,
-                timeout=15,
+                [found, "--version"],
+                capture_output=True, text=True, timeout=15,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
             if result.returncode != 0:
                 logger.error(
-                    "GitHub CLI not authenticated. Run 'gh auth login' first."
+                    "Found '%s' but it does not appear to be the standalone "
+                    "GitHub Copilot CLI. Install from "
+                    "https://docs.github.com/en/copilot/github-copilot-in-the-cli",
+                    found,
                 )
                 return False
         except Exception as exc:
-            logger.error("Failed to check gh auth status: %s", exc)
+            logger.error("Failed to verify Copilot CLI at '%s': %s", found, exc)
             return False
 
-        # 3. Check Copilot extension
-        try:
-            result = subprocess.run(
-                [self.gh_path, "copilot", "--version"],
-                capture_output=True,
-                text=True,
-                timeout=15,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        # 2. Check authentication (config dir or env token)
+        home = os.path.expanduser("~")
+        copilot_config_dirs = [
+            os.path.join(home, ".copilot"),
+            os.path.join(home, ".config", "github-copilot"),
+        ]
+        has_config = any(os.path.isdir(d) for d in copilot_config_dirs)
+        has_token = bool(
+            os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+        )
+        if not has_config and not has_token:
+            logger.error(
+                "GitHub Copilot CLI is not authenticated. "
+                "Run 'copilot' and use /login, or set GH_TOKEN / GITHUB_TOKEN."
             )
-            if result.returncode != 0:
-                logger.error(
-                    "GitHub Copilot CLI extension not found. "
-                    "Install with: gh extension install github/gh-copilot"
-                )
-                return False
-        except Exception as exc:
-            logger.error("Copilot extension check failed: %s", exc)
             return False
 
         return True
@@ -128,26 +131,23 @@ class CopilotBackend(AIBackend):
 
     def _run_copilot(self, prompt: str) -> str:
         """
-        Send a prompt to GitHub Copilot CLI and capture the response.
+        Send a prompt to GitHub Copilot CLI in programmatic mode.
 
-        Uses ``gh copilot suggest`` in shell mode for general prompts, or
-        ``gh copilot explain`` for code review prompts. The approach pipes
-        the prompt via flags/stdin.
+        Uses ``copilot -p "…"`` which runs non-interactively, returning
+        the agent's text response on stdout.
         """
         try:
-            # Build command – gh copilot suggest -t code "<prompt>"
-            cmd = [self.gh_path, "copilot", "suggest", "-t", "code"]
-            if self.model:
+            # Build command – copilot -p "<prompt>"
+            cmd = [self.copilot_path, "-p", prompt]
+            if self.model and self.model.lower() != "auto":
                 cmd.extend(["--model", self.model])
 
             env = os.environ.copy()
-            # Disable interactive mode for automation
-            env["GH_PROMPT_DISABLED"] = "1"
+            # Suppress colour codes for clean parsing
             env["NO_COLOR"] = "1"
 
             result = subprocess.run(
                 cmd,
-                input=prompt,
                 capture_output=True,
                 text=True,
                 timeout=self.timeout,
@@ -156,48 +156,17 @@ class CopilotBackend(AIBackend):
             )
 
             if result.returncode != 0:
-                # Try the explain subcommand as fallback
-                return self._run_copilot_explain(prompt)
+                err = (
+                    (result.stderr or "").strip()
+                    or f"copilot exited with code {result.returncode}"
+                )
+                return f"Error: GitHub Copilot CLI – {err}"
 
-            output = result.stdout.strip()
-            if output:
-                return output
-
-            # Fallback to explain subcommand
-            return self._run_copilot_explain(prompt)
+            output = (result.stdout or "").strip()
+            return output or "Error: No output from GitHub Copilot CLI."
 
         except subprocess.TimeoutExpired:
             return "Error: GitHub Copilot CLI timed out."
         except Exception as exc:
             logger.error("Copilot backend error: %s", exc)
-            return f"Error: {exc}"
-
-    def _run_copilot_explain(self, prompt: str) -> str:
-        """Fallback using ``gh copilot explain``."""
-        try:
-            cmd = [self.gh_path, "copilot", "explain"]
-
-            env = os.environ.copy()
-            env["GH_PROMPT_DISABLED"] = "1"
-            env["NO_COLOR"] = "1"
-
-            result = subprocess.run(
-                cmd,
-                input=prompt,
-                capture_output=True,
-                text=True,
-                timeout=self.timeout,
-                env=env,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
-
-            if result.returncode != 0:
-                err = result.stderr.strip() or f"gh copilot exited with code {result.returncode}"
-                return f"Error: GitHub Copilot CLI – {err}"
-
-            return result.stdout.strip() or "Error: No output from GitHub Copilot CLI."
-
-        except subprocess.TimeoutExpired:
-            return "Error: GitHub Copilot CLI timed out."
-        except Exception as exc:
             return f"Error: {exc}"

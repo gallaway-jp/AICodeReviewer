@@ -231,8 +231,31 @@ class AIBackend(ABC):
 
     @staticmethod
     def _build_system_prompt(review_type: str, lang: str) -> str:
-        """Combine the review persona prompt with a language instruction."""
-        base = REVIEW_PROMPTS.get(review_type, REVIEW_PROMPTS["best_practices"])
+        """Combine the review persona prompt with a language instruction.
+
+        When *review_type* contains ``'+'`` (e.g. ``'security+performance'``),
+        the personas for all included types are merged into a single prompt.
+        """
+        if "+" in review_type:
+            parts = review_type.split("+")
+            combined_parts = []
+            for rt in parts:
+                prompt = REVIEW_PROMPTS.get(rt)
+                if prompt:
+                    combined_parts.append(prompt)
+            if not combined_parts:
+                combined_parts.append(REVIEW_PROMPTS["best_practices"])
+            base = (
+                "You are a multi-disciplinary code review expert. "
+                "Perform a combined review covering ALL of the following areas. "
+                "Tag each finding with its category.\n\n"
+                + "\n\n".join(
+                    f"[{rt.upper()}]: {REVIEW_PROMPTS.get(rt, '')}"
+                    for rt in parts if REVIEW_PROMPTS.get(rt)
+                )
+            )
+        else:
+            base = REVIEW_PROMPTS.get(review_type, REVIEW_PROMPTS["best_practices"])
         if lang == "ja":
             lang_inst = "IMPORTANT: Provide your entire response in Japanese (日本語で回答してください)."
         else:
@@ -246,7 +269,8 @@ class AIBackend(ABC):
         spec_content: Optional[str] = None,
     ) -> str:
         """Build the user-role message for the AI."""
-        if review_type == "specification" and spec_content:
+        has_spec = ("specification" in review_type) and spec_content
+        if has_spec:
             return (
                 f"SPECIFICATION DOCUMENT:\n{spec_content}\n\n---\n\n"
                 f"CODE TO REVIEW:\n{code_content}\n\n---\n\n"
@@ -255,6 +279,34 @@ class AIBackend(ABC):
                 "meet the requirements."
             )
         return f"Review this code:\n\n{code_content}"
+
+    @staticmethod
+    def _build_multi_file_user_message(
+        files: List[dict],
+        review_type: str,
+        spec_content: Optional[str] = None,
+    ) -> str:
+        """Build a user-role message that combines multiple files.
+
+        Each entry in *files* is ``{"name": "...", "content": "..."}``.
+        The response must use ``=== FILE: <name> ===`` delimiters so the
+        caller can split feedback back into per-file issues.
+        """
+        parts: List[str] = []
+        if review_type == "specification" and spec_content:
+            parts.append(f"SPECIFICATION DOCUMENT:\n{spec_content}\n\n---\n")
+
+        parts.append(
+            "Review each of the following files. "
+            "For EACH file, begin your feedback with a line exactly like:\n"
+            "=== FILE: <filename> ===\n"
+            "Then provide your review for that file.\n"
+        )
+        for f in files:
+            parts.append(f"=== FILE: {f['name']} ===")
+            parts.append(f"{f['content']}\n")
+
+        return "\n".join(parts)
 
     @staticmethod
     def _build_fix_message(code_content: str, issue_feedback: str, review_type: str) -> str:

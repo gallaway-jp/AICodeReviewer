@@ -49,7 +49,9 @@ class AppRunner:
         dry_run: bool = False,
         output_file: Optional[str] = None,
         progress_callback: Optional[Callable] = None,
-    ) -> Optional[str]:
+        interactive: bool = True,
+        cancel_check: Optional[Callable] = None,
+    ) -> "Optional[str] | List[ReviewIssue]":
         """
         Execute a full review session and return the report path (or None).
 
@@ -57,6 +59,10 @@ class AppRunner:
             review_types: One or more review type keys.
             progress_callback: Optional ``(current, total, message)`` callable
                                used by the GUI progress bar.
+            interactive: If *False* skip the CLI interactive-review step
+                         (used by the GUI which has its own issue cards).
+            cancel_check: Optional callable returning *True* when the user
+                          has requested cancellation.
         """
         # Clean old backups
         if path and not dry_run:
@@ -68,7 +74,7 @@ class AppRunner:
             else t("orch.scope_diff", source=diff_file or commits)
         )
         logger.info(
-            t("orch.scanning", path=path, scope=scope_desc, types=type_label, lang=target_lang),
+            t("orch.scanning", path=path, scope=scope_desc, types=type_label, language=target_lang),
         )
 
         target_files: List[Any] = self.scan_fn(path, scope, diff_file, commits)
@@ -91,7 +97,7 @@ class AppRunner:
                 logger.info("  %d. %s", i, fp)
             logger.info(t("orch.dry_run_total", count=num_files))
             logger.info(t("orch.dry_run_types", types=type_label))
-            logger.info(t("orch.dry_run_lang", lang=target_lang))
+            logger.info(t("orch.dry_run_lang", language=target_lang))
             logger.info(t("orch.dry_run_no_api"))
             return None
 
@@ -112,29 +118,67 @@ class AppRunner:
 
         logger.info(t("orch.found_issues", count=len(issues)))
 
+        if cancel_check and cancel_check():
+            return None
+
+        # Store metadata for deferred report generation
+        diff_source = (diff_file or commits) if scope == "diff" else None
+        self._pending_report_meta = dict(
+            project_path=path or "",
+            review_types=list(review_types),
+            scope=scope,
+            total_files_scanned=num_files,
+            language=target_lang,
+            diff_source=diff_source,
+            programmers=programmers,
+            reviewers=reviewers,
+            backend=self.backend_name,
+        )
+        self._pending_issues = issues
+
+        # When interactive=False (GUI mode), return issues without saving
+        # a report — the GUI will invoke generate_report() after the user
+        # has finished the interactive review.
+        if not interactive:
+            return issues
+
         # The interactive step uses the first review_type for verification
         # prompts; individual issues carry their own issue_type.
         resolved_issues = interactive_review_confirmation(
             issues, self.client, review_types[0], target_lang
         )
 
-        quality_score = calculate_quality_score(resolved_issues)
-        diff_source = (diff_file or commits) if scope == "diff" else None
+        return self.generate_report(resolved_issues, output_file)
+
+    # ── Deferred report generation (called by GUI after review) ────────
+    def generate_report(
+        self,
+        issues: Optional[List[ReviewIssue]] = None,
+        output_file: Optional[str] = None,
+    ) -> Optional[str]:
+        """Generate and save the report. Called by the GUI on Finalize."""
+        meta = getattr(self, "_pending_report_meta", None)
+        if not meta:
+            return None
+        if issues is None:
+            issues = getattr(self, "_pending_issues", [])
+
+        quality_score = calculate_quality_score(issues)
 
         report = ReviewReport(
-            project_path=path or "",
-            review_type=", ".join(review_types),
-            scope=scope,
-            total_files_scanned=num_files,
-            issues_found=resolved_issues,
+            project_path=meta["project_path"],
+            review_type=", ".join(meta["review_types"]),
+            scope=meta["scope"],
+            total_files_scanned=meta["total_files_scanned"],
+            issues_found=issues,
             generated_at=datetime.now(),
-            language=target_lang,
-            review_types=list(review_types),
-            diff_source=diff_source,
+            language=meta["language"],
+            review_types=meta["review_types"],
+            diff_source=meta["diff_source"],
             quality_score=quality_score,
-            programmers=programmers,
-            reviewers=reviewers,
-            backend=self.backend_name,
+            programmers=meta["programmers"],
+            reviewers=meta["reviewers"],
+            backend=meta["backend"],
         )
 
         out = generate_review_report(report, output_file)

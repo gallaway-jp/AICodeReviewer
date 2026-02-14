@@ -33,7 +33,7 @@ def test_config_new_sections():
 
     assert config.get('backend', 'type') == 'bedrock'
     assert config.get('kiro', 'cli_command') == 'kiro'
-    assert config.get('copilot', 'gh_path') == 'gh'
+    assert config.get('copilot', 'copilot_path') == 'copilot'
 
 
 def test_config_set_value():
