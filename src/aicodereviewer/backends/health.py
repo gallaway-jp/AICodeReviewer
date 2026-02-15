@@ -83,8 +83,18 @@ def _run_quiet(cmd: list, timeout: int = 10) -> tuple:
 _copilot_models_cache: List[str] = []
 
 
-def get_copilot_models() -> List[str]:
-    """Return cached list of Copilot models discovered during health check."""
+def get_copilot_models(copilot_path: str = "") -> List[str]:
+    """Return cached list of Copilot models, discovering them lazily if needed.
+
+    Args:
+        copilot_path: Path to the copilot executable. If empty, uses config.
+    """
+    global _copilot_models_cache
+    if not _copilot_models_cache:
+        # Lazy discovery if cache is empty
+        if not copilot_path:
+            copilot_path = config.get("copilot", "copilot_path", "copilot")
+        _discover_copilot_models(copilot_path)
     return list(_copilot_models_cache)
 
 
@@ -116,6 +126,59 @@ def _discover_copilot_models(copilot_path: str = "copilot") -> List[str]:
         logger.debug("Could not parse model list from copilot --help")
 
     return list(_copilot_models_cache)
+
+
+# ── AWS Bedrock model discovery ────────────────────────────────────────────
+
+_bedrock_models_cache: List[str] = []
+
+
+def get_bedrock_models(region: str = "") -> List[str]:
+    """Return cached list of Bedrock models, discovering them lazily if needed.
+
+    Args:
+        region: AWS region. If empty, uses config.
+    """
+    global _bedrock_models_cache
+    if not _bedrock_models_cache:
+        if not region:
+            region = config.get("aws", "region", "us-east-1")
+        _discover_bedrock_models(region)
+    return list(_bedrock_models_cache)
+
+
+def _discover_bedrock_models(region: str = "us-east-1") -> List[str]:
+    """Discover available Bedrock models using AWS CLI.
+
+    Results are cached in ``_bedrock_models_cache``.
+    """
+    global _bedrock_models_cache
+    import json as _json
+
+    rc, stdout, stderr = _run_quiet(
+        ["aws", "bedrock", "list-foundation-models",
+         "--region", region,
+         "--query", "modelSummaries[?modelLifecycleStatus=='ACTIVE'].modelId",
+         "--output", "json"],
+        timeout=15,
+    )
+
+    models: List[str] = []
+    if rc == 0 and stdout:
+        try:
+            model_ids = _json.loads(stdout)
+            if isinstance(model_ids, list):
+                models = sorted([m for m in model_ids if isinstance(m, str)])
+        except Exception as e:
+            logger.debug("Failed to parse Bedrock model list: %s", e)
+
+    if models:
+        _bedrock_models_cache = models
+        logger.debug("Discovered %d Bedrock models", len(models))
+    else:
+        logger.debug("Could not discover Bedrock models")
+
+    return list(_bedrock_models_cache)
 
 
 # ── AWS Bedrock health ─────────────────────────────────────────────────────
@@ -425,6 +488,60 @@ def check_copilot() -> HealthReport:
     logger.debug("Copilot health check completed in %.3f seconds (ready=%s)", 
                  total_time, report.ready)
     return report
+
+
+# ── Local LLM model discovery ──────────────────────────────────────────────
+
+_local_models_cache: List[str] = []
+
+
+def get_local_models(api_url: str = "") -> List[str]:
+    """Return cached list of local LLM models, discovering them lazily if needed.
+
+    Args:
+        api_url: The local LLM API URL. If empty, uses config.
+    """
+    global _local_models_cache
+    if not _local_models_cache:
+        if not api_url:
+            api_url = config.get("local_llm", "api_url", "http://localhost:1234/v1")
+        _discover_local_models(api_url)
+    return list(_local_models_cache)
+
+
+def _discover_local_models(api_url: str = "http://localhost:1234/v1") -> List[str]:
+    """Discover available local LLM models by querying the API.
+
+    Expects OpenAI-compatible /v1/models endpoint.
+    Results are cached in ``_local_models_cache``.
+    """
+    global _local_models_cache
+    import json as _json
+    import urllib.request
+    import urllib.error
+
+    models: List[str] = []
+    try:
+        # Query the models endpoint (OpenAI-compatible)
+        models_url = api_url.rstrip("/") + "/models"
+        with urllib.request.urlopen(models_url, timeout=5) as resp:
+            data = _json.loads(resp.read().decode("utf-8"))
+            if isinstance(data, dict) and "data" in data:
+                # Extract model IDs from the response
+                model_list = data["data"]
+                if isinstance(model_list, list):
+                    models = sorted([m.get("id", m) if isinstance(m, dict) else m 
+                                    for m in model_list if m])
+    except (urllib.error.URLError, urllib.error.HTTPError, OSError, TimeoutError, _json.JSONDecodeError) as e:
+        logger.debug("Failed to discover local LLM models: %s", e)
+
+    if models:
+        _local_models_cache = models
+        logger.debug("Discovered %d local LLM models", len(models))
+    else:
+        logger.debug("Could not discover local LLM models")
+
+    return list(_local_models_cache)
 
 
 # ── Local LLM health ──────────────────────────────────────────────────────

@@ -7,7 +7,7 @@ confirmation, and report generation.
 """
 import logging
 from datetime import datetime
-from typing import Optional, List, Any, Callable
+from typing import Optional, List, Any, Callable, Dict, Union
 
 from .backup import cleanup_old_backups
 from .scanner import scan_project_with_scope as default_scan
@@ -16,6 +16,15 @@ from .interactive import interactive_review_confirmation
 from .reporter import generate_review_report
 from .models import ReviewReport, ReviewIssue, calculate_quality_score
 from .i18n import t
+from .backends.base import AIBackend
+
+# Type aliases for complex callables
+ScanFunction = Callable[
+    [Optional[str], str, Optional[str], Optional[str]],
+    List[Dict[str, Any]]
+]
+ProgressCallback = Callable[[int, int, str], None]
+CancelCheck = Callable[[], bool]
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +39,17 @@ class AppRunner:
         backend_name: Name of the active backend for report metadata.
     """
 
-    def __init__(self, client, *, scan_fn=None, backend_name: str = "bedrock"):
+    client: AIBackend
+    scan_fn: ScanFunction
+    backend_name: str
+
+    def __init__(
+        self,
+        client: AIBackend,
+        *,
+        scan_fn: Optional[ScanFunction] = None,
+        backend_name: str = "bedrock",
+    ) -> None:
         self.client = client
         self.scan_fn = scan_fn or default_scan
         self.backend_name = backend_name
@@ -48,10 +67,10 @@ class AppRunner:
         reviewers: List[str],
         dry_run: bool = False,
         output_file: Optional[str] = None,
-        progress_callback: Optional[Callable] = None,
+        progress_callback: Optional[ProgressCallback] = None,
         interactive: bool = True,
-        cancel_check: Optional[Callable] = None,
-    ) -> "Optional[str] | List[ReviewIssue]":
+        cancel_check: Optional[CancelCheck] = None,
+    ) -> Union[Optional[str], List[ReviewIssue]]:
         """
         Execute a full review session and return the report path (or None).
 
@@ -110,6 +129,7 @@ class AppRunner:
             target_lang,
             spec_content,
             progress_callback=progress_callback,
+            cancel_check=cancel_check,
         )
 
         if not issues:
@@ -161,7 +181,8 @@ class AppRunner:
         if not meta:
             return None
         if issues is None:
-            issues = getattr(self, "_pending_issues", [])
+            pending: List[ReviewIssue] = getattr(self, "_pending_issues", [])
+            issues = pending
 
         quality_score = calculate_quality_score(issues)
 

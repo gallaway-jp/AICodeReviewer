@@ -17,6 +17,7 @@ import logging
 import subprocess
 import os
 import shutil
+import tempfile
 from typing import Optional
 
 from .base import AIBackend
@@ -46,6 +47,7 @@ class CopilotBackend(AIBackend):
         self.copilot_path: str = config.get("copilot", "copilot_path", "copilot").strip()
         self.timeout: int = int(config.get("copilot", "timeout", "300"))
         self.model: str = config.get("copilot", "model", "auto").strip()
+        self._current_process = None  # Track subprocess for cancellation
 
     # ── AIBackend interface ────────────────────────────────────────────────
 
@@ -94,6 +96,7 @@ class CopilotBackend(AIBackend):
             result = subprocess.run(
                 [found, "--version"],
                 capture_output=True, text=True, timeout=15,
+                encoding="utf-8", errors="replace",
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
             if result.returncode != 0:
@@ -135,34 +138,100 @@ class CopilotBackend(AIBackend):
 
         Uses ``copilot -p "…"`` which runs non-interactively, returning
         the agent's text response on stdout.
+        
+        For very long prompts (>5000 chars), writes to a temporary file
+        and uses ``copilot -p "$(cat file)"`` approach to avoid Windows
+        command line length limitations (WinError 206).
         """
         try:
-            # Build command – copilot -p "<prompt>"
-            cmd = [self.copilot_path, "-p", prompt]
-            if self.model and self.model.lower() != "auto":
-                cmd.extend(["--model", self.model])
-
             env = os.environ.copy()
             # Suppress colour codes for clean parsing
             env["NO_COLOR"] = "1"
 
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=self.timeout,
-                env=env,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
+            # Windows has command line length limits (~8191 chars for cmd.exe).
+            # Use a temporary file for long prompts to avoid WinError 206.
+            use_temp_file = len(prompt) > 5000
 
-            if result.returncode != 0:
+            if use_temp_file:
+                # Write prompt to a temporary file, then read it back
+                # This avoids command line length limits while still using -p
+                with tempfile.NamedTemporaryFile(
+                    mode='w', suffix='.txt', delete=False,
+                    encoding='utf-8'
+                ) as f:
+                    f.write(prompt)
+                    temp_path = f.name
+
+                try:
+                    # On Windows, use PowerShell to read file content
+                    # On Unix, use cat
+                    if os.name == 'nt':
+                        # Use PowerShell to read file and pass to copilot
+                        # -NoProfile -NonInteractive for faster startup
+                        ps_cmd = f'$content = Get-Content -Raw -Path "{temp_path}"; & "{self.copilot_path}" -p $content'
+                        if self.model and self.model.lower() != "auto":
+                            ps_cmd = f'$content = Get-Content -Raw -Path "{temp_path}"; & "{self.copilot_path}" -p $content --model "{self.model}"'
+                        
+                        cmd = ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_cmd]
+                    else:
+                        # Unix: use shell substitution
+                        cmd = f'{self.copilot_path} -p "$(cat {temp_path})"'
+                        if self.model and self.model.lower() != "auto":
+                            cmd += f' --model "{self.model}"'
+                        cmd = ["sh", "-c", cmd]
+
+                    proc = subprocess.Popen(
+                        cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        env=env,
+                        encoding="utf-8", errors="replace",
+                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                    )
+                    self._current_process = proc
+                    try:
+                        stdout, stderr = proc.communicate(timeout=self.timeout)
+                        returncode = proc.returncode
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.communicate()  # Clean up
+                        return "Error: GitHub Copilot CLI timed out."
+                    finally:
+                        self._current_process = None
+                finally:
+                    # Clean up temp file
+                    try:
+                        os.unlink(temp_path)
+                    except Exception:
+                        pass
+            else:
+                # Pass prompt as command line argument (original behavior)
+                cmd = [self.copilot_path, "-p", prompt]
+                if self.model and self.model.lower() != "auto":
+                    cmd.extend(["--model", self.model])
+
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=self.timeout,
+                    env=env,
+                    encoding="utf-8", errors="replace",
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+                returncode = result.returncode
+                stdout = result.stdout
+                stderr = result.stderr
+
+            if returncode != 0:
                 err = (
-                    (result.stderr or "").strip()
-                    or f"copilot exited with code {result.returncode}"
+                    (stderr or "").strip()
+                    or f"copilot exited with code {returncode}"
                 )
                 return f"Error: GitHub Copilot CLI – {err}"
 
-            output = (result.stdout or "").strip()
+            output = (stdout or "").strip()
             return output or "Error: No output from GitHub Copilot CLI."
 
         except subprocess.TimeoutExpired:
@@ -170,3 +239,12 @@ class CopilotBackend(AIBackend):
         except Exception as exc:
             logger.error("Copilot backend error: %s", exc)
             return f"Error: {exc}"
+
+    def cancel(self):
+        """Terminate the currently running subprocess if any."""
+        if self._current_process:
+            try:
+                self._current_process.terminate()
+                logger.info("Cancelled Copilot subprocess")
+            except Exception as exc:
+                logger.warning("Failed to terminate Copilot process: %s", exc)

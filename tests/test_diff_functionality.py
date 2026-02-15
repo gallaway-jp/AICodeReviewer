@@ -120,7 +120,8 @@ class TestGitDiffGeneration:
             cwd='/path/to/project',
             capture_output=True,
             text=True,
-            check=True
+            check=True,
+            encoding='utf-8', errors='replace',
         )
 
     @patch('aicodereviewer.scanner.detect_vcs_type')

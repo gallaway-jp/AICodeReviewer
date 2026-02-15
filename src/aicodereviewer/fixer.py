@@ -11,13 +11,14 @@ from typing import Optional
 
 from .models import ReviewIssue
 from .config import config
+from .backends.base import AIBackend
 
 logger = logging.getLogger(__name__)
 
 
 def apply_ai_fix(
     issue: ReviewIssue,
-    client,
+    client: AIBackend,
     review_type: str,
     lang: str,
 ) -> Optional[str]:
@@ -33,16 +34,17 @@ def apply_ai_fix(
     Returns:
         Fixed code string, or *None* on failure.
     """
+    file_path = issue.file_path or ""
     try:
-        file_size = os.path.getsize(issue.file_path)
+        file_size = os.path.getsize(file_path)
         max_fix_size = config.get("performance", "max_fix_file_size_mb")
         if file_size > max_fix_size:
             logger.warning(
-                "File too large for AI fix: %s (%d bytes)", issue.file_path, file_size
+                "File too large for AI fix: %s (%d bytes)", file_path, file_size
             )
             return None
 
-        with open(issue.file_path, "r", encoding="utf-8", errors="ignore") as fh:
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as fh:
             current_code = fh.read()
 
         max_content = config.get("performance", "max_fix_content_length")

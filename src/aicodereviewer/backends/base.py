@@ -6,7 +6,7 @@ Every backend must implement :pymethod:`get_review` and :pymethod:`get_fix`
 so the rest of the application can remain backend-agnostic.
 """
 from abc import ABC, abstractmethod
-from typing import Optional, List
+from typing import Any, Dict, Optional, List
 
 
 # ── Central prompt registry ────────────────────────────────────────────────
@@ -238,7 +238,7 @@ class AIBackend(ABC):
         """
         if "+" in review_type:
             parts = review_type.split("+")
-            combined_parts = []
+            combined_parts: List[str] = []
             for rt in parts:
                 prompt = REVIEW_PROMPTS.get(rt)
                 if prompt:
@@ -282,15 +282,16 @@ class AIBackend(ABC):
 
     @staticmethod
     def _build_multi_file_user_message(
-        files: List[dict],
+        files: List[Dict[str, Any]],
         review_type: str,
         spec_content: Optional[str] = None,
     ) -> str:
         """Build a user-role message that combines multiple files.
 
         Each entry in *files* is ``{"name": "...", "content": "..."}``.
-        The response must use ``=== FILE: <name> ===`` delimiters so the
-        caller can split feedback back into per-file issues.
+        The response must use ``=== FILE: <name> ===`` delimiters and
+        ``--- FINDING [severity] ---`` sub-delimiters so the caller can
+        split feedback into per-file, per-finding issues.
         """
         parts: List[str] = []
         if review_type == "specification" and spec_content:
@@ -299,8 +300,13 @@ class AIBackend(ABC):
         parts.append(
             "Review each of the following files. "
             "For EACH file, begin your feedback with a line exactly like:\n"
-            "=== FILE: <filename> ===\n"
-            "Then provide your review for that file.\n"
+            "=== FILE: <filename> ===\n\n"
+            "Within each file section, separate EACH distinct finding with "
+            "a line exactly like:\n"
+            "--- FINDING [severity] ---\n"
+            "where severity is one of: critical, high, medium, low, info.\n"
+            "Then provide a concise description of that single finding.\n"
+            "Report ALL issues you find — do not merge multiple issues.\n"
         )
         for f in files:
             parts.append(f"=== FILE: {f['name']} ===")

@@ -244,7 +244,8 @@ def get_diff_from_commits(project_path: str, commit_range: str) -> Optional[str]
                 cwd=cwd,
                 capture_output=True,
                 text=True,
-                check=True
+                check=True,
+                encoding="utf-8", errors="replace",
             )
         elif vcs_type == 'svn':
             # SVN expects '-r REV1:REV2'; only limit to '.' when in a subdirectory
@@ -256,7 +257,8 @@ def get_diff_from_commits(project_path: str, commit_range: str) -> Optional[str]
                 cwd=cwd,
                 capture_output=True,
                 text=True,
-                check=True
+                check=True,
+                encoding="utf-8", errors="replace",
             )
         else:
             logger.error(f"Unsupported VCS type: {vcs_type}")

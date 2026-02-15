@@ -1,3 +1,21 @@
+# AICodeReviewer v2.0.1
+
+Maintenance release with UX improvements and bug fixes.
+
+## New Features
+- **AI Fix batch mode** – select multiple issues and generate fixes in batch from the Results tab
+- **Diff preview** – preview proposed code changes before applying AI fixes
+- **Improved cancellation** – responsive Cancel button during review sessions
+
+## Bug Fixes
+- Fixed WinError 206 (command line too long) when using Copilot CLI for combined multi-file reviews
+- Fixed UnicodeDecodeError on Windows with cp932 encoding
+- Fixed "I didn't get a task" Copilot response for long prompts (now uses temp file)
+- Added "Fix failed" status indicator for AI fixes that fail to generate
+- Improved type annotations throughout codebase for better IDE support
+
+---
+
 # AICodeReviewer v2.0.0
 
 Major upgrade with multi-backend support, multi-type reviews, and a graphical interface.

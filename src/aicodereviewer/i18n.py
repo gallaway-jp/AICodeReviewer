@@ -18,7 +18,7 @@ Keys use dotted notation: ``module.context.identifier``.
 from __future__ import annotations
 
 import threading
-from typing import Optional
+from typing import Any, Optional
 
 # ── thread-safe global locale ──────────────────────────────────────────────
 
@@ -39,7 +39,7 @@ def get_locale() -> str:
         return _locale
 
 
-def t(key: str, lang: Optional[str] = None, **kwargs) -> str:
+def t(key: str, lang: Optional[str] = None, **kwargs: Any) -> str:
     """
     Look up a translated string.
 
@@ -392,6 +392,11 @@ _EN: dict[str, str] = {
     "gui.settings.section_copilot":   "GitHub Copilot CLI",
     "gui.settings.section_local":     "Local LLM",
     "gui.settings.section_perf":      "Performance",
+    "gui.settings.backend_bedrock":   "AWS Bedrock",
+    "gui.settings.backend_kiro":      "Kiro CLI (WSL)",
+    "gui.settings.backend_copilot":   "GitHub Copilot CLI",
+    "gui.settings.backend_local":     "Local LLM",
+    "gui.settings.active_backend":    "✓ Active",
     "gui.settings.ui_theme":          "UI Theme",
     "gui.settings.ui_theme_system":   "System Default",
     "gui.settings.ui_theme_dark":     "Dark",
@@ -462,6 +467,7 @@ _EN: dict[str, str] = {
     "gui.results.skipped":            "◌ Skipped",
     "gui.results.pending":            "● Pending",
     "gui.results.fixed":              "✔ Fixed",
+    "gui.results.fix_failed":         "✗ Fix Failed",
     "gui.results.collapse":           "▼ Hide Results",
     "gui.results.expand":             "▶ Show Results",
     "gui.results.progress":           "Issue {current}/{total}",
@@ -476,6 +482,26 @@ _EN: dict[str, str] = {
     "gui.results.editor_title":       "Edit – {file}",
     "gui.results.editor_saved":       "File saved.",
     "gui.results.editor_save":        "Save & Close",
+
+    # ── AI Fix mode ────────────────────────────────────────────────────────
+    "gui.results.ai_fix_mode":        "AI Fix",
+    "gui.results.start_ai_fix":       "Start AI Fix",
+    "gui.results.cancel_ai_fix":      "Cancel",
+    "gui.results.cancelling_ai_fix":  "Cancelling...",
+    "gui.results.cancelling_status":  "Cancelling AI Fix...",
+    "gui.results.select_for_fix":     "Fix this issue",
+    "gui.results.no_issues_selected": "No issues selected for AI Fix.",
+    "gui.results.batch_fix_running":  "Generating AI fixes for {count} issues…",
+    "gui.results.batch_fix_title":    "AI Fix Results ({count} fixes ready)",
+    "gui.results.batch_fix_summary":  "{success} fixes generated, {failed} failed",
+    "gui.results.batch_fix_applied":  "{count} AI fixes applied.",
+    "gui.results.apply_fixes":        "Apply Selected Fixes",
+    "gui.results.preview_changes":    "Preview",
+    "gui.results.diff_preview_title": "Changes Preview: {file}",
+    "gui.results.diff_preview_header": "Proposed changes for {file}",
+    "gui.results.original_code":      "Original",
+    "gui.results.fixed_code":         "Fixed",
+    "gui.results.no_changes":         "No changes detected.",
 
     # ── Settings – editor ──────────────────────────────────────────────────
     "gui.settings.section_editor":    "Code Editor",
@@ -807,6 +833,11 @@ _JA: dict[str, str] = {
     "gui.settings.section_copilot":   "GitHub Copilot CLI",
     "gui.settings.section_local":     "ローカルLLM",
     "gui.settings.section_perf":      "パフォーマンス",
+    "gui.settings.backend_bedrock":   "AWS Bedrock",
+    "gui.settings.backend_kiro":      "Kiro CLI (WSL)",
+    "gui.settings.backend_copilot":   "GitHub Copilot CLI",
+    "gui.settings.backend_local":     "ローカルLLM",
+    "gui.settings.active_backend":    "✓ 使用中",
     "gui.settings.ui_theme":          "UIテーマ",
     "gui.settings.ui_theme_system":   "システムデフォルト",
     "gui.settings.ui_theme_dark":     "ダーク",
@@ -877,6 +908,7 @@ _JA: dict[str, str] = {
     "gui.results.skipped":            "◌ スキップ",
     "gui.results.pending":            "● 未処理",
     "gui.results.fixed":              "✔ 修正済み",
+    "gui.results.fix_failed":         "✗ 修正失敗",
     "gui.results.collapse":           "▼ 結果を隠す",
     "gui.results.expand":             "▶ 結果を表示",
     "gui.results.progress":           "問題 {current}/{total}",
@@ -891,6 +923,26 @@ _JA: dict[str, str] = {
     "gui.results.editor_title":       "編集 – {file}",
     "gui.results.editor_saved":       "ファイルを保存しました。",
     "gui.results.editor_save":        "保存して閉じる",
+
+    # ── AI Fix mode ────────────────────────────────────────────────────────
+    "gui.results.ai_fix_mode":        "AI修正",
+    "gui.results.start_ai_fix":       "AI修正を開始",
+    "gui.results.cancel_ai_fix":      "キャンセル",
+    "gui.results.cancelling_ai_fix":  "キャンセル中...",
+    "gui.results.cancelling_status":  "AI修正をキャンセル中...",
+    "gui.results.select_for_fix":     "この問題を修正",
+    "gui.results.no_issues_selected": "AI修正対象が選択されていません。",
+    "gui.results.batch_fix_running":  "{count}件の問題のAI修正を生成中…",
+    "gui.results.batch_fix_title":    "AI修正結果（{count}件の修正準備完了）",
+    "gui.results.batch_fix_summary":  "{success}件の修正生成、{failed}件失敗",
+    "gui.results.batch_fix_applied":  "{count}件のAI修正を適用しました。",
+    "gui.results.apply_fixes":        "選択した修正を適用",
+    "gui.results.preview_changes":    "プレビュー",
+    "gui.results.diff_preview_title": "変更プレビュー: {file}",
+    "gui.results.diff_preview_header": "{file}の変更内容",
+    "gui.results.original_code":      "変更前",
+    "gui.results.fixed_code":         "変更後",
+    "gui.results.no_changes":         "変更なし。",
 
     # ── Settings – editor ──────────────────────────────────────────────────
     "gui.settings.section_editor":    "コードエディタ",

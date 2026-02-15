@@ -16,6 +16,7 @@ from .models import ReviewIssue
 from .reviewer import verify_issue_resolved
 from .fixer import apply_ai_fix
 from .i18n import t
+from .backends.base import AIBackend
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ def get_valid_choice(prompt: str, valid_options: List[str]) -> str:
 
 def interactive_review_confirmation(
     issues: List[ReviewIssue],
-    client,
+    client: AIBackend,
     review_type: str,
     lang: str,
 ) -> List[ReviewIssue]:
@@ -83,7 +84,9 @@ def interactive_review_confirmation(
 
 # ── actions ────────────────────────────────────────────────────────────────
 
-def _action_resolve(issue, client, review_type, lang):
+def _action_resolve(
+    issue: ReviewIssue, client: AIBackend, review_type: str, lang: str
+) -> None:
     if verify_issue_resolved(issue, client, review_type, lang):
         issue.status = "resolved"
         issue.resolved_at = datetime.now()
@@ -98,7 +101,7 @@ def _action_resolve(issue, client, review_type, lang):
             print(t("interactive.force_resolved"))
 
 
-def _action_ignore(issue):
+def _action_ignore(issue: ReviewIssue) -> None:
     try:
         reason = input(t("interactive.ignore_reason")).strip()
     except (KeyboardInterrupt, EOFError):
@@ -112,20 +115,23 @@ def _action_ignore(issue):
         print(t("interactive.reason_too_short"))
 
 
-def _action_ai_fix(issue, client, review_type, lang):
+def _action_ai_fix(
+    issue: ReviewIssue, client: AIBackend, review_type: str, lang: str
+) -> None:
     fix_result = apply_ai_fix(issue, client, review_type, lang)
     if not fix_result:
         print(t("interactive.fix_failed"))
         return
 
+    file_path = issue.file_path or ""
     try:
-        with open(issue.file_path, "r", encoding="utf-8", errors="ignore") as fh:
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as fh:
             current = fh.read()
     except Exception as exc:
         print(t("interactive.diff_read_error", error=exc))
         return
 
-    _show_diff(current, fix_result, issue.file_path)
+    _show_diff(current, fix_result, file_path)
 
     confirm = get_valid_choice(t("interactive.apply_fix"), ["y", "n"])
     if confirm == "y":
@@ -145,9 +151,10 @@ def _action_ai_fix(issue, client, review_type, lang):
         print(t("interactive.fix_cancelled"))
 
 
-def _action_view_code(issue):
+def _action_view_code(issue: ReviewIssue) -> None:
+    file_path = issue.file_path or ""
     try:
-        with open(issue.file_path, "r", encoding="utf-8", errors="ignore") as fh:
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as fh:
             content = fh.read()
         print(f"\n{'─' * 60}")
         print(content)
@@ -158,12 +165,13 @@ def _action_view_code(issue):
 
 # ── helpers ────────────────────────────────────────────────────────────────
 
-def _print_issue_header(idx, total, issue):
+def _print_issue_header(idx: int, total: int, issue: ReviewIssue) -> None:
     print(f"\n{'=' * 80}")
     print(t("interactive.header", idx=idx, total=total, type=issue.issue_type, severity=issue.severity))
     print(f"{'=' * 80}")
     print(t("interactive.file", path=issue.file_path))
-    print(t("interactive.snippet", snippet=issue.code_snippet[:120]))
+    snippet = issue.code_snippet or ""
+    print(t("interactive.snippet", snippet=snippet[:120]))
     print(t("interactive.feedback", feedback=issue.ai_feedback))
 
 

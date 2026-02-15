@@ -17,7 +17,6 @@ import os
 import re
 import subprocess
 import logging
-from pathlib import Path, PureWindowsPath, PurePosixPath
 from typing import Optional, List, Tuple
 
 logger = logging.getLogger(__name__)
@@ -122,6 +121,7 @@ def get_wsl_distros() -> List[str]:
             capture_output=True,
             text=True,
             timeout=10,
+            encoding="utf-8", errors="replace",
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
         # wsl --list --quiet may emit UTF-16; decode defensively
@@ -170,17 +170,49 @@ def run_in_wsl(
 
     logger.debug("WSL command: %s", " ".join(wsl_cmd))
 
-    kwargs = dict(
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
+    # Build subprocess args - use explicit calls to avoid type issues with **kwargs
     if os.name == "nt":
-        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
-    if stdin_data is not None:
-        kwargs["input"] = stdin_data
-
-    result = subprocess.run(wsl_cmd, **kwargs)
+        if stdin_data is not None:
+            result = subprocess.run(
+                wsl_cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                encoding="utf-8",
+                errors="replace",
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                input=stdin_data,
+            )
+        else:
+            result = subprocess.run(
+                wsl_cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                encoding="utf-8",
+                errors="replace",
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+    else:
+        if stdin_data is not None:
+            result = subprocess.run(
+                wsl_cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                encoding="utf-8",
+                errors="replace",
+                input=stdin_data,
+            )
+        else:
+            result = subprocess.run(
+                wsl_cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                encoding="utf-8",
+                errors="replace",
+            )
     return result.returncode, result.stdout, result.stderr
 
 

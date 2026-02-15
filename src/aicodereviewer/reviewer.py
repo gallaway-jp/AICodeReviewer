@@ -9,16 +9,22 @@ import os
 import logging
 import re
 from pathlib import Path
-from typing import List, Any, Optional
+from typing import Any, Callable, Dict, List, Optional, Union
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .models import ReviewIssue
 from .config import config
+from .backends.base import AIBackend
+
+# Type aliases
+ProgressCallback = Callable[[int, int, str], None]
+CancelCheck = Callable[[], bool]
+FileInfo = Union[Path, Dict[str, Any]]
 
 logger = logging.getLogger(__name__)
 
 # Cache for file contents
-_file_content_cache: dict = {}
+_file_content_cache: Dict[str, str] = {}
 
 
 # ── severity parsing ───────────────────────────────────────────────────────
@@ -40,6 +46,15 @@ def _parse_severity(feedback: str) -> str:
     except Exception:
         pass
     return "medium"
+
+
+def _extract_description(feedback: str, filename: str) -> str:
+    """Extract a short description from the first meaningful line of feedback."""
+    for line in feedback.splitlines():
+        stripped = line.strip().strip("*-#>:").strip()
+        if stripped and len(stripped) > 5:
+            return stripped[:120]
+    return f"Review finding for {filename}"
 
 
 # ── file I/O ───────────────────────────────────────────────────────────────
@@ -75,12 +90,13 @@ def _read_file_content(file_path: Path) -> str:
 # ── main collection entry ──────────────────────────────────────────────────
 
 def collect_review_issues(
-    target_files: List[Any],
+    target_files: List[FileInfo],
     review_types: List[str],
-    client,
+    client: AIBackend,
     lang: str,
     spec_content: Optional[str] = None,
-    progress_callback=None,
+    progress_callback: Optional[ProgressCallback] = None,
+    cancel_check: Optional[CancelCheck] = None,
 ) -> List[ReviewIssue]:
     """
     Collect review issues from *target_files* for one or more *review_types*.
@@ -95,6 +111,7 @@ def collect_review_issues(
         lang: Response language ('en' / 'ja').
         spec_content: Specification doc for ``'specification'`` type.
         progress_callback: Optional ``(current, total, msg)`` callable.
+        cancel_check: Optional callable returning True when cancelled.
 
     Returns:
         Flat list of :class:`ReviewIssue` instances.
@@ -118,7 +135,7 @@ def collect_review_issues(
         with ThreadPoolExecutor(max_workers=2) as pool:
             futures = {
                 pool.submit(
-                    _process_file_batch, batch, combined_type, client, lang, spec_content
+                    _process_file_batch, batch, combined_type, client, lang, spec_content, cancel_check
                 ): batch
                 for batch in batches
             }
@@ -131,7 +148,7 @@ def collect_review_issues(
     else:
         for batch in batches:
             batch_issues = _process_file_batch(
-                batch, combined_type, client, lang, spec_content
+                batch, combined_type, client, lang, spec_content, cancel_check
             )
             issues.extend(batch_issues)
             done += len(batch)
@@ -145,11 +162,12 @@ def collect_review_issues(
 # ── batch helper ───────────────────────────────────────────────────────────
 
 def _process_file_batch(
-    target_files: List[Any],
+    target_files: List[FileInfo],
     review_type: str,
-    client,
+    client: AIBackend,
     lang: str,
     spec_content: Optional[str] = None,
+    cancel_check: Optional[CancelCheck] = None,
 ) -> List[ReviewIssue]:
     """Process a batch of files for a single review type.
 
@@ -162,23 +180,29 @@ def _process_file_batch(
         combine = combine.lower() in ("true", "1", "yes")
 
     if combine and len(target_files) > 1:
-        return _process_combined_batch(target_files, review_type, client, lang, spec_content)
+        return _process_combined_batch(target_files, review_type, client, lang, spec_content, cancel_check)
 
     # Fall back to one-file-at-a-time processing
-    return _process_files_individually(target_files, review_type, client, lang, spec_content)
+    return _process_files_individually(target_files, review_type, client, lang, spec_content, cancel_check)
 
 
 def _process_files_individually(
-    target_files: List[Any],
+    target_files: List[FileInfo],
     review_type: str,
-    client,
+    client: AIBackend,
     lang: str,
     spec_content: Optional[str] = None,
+    cancel_check: Optional[CancelCheck] = None,
 ) -> List[ReviewIssue]:
     """Original one-file-per-request approach."""
     batch_issues: List[ReviewIssue] = []
 
     for file_info in target_files:
+        # Check for cancellation before processing each file
+        if cancel_check and cancel_check():
+            logger.info("Individual file processing cancelled by user")
+            break
+
         if isinstance(file_info, dict):
             file_path = file_info["path"]
             code = file_info["content"]
@@ -217,15 +241,16 @@ def _process_files_individually(
 
 
 def _process_combined_batch(
-    target_files: List[Any],
+    target_files: List[FileInfo],
     review_type: str,
-    client,
+    client: AIBackend,
     lang: str,
     spec_content: Optional[str] = None,
+    cancel_check: Optional[CancelCheck] = None,
 ) -> List[ReviewIssue]:
     """Combine multiple files into a single AI prompt and parse results."""
     # Prepare file info list
-    file_entries: List[dict] = []
+    file_entries: List[Dict[str, Any]] = []
     for file_info in target_files:
         if isinstance(file_info, dict):
             file_path = file_info["path"]
@@ -248,7 +273,7 @@ def _process_combined_batch(
 
     # If only one file left after filtering, use single-file path
     if len(file_entries) == 1:
-        return _process_files_individually(target_files, review_type, client, lang, spec_content)
+        return _process_files_individually(target_files, review_type, client, lang, spec_content, cancel_check)
 
     names = [f["name"] for f in file_entries]
     logger.info("Combined review of %d files [%s]: %s",
@@ -265,12 +290,20 @@ def _process_combined_batch(
             combined_code, review_type=review_type, lang=lang, spec_content=spec_content
         )
     except Exception as exc:
+        # Check if this was a cancellation – if so, return empty instead of falling back
+        if cancel_check and cancel_check():
+            logger.info("Combined review cancelled by user")
+            return []
         logger.error("Combined review failed: %s – falling back to individual", exc)
-        return _process_files_individually(target_files, review_type, client, lang, spec_content)
+        return _process_files_individually(target_files, review_type, client, lang, spec_content, cancel_check)
 
     if not feedback or feedback.startswith("Error:"):
+        # Check for cancellation before falling back
+        if cancel_check and cancel_check():
+            logger.info("Combined review cancelled by user")
+            return []
         logger.warning("Combined review returned error, falling back to individual")
-        return _process_files_individually(target_files, review_type, client, lang, spec_content)
+        return _process_files_individually(target_files, review_type, client, lang, spec_content, cancel_check)
 
     # Parse combined feedback into per-file sections
     return _split_combined_feedback(feedback, file_entries, review_type)
@@ -278,19 +311,20 @@ def _process_combined_batch(
 
 def _split_combined_feedback(
     feedback: str,
-    file_entries: List[dict],
+    file_entries: List[Dict[str, Any]],
     review_type: str,
 ) -> List[ReviewIssue]:
-    """Split a combined multi-file AI response into per-file issues.
+    """Split a combined multi-file AI response into per-file, per-finding issues.
 
-    Looks for ``=== FILE: <name> ===`` delimiters.  If the AI didn't use
-    delimiters, assigns all feedback to the first file.
+    Looks for ``=== FILE: <name> ===`` delimiters per file, then
+    ``--- FINDING [severity] ---`` sub-delimiters per finding.
+    Falls back to one issue per file section if no FINDING delimiters found.
     """
     issues: List[ReviewIssue] = []
     # Build a map from display-name → entry for quick lookup
-    entry_map = {e["name"]: e for e in file_entries}
+    entry_map: Dict[str, Dict[str, Any]] = {e["name"]: e for e in file_entries}
 
-    # Split on the delimiter pattern
+    # Split on the file delimiter pattern
     parts = re.split(r"===\s*FILE:\s*(.+?)\s*===", feedback)
 
     if len(parts) < 3:
@@ -325,32 +359,67 @@ def _split_combined_feedback(
         if not entry:
             entry = file_entries[0]  # fallback
 
-        issues.append(ReviewIssue(
-            file_path=entry["path"],
-            line_number=None,
-            issue_type=review_type,
-            severity=_parse_severity(body),
-            description=f"Review feedback for {entry['name']}",
-            code_snippet=entry["content"][:200] + ("…" if len(entry["content"]) > 200 else ""),
-            ai_feedback=body,
-        ))
+        # Try to split into individual findings within this file section
+        finding_parts = re.split(
+            r"---\s*FINDING\s*\[?\s*(critical|high|medium|low|info)\s*\]?\s*---",
+            body, flags=re.IGNORECASE,
+        )
+
+        if len(finding_parts) >= 3:
+            # finding_parts = [preamble, severity1, text1, severity2, text2, ...]
+            # Include preamble as a finding if it has content
+            preamble = finding_parts[0].strip()
+            if preamble and len(preamble) > 20:
+                issues.append(ReviewIssue(
+                    file_path=entry["path"],
+                    line_number=None,
+                    issue_type=review_type,
+                    severity=_parse_severity(preamble),
+                    description=_extract_description(preamble, entry["name"]),
+                    code_snippet=entry["content"][:200] + ("…" if len(entry["content"]) > 200 else ""),
+                    ai_feedback=preamble,
+                ))
+            for j in range(1, len(finding_parts), 2):
+                sev = finding_parts[j].strip().lower()
+                finding_text = finding_parts[j + 1].strip() if j + 1 < len(finding_parts) else ""
+                if not finding_text:
+                    continue
+                issues.append(ReviewIssue(
+                    file_path=entry["path"],
+                    line_number=None,
+                    issue_type=review_type,
+                    severity=sev if sev in ("critical", "high", "medium", "low", "info") else _parse_severity(finding_text),
+                    description=_extract_description(finding_text, entry["name"]),
+                    code_snippet=entry["content"][:200] + ("…" if len(entry["content"]) > 200 else ""),
+                    ai_feedback=finding_text,
+                ))
+        else:
+            # No FINDING delimiters – one issue for this file (backward compat)
+            issues.append(ReviewIssue(
+                file_path=entry["path"],
+                line_number=None,
+                issue_type=review_type,
+                severity=_parse_severity(body),
+                description=f"Review feedback for {entry['name']}",
+                code_snippet=entry["content"][:200] + ("…" if len(entry["content"]) > 200 else ""),
+                ai_feedback=body,
+            ))
 
     return issues
-
-    return batch_issues
 
 
 # ── verification ───────────────────────────────────────────────────────────
 
 def verify_issue_resolved(
-    issue: ReviewIssue, client, review_type: str, lang: str
+    issue: ReviewIssue, client: AIBackend, review_type: str, lang: str
 ) -> bool:
     """
     Re-analyse the current code and compare to the original feedback to
     decide whether the issue appears resolved.
     """
+    file_path = issue.file_path or ""
     try:
-        with open(issue.file_path, "r", encoding="utf-8", errors="ignore") as fh:
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as fh:
             current_code = fh.read()
 
         new_feedback = client.get_review(current_code, review_type=review_type, lang=lang)

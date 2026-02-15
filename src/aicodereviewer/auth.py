@@ -4,15 +4,21 @@ Authentication helpers and profile management.
 
 Handles AWS profile storage via the system keyring, system language
 detection, and AWS session creation with multiple auth strategies.
+
+Performance Note:
+    boto3 and botocore are imported lazily inside create_aws_session()
+    to avoid loading heavy AWS SDK at module import time.
 """
 import locale
 import logging
 import os
-from typing import Tuple
+from typing import Tuple, TYPE_CHECKING
 
-import boto3
 import keyring
-from botocore.exceptions import NoCredentialsError, PartialCredentialsError
+
+# boto3 types for type checking only (not imported at runtime)
+if TYPE_CHECKING:
+    import boto3
 
 from .config import config
 from .i18n import t
@@ -114,7 +120,7 @@ def get_system_language() -> str:
 
 # ── AWS session creation ──────────────────────────────────────────────────
 
-def create_aws_session(region: str = "us-east-1") -> Tuple[boto3.Session, str]:
+def create_aws_session(region: str = "us-east-1") -> Tuple["boto3.Session", str]:
     """
     Create an AWS session trying multiple auth strategies.
 
@@ -126,6 +132,10 @@ def create_aws_session(region: str = "us-east-1") -> Tuple[boto3.Session, str]:
     Returns:
         ``(session, description)`` tuple.
     """
+    # Lazy import of AWS SDK (avoids ~300ms startup penalty)
+    import boto3
+    from botocore.exceptions import NoCredentialsError, PartialCredentialsError
+
     config_region = config.get("aws", "region") or region
 
     # 1. SSO
