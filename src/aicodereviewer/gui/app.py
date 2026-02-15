@@ -13,6 +13,7 @@ Provides full feature parity with the CLI:
 - Connection testing & backend health checking
 - Localised UI (English / Japanese) with theme support
 """
+import configparser
 import logging
 import os
 import re
@@ -112,6 +113,137 @@ class _Tooltip:
             self._tipwindow = None
 
 
+# ── File Selector Window ───────────────────────────────────────────────────
+
+class FileSelector(ctk.CTkToplevel):
+    """Custom file selector window with tree structure and checkboxes."""
+    
+    def __init__(self, parent, project_path: str, preselected: List[str]):
+        super().__init__(parent)
+        self.result = []
+        self.project_path = Path(project_path)
+        self.preselected = set(preselected)
+        self.file_vars = {}  # Maps file path to BooleanVar
+        
+        self.title("Select Files for Review")
+        self.geometry("700x600")
+        
+        # Make window modal
+        self.transient(parent)
+        self.grab_set()
+        
+        # Build UI
+        self._build_ui()
+        
+        # Center window
+        self.update_idletasks()
+        x = parent.winfo_x() + (parent.winfo_width() - self.winfo_width()) // 2
+        y = parent.winfo_y() + (parent.winfo_height() - self.winfo_height()) // 2
+        self.geometry(f"+{x}+{y}")
+    
+    def _build_ui(self):
+        """Build the file selector UI."""
+        # Header with select all/deselect all
+        header_frame = ctk.CTkFrame(self)
+        header_frame.pack(fill="x", padx=10, pady=10)
+        
+        self.select_all_var = ctk.BooleanVar(value=False)
+        select_all_cb = ctk.CTkCheckBox(header_frame, text="Select All / Deselect All",
+                                        variable=self.select_all_var,
+                                        command=self._toggle_all)
+        select_all_cb.pack(side="left", padx=5)
+        
+        # Scrollable file tree
+        file_frame = ctk.CTkScrollableFrame(self, label_text="Reviewable Files")
+        file_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        
+        # Scan for reviewable files
+        from aicodereviewer.scanner import scan_project
+        files = scan_project(str(self.project_path))
+        
+        if not files:
+            ctk.CTkLabel(file_frame, text="No reviewable files found in project").pack(pady=20)
+        else:
+            # Group files by directory for tree structure
+            self._build_file_tree(file_frame, files)
+        
+        # Bottom buttons
+        btn_frame = ctk.CTkFrame(self)
+        btn_frame.pack(fill="x", padx=10, pady=(0, 10))
+        
+        ctk.CTkButton(btn_frame, text="OK", width=100,
+                     command=self._on_ok).pack(side="right", padx=5)
+        ctk.CTkButton(btn_frame, text="Cancel", width=100,
+                     command=self._on_cancel).pack(side="right", padx=5)
+    
+    def _build_file_tree(self, parent_frame, files: List[Path]):
+        """Build the file tree with checkboxes."""
+        # Organize files by directory
+        tree_dict = {}
+        for file_path in sorted(files):
+            try:
+                rel_path = file_path.relative_to(self.project_path)
+            except ValueError:
+                continue
+            
+            parts = rel_path.parts
+            current = tree_dict
+            for part in parts[:-1]:  # Directories
+                if part not in current:
+                    current[part] = {}
+                current = current[part]
+            
+            # File (leaf node)
+            filename = parts[-1]
+            current[filename] = str(file_path)
+        
+        # Render the tree
+        self._render_tree(parent_frame, tree_dict, indent=0)
+    
+    def _render_tree(self, parent_frame, tree_dict: dict, indent: int):
+        """Recursively render the file tree."""
+        for key in sorted(tree_dict.keys()):
+            value = tree_dict[key]
+            
+            if isinstance(value, dict):
+                # Directory
+                dir_label = ctk.CTkLabel(parent_frame, text="📁 " + key,
+                                        anchor="w", text_color=("gray30", "gray70"))
+                dir_label.pack(fill="x", padx=(indent * 20, 0), pady=1)
+                
+                # Recursively render children
+                self._render_tree(parent_frame, value, indent + 1)
+            else:
+                # File - add checkbox
+                file_path = value
+                is_selected = file_path in self.preselected
+                
+                var = ctk.BooleanVar(value=is_selected)
+                self.file_vars[file_path] = var
+                
+                cb = ctk.CTkCheckBox(parent_frame, text="📄 " + key,
+                                    variable=var, width=500)
+                cb.pack(fill="x", anchor="w", padx=(indent * 20, 0), pady=1)
+    
+    def _toggle_all(self):
+        """Select or deselect all files."""
+        value = self.select_all_var.get()
+        for var in self.file_vars.values():
+            var.set(value)
+    
+    def _on_ok(self):
+        """Collect selected files and close."""
+        self.result = [path for path, var in self.file_vars.items() if var.get()]
+        self.grab_release()
+        self.destroy()
+    
+    def _on_cancel(self):
+        """Close without saving."""
+        self.result = self.preselected
+        self.grab_release()
+        self.destroy()
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 
 class App(ctk.CTk):
@@ -209,7 +341,12 @@ class App(ctk.CTk):
         path_frame.grid_columnconfigure(2, weight=1)
         InfoTooltip.add(path_frame, t("gui.tip.project_path"), row=0, column=0)
         ctk.CTkLabel(path_frame, text=t("gui.review.project_path")).grid(row=0, column=1, padx=(0, 4))
+        
+        # Load saved project path
+        saved_path = config.get("gui", "project_path", "").strip()
         self.path_entry = ctk.CTkEntry(path_frame, placeholder_text=t("gui.review.placeholder_path"))
+        if saved_path:
+            self.path_entry.insert(0, saved_path)
         self.path_entry.grid(row=0, column=2, sticky="ew", padx=4)
         ctk.CTkButton(path_frame, text=t("common.browse"), width=80,
                        command=self._browse_path).grid(row=0, column=3, padx=6)
@@ -221,25 +358,44 @@ class App(ctk.CTk):
         InfoTooltip.add(scope_frame, t("gui.tip.scope"), row=0, column=0)
         ctk.CTkLabel(scope_frame, text=t("gui.review.scope")).grid(row=0, column=1, padx=(0, 4))
         self.scope_var = ctk.StringVar(value="project")
+        self.scope_var.trace_add("write", self._on_scope_changed)
         ctk.CTkRadioButton(scope_frame, text=t("gui.review.scope_project"),
                             variable=self.scope_var, value="project").grid(row=0, column=2, padx=6)
         ctk.CTkRadioButton(scope_frame, text=t("gui.review.scope_diff"),
                             variable=self.scope_var, value="diff").grid(row=0, column=3, padx=6)
 
+        # File selection sub-options (only shown when Full Project is selected)
+        self.file_select_frame = ctk.CTkFrame(scope_frame)
+        self.file_select_frame.grid(row=1, column=0, columnspan=5, sticky="ew", padx=6, pady=3)
+        self.file_select_mode_var = ctk.StringVar(value="all")
+        self.file_select_mode_var.trace_add("write", self._on_file_select_mode_changed)
+        ctk.CTkRadioButton(self.file_select_frame, text="All Files",
+                            variable=self.file_select_mode_var, value="all").grid(row=0, column=0, padx=6, sticky="w")
+        file_select_rb = ctk.CTkRadioButton(self.file_select_frame, text="Selected Files",
+                            variable=self.file_select_mode_var, value="selected")
+        file_select_rb.grid(row=0, column=1, padx=6, sticky="w")
+        self.select_files_btn = ctk.CTkButton(self.file_select_frame, text="Select Files...", width=120,
+                                              command=self._open_file_selector, state="disabled")
+        self.select_files_btn.grid(row=0, column=2, padx=6, sticky="w")
+        self.selected_files = []  # Store selected file paths
+
         # Diff sub-options
-        diff_frame = ctk.CTkFrame(scope_frame)
-        diff_frame.grid(row=1, column=0, columnspan=5, sticky="ew", padx=6, pady=3)
-        diff_frame.grid_columnconfigure(2, weight=1)
-        InfoTooltip.add(diff_frame, t("gui.tip.diff_file"), row=0, column=0)
-        ctk.CTkLabel(diff_frame, text=t("gui.review.diff_file")).grid(row=0, column=1, padx=4)
-        self.diff_file_entry = ctk.CTkEntry(diff_frame, placeholder_text=t("gui.review.diff_placeholder"))
+        self.diff_frame = ctk.CTkFrame(scope_frame)
+        self.diff_frame.grid(row=2, column=0, columnspan=5, sticky="ew", padx=6, pady=3)
+        self.diff_frame.grid_columnconfigure(2, weight=1)
+        InfoTooltip.add(self.diff_frame, t("gui.tip.diff_file"), row=0, column=0)
+        ctk.CTkLabel(self.diff_frame, text=t("gui.review.diff_file")).grid(row=0, column=1, padx=4)
+        self.diff_file_entry = ctk.CTkEntry(self.diff_frame, placeholder_text=t("gui.review.diff_placeholder"))
         self.diff_file_entry.grid(row=0, column=2, sticky="ew", padx=4)
-        ctk.CTkButton(diff_frame, text="…", width=30,
+        ctk.CTkButton(self.diff_frame, text="…", width=30,
                        command=self._browse_diff).grid(row=0, column=3, padx=4)
-        InfoTooltip.add(diff_frame, t("gui.tip.commits"), row=1, column=0)
-        ctk.CTkLabel(diff_frame, text=t("gui.review.commits")).grid(row=1, column=1, padx=4, pady=(3, 0))
-        self.commits_entry = ctk.CTkEntry(diff_frame, placeholder_text=t("gui.review.commits_placeholder"))
+        InfoTooltip.add(self.diff_frame, t("gui.tip.commits"), row=1, column=0)
+        ctk.CTkLabel(self.diff_frame, text=t("gui.review.commits")).grid(row=1, column=1, padx=4, pady=(3, 0))
+        self.commits_entry = ctk.CTkEntry(self.diff_frame, placeholder_text=t("gui.review.commits_placeholder"))
         self.commits_entry.grid(row=1, column=2, sticky="ew", padx=4, pady=(3, 0))
+        
+        # Initially hide diff_frame and show file_select_frame
+        self.diff_frame.grid_remove()
         row += 1
 
         # ── Review types ──────────────────────────────────────────────────
@@ -250,15 +406,20 @@ class App(ctk.CTk):
                       anchor="w").grid(row=0, column=1)
         row += 1
 
-        types_frame = ctk.CTkScrollableFrame(tab, height=110)
-        types_frame.grid(row=row, column=0, sticky="ew", padx=6)
+        types_frame = ctk.CTkFrame(tab, fg_color="transparent")
+        types_frame.grid(row=row, column=0, sticky="ew", padx=6, pady=(0, 4))
         self.type_vars = {}
+        
+        # Load previously selected review types from config
+        saved_types = config.get("gui", "review_types", "").strip()
+        selected_types = set(saved_types.split(",")) if saved_types else {"best_practices"}
+        
         col = 0
         r = 0
         for i, key in enumerate(REVIEW_TYPE_KEYS):
             meta = REVIEW_TYPE_META.get(key, {})
             label = meta.get("label", key)
-            var = ctk.BooleanVar(value=(key == "best_practices"))
+            var = ctk.BooleanVar(value=(key in selected_types))
             cb = ctk.CTkCheckBox(types_frame, text=label, variable=var, width=200)
             cb.grid(row=r, column=col, sticky="w", padx=4, pady=2)
             self.type_vars[key] = var
@@ -301,14 +462,24 @@ class App(ctk.CTk):
 
         InfoTooltip.add(meta_frame, t("gui.tip.programmers"), row=0, column=0)
         ctk.CTkLabel(meta_frame, text=t("gui.review.programmers")).grid(row=0, column=1, padx=(0, 4))
+        
+        # Load saved programmers
+        saved_programmers = config.get("gui", "programmers", "").strip()
         self.programmers_entry = ctk.CTkEntry(meta_frame,
                                                placeholder_text=t("gui.review.programmers_ph"))
+        if saved_programmers:
+            self.programmers_entry.insert(0, saved_programmers)
         self.programmers_entry.grid(row=0, column=2, sticky="ew", padx=4)
 
         InfoTooltip.add(meta_frame, t("gui.tip.reviewers"), row=0, column=3)
         ctk.CTkLabel(meta_frame, text=t("gui.review.reviewers")).grid(row=0, column=4, padx=(0, 4))
+        
+        # Load saved reviewers
+        saved_reviewers = config.get("gui", "reviewers", "").strip()
         self.reviewers_entry = ctk.CTkEntry(meta_frame,
                                              placeholder_text=t("gui.review.reviewers_ph"))
+        if saved_reviewers:
+            self.reviewers_entry.insert(0, saved_reviewers)
         self.reviewers_entry.grid(row=0, column=5, sticky="ew", padx=4)
 
         InfoTooltip.add(meta_frame, t("gui.tip.language"), row=1, column=0)
@@ -331,7 +502,12 @@ class App(ctk.CTk):
 
         InfoTooltip.add(meta_frame, t("gui.tip.spec_file"), row=1, column=3)
         ctk.CTkLabel(meta_frame, text=t("gui.review.spec_file")).grid(row=1, column=4, padx=(0, 4), pady=(3, 0))
+        
+        # Load saved spec file
+        saved_spec = config.get("gui", "spec_file", "").strip()
         self.spec_entry = ctk.CTkEntry(meta_frame, placeholder_text=t("gui.review.spec_placeholder"))
+        if saved_spec:
+            self.spec_entry.insert(0, saved_spec)
         self.spec_entry.grid(row=1, column=5, sticky="ew", padx=4, pady=(3, 0))
         row += 1
 
@@ -594,11 +770,12 @@ class App(ctk.CTk):
         # ── Local LLM section ─────────────────────────────────────────────
         _section_header(t("gui.settings.section_local"), backend_key="local")
         _add_entry(t("gui.settings.local_api_url"), "local_llm", "api_url",
-                   config.get("local_llm", "api_url", "http://localhost:1234/v1"),
+                   config.get("local_llm", "api_url", "http://localhost:1234"),
                    tooltip_key="gui.tip.local_api_url")
-        _add_entry(t("gui.settings.local_api_type"), "local_llm", "api_type",
-                   config.get("local_llm", "api_type", "openai"),
-                   tooltip_key="gui.tip.local_api_type")
+        _add_dropdown(t("gui.settings.local_api_type"), "local_llm", "api_type",
+                      config.get("local_llm", "api_type", "lmstudio"),
+                      ["lmstudio", "ollama", "openai", "anthropic"],
+                      tooltip_key="gui.tip.local_api_type")
         _add_combobox(t("gui.settings.local_model"), "local_llm", "model",
                       config.get("local_llm", "model", "default"),
                       [],  # populated dynamically
@@ -644,15 +821,64 @@ class App(ctk.CTk):
                    config.get("gui", "editor_command", ""),
                    tooltip_key="gui.tip.editor_command")
 
+        # ── Report Output Formats ──────────────────────────────────────────
+        _section_header("Review Report Output Formats")
+        
+        # Load saved formats or default to all enabled
+        saved_formats = config.get("output", "formats", "json,txt").strip()
+        enabled_formats = set(saved_formats.split(",")) if saved_formats else {"json", "txt"}
+        
+        # Add tooltip and description
+        InfoTooltip.add(scroll, "Select which file formats to generate for review reports. At least one format must be selected.",
+                        row=row[0], column=0)
+        ctk.CTkLabel(scroll, text="Output Formats:").grid(
+            row=row[0], column=1, sticky="w", padx=(0, 4), pady=3)
+        
+        # Create frame for checkboxes
+        formats_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+        formats_frame.grid(row=row[0], column=2, sticky="w", padx=6, pady=3)
+        
+        # Store checkbox variables
+        self._format_vars = {}
+        
+        # JSON checkbox
+        json_var = ctk.BooleanVar(value=("json" in enabled_formats))
+        json_cb = ctk.CTkCheckBox(formats_frame, text="JSON", variable=json_var)
+        json_cb.grid(row=0, column=0, padx=(0, 15), sticky="w")
+        self._format_vars["json"] = json_var
+        
+        # TXT checkbox
+        txt_var = ctk.BooleanVar(value=("txt" in enabled_formats))
+        txt_cb = ctk.CTkCheckBox(formats_frame, text="TXT", variable=txt_var)
+        txt_cb.grid(row=0, column=1, padx=(0, 15), sticky="w")
+        self._format_vars["txt"] = txt_var
+        
+        # MD checkbox
+        md_var = ctk.BooleanVar(value=("md" in enabled_formats))
+        md_cb = ctk.CTkCheckBox(formats_frame, text="Markdown (MD)", variable=md_var)
+        md_cb.grid(row=0, column=2, padx=(0, 15), sticky="w")
+        self._format_vars["md"] = md_var
+        
+        row[0] += 1
+
         # ── Note + save button ─────────────────────────────────────────────
         note = ctk.CTkLabel(scroll, text=t("gui.settings.restart_note"),
                              text_color="gray50", font=ctk.CTkFont(size=11))
         note.grid(row=row[0], column=0, columnspan=4, pady=(10, 2))
         row[0] += 1
 
-        save_btn = ctk.CTkButton(scroll, text=t("gui.settings.save"),
+        # Button container
+        button_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+        button_frame.grid(row=row[0], column=0, columnspan=4, pady=8)
+        
+        save_btn = ctk.CTkButton(button_frame, text=t("gui.settings.save"),
                                   command=self._save_settings)
-        save_btn.grid(row=row[0], column=0, columnspan=4, pady=8)
+        save_btn.grid(row=0, column=0, padx=(0, 10))
+        
+        reset_btn = ctk.CTkButton(button_frame, text="Reset Defaults",
+                                   command=self._reset_defaults,
+                                   fg_color="gray40", hover_color="gray30")
+        reset_btn.grid(row=0, column=1)
 
         # Wire up backend dropdown to update active indicators and sync to review tab
         if hasattr(self, "_settings_backend_var"):
@@ -700,8 +926,69 @@ class App(ctk.CTk):
         for var in self.type_vars.values():
             var.set(value)
 
+    def _on_scope_changed(self, *_args):
+        """Handle scope radio button changes - show/hide file selection and diff frames."""
+        scope = self.scope_var.get()
+        if scope == "project":
+            self.file_select_frame.grid()
+            self.diff_frame.grid_remove()
+        else:  # diff
+            self.file_select_frame.grid_remove()
+            self.diff_frame.grid()
+
+    def _on_file_select_mode_changed(self, *_args):
+        """Handle file selection mode changes - enable/disable Select Files button."""
+        mode = self.file_select_mode_var.get()
+        if mode == "selected":
+            self.select_files_btn.configure(state="normal")
+        else:
+            self.select_files_btn.configure(state="disabled")
+
+    def _open_file_selector(self):
+        """Open the custom file selector window."""
+        path = self.path_entry.get().strip()
+        if not path:
+            self._show_toast(t("gui.val.path_required"), error=True)
+            return
+        
+        if not Path(path).is_dir():
+            self._show_toast("Invalid project path", error=True)
+            return
+        
+        # Open the custom file selector window
+        selector = FileSelector(self, path, self.selected_files)
+        self.wait_window(selector)
+        
+        # Update selected_files after the window closes
+        if hasattr(selector, 'result') and selector.result:
+            self.selected_files = selector.result
+            self._show_toast(f"{len(self.selected_files)} file(s) selected")
+
     def _get_selected_types(self) -> List[str]:
         return [k for k, v in self.type_vars.items() if v.get()]
+
+    def _save_form_values(self):
+        """Save current form values to config for next session."""
+        try:
+            # Save project path
+            config.set_value("gui", "project_path", self.path_entry.get().strip())
+            
+            # Save programmers
+            config.set_value("gui", "programmers", self.programmers_entry.get().strip())
+            
+            # Save reviewers
+            config.set_value("gui", "reviewers", self.reviewers_entry.get().strip())
+            
+            # Save spec file
+            config.set_value("gui", "spec_file", self.spec_entry.get().strip())
+            
+            # Save selected review types
+            selected_types = self._get_selected_types()
+            config.set_value("gui", "review_types", ",".join(selected_types))
+            
+            config.save()
+        except Exception as exc:
+            logger.warning("Failed to save form values: %s", exc)
 
     def _validate_inputs(self, dry_run: bool = False) -> Optional[dict]:
         """Validate form and return a params dict, or None on failure."""
@@ -713,6 +1000,17 @@ class App(ctk.CTk):
         if scope == "project" and not path:
             self._show_toast(t("gui.val.path_required"), error=True)
             return None
+        
+        # Validate selected files mode
+        selected_files = None
+        if scope == "project":
+            file_mode = self.file_select_mode_var.get()
+            if file_mode == "selected":
+                if not self.selected_files:
+                    self._show_toast("Please select files for review", error=True)
+                    return None
+                selected_files = self.selected_files
+        
         if scope == "diff" and not diff_file and not commits:
             self._show_toast(t("gui.val.diff_required"), error=True)
             return None
@@ -763,6 +1061,7 @@ class App(ctk.CTk):
             programmers=programmers,
             reviewers=reviewers,
             backend=self.backend_var.get(),
+            selected_files=selected_files,
         )
 
     def _start_review(self):
@@ -771,6 +1070,8 @@ class App(ctk.CTk):
         params = self._validate_inputs()
         if not params:
             return
+        # Save form values for next session
+        self._save_form_values()
         self._run_review(params, dry_run=False)
 
     def _start_dry_run(self):
@@ -779,6 +1080,8 @@ class App(ctk.CTk):
         params = self._validate_inputs(dry_run=True)
         if not params:
             return
+        # Save form values for next session
+        self._save_form_values()
         self._run_review(params, dry_run=True)
 
     def _set_action_buttons_state(self, state: str):
@@ -825,9 +1128,21 @@ class App(ctk.CTk):
         def _worker():
             try:
                 backend_name = params.pop("backend")
+                selected_files = params.pop("selected_files", None)
+                
                 client = None if dry_run else create_backend(backend_name)
                 self._review_client = client
-                runner = AppRunner(client, scan_fn=scan_project_with_scope,
+                
+                # Create custom scan function if selected files are specified
+                if selected_files:
+                    def custom_scan_fn(directory, scope, diff_file=None, commits=None):
+                        """Return only the selected files."""
+                        return [Path(f) for f in selected_files]
+                    scan_fn = custom_scan_fn
+                else:
+                    scan_fn = scan_project_with_scope
+                
+                runner = AppRunner(client, scan_fn=scan_fn,
                                    backend_name=backend_name)
 
                 def progress_cb(current, total, msg):
@@ -1724,9 +2039,22 @@ class App(ctk.CTk):
                     raw = theme_reverse.get(raw, "system")
                 elif section == "gui" and key == "language":
                     raw = lang_reverse.get(raw, "system")
+                elif section == "backend" and key == "type":
+                    # Map backend display names back to internal values
+                    raw = getattr(self, "_backend_reverse_map", {}).get(raw, "bedrock")
                 config.set_value(section, key, raw)
             else:
                 config.set_value(section, key, widget.get().strip())
+        
+        # Save report output formats
+        selected_formats = [fmt for fmt, var in self._format_vars.items() if var.get()]
+        if not selected_formats:
+            # Prevent disabling all formats - re-enable at least JSON
+            self._format_vars["json"].set(True)
+            selected_formats = ["json"]
+            self._show_toast("At least one output format must be selected. JSON has been re-enabled.", error=True)
+            return
+        config.set_value("output", "formats", ",".join(selected_formats))
 
         # Apply theme immediately
         theme_val = config.get("gui", "theme", "system")
@@ -1739,6 +2067,32 @@ class App(ctk.CTk):
         except Exception as exc:
             self._show_toast(t("gui.settings.save_error", error=exc),
                              error=True)
+
+    def _reset_defaults(self):
+        """Reset all settings to their default values."""
+        # Confirm with user
+        import tkinter.messagebox as mb
+        if not mb.askyesno("Reset Defaults", 
+                          "This will reset all settings to their default values. Continue?"):
+            return
+        
+        # Reset the config to defaults
+        config.config = configparser.ConfigParser()
+        config._set_defaults()
+        
+        # Reload the settings tab with default values
+        # Destroy and rebuild the settings tab
+        for widget in self.tabs.tab("Settings").winfo_children():
+            widget.destroy()
+        
+        self._build_settings_tab()
+        
+        # Save to file
+        try:
+            config.save()
+            self._show_toast("Settings have been reset to defaults")
+        except Exception as exc:
+            self._show_toast(f"Error saving defaults: {exc}", error=True)
 
     # ══════════════════════════════════════════════════════════════════════
     #  BACKEND HEALTH CHECK
@@ -2072,7 +2426,10 @@ class App(ctk.CTk):
     def _refresh_local_model_list(self):
         """Update the Local LLM model combobox with dynamically discovered models (GUI thread)."""
         from aicodereviewer.backends.health import get_local_models
-        models = get_local_models()
+        from aicodereviewer.config import config
+        api_url = config.get("local_llm", "api_url", "http://localhost:1234")
+        api_type = config.get("local_llm", "api_type", "lmstudio")
+        models = get_local_models(api_url, api_type)
         if models and hasattr(self, "_local_model_combo"):
             current = self._local_model_combo.get()
             self._local_model_combo.configure(values=models)
@@ -2088,7 +2445,10 @@ class App(ctk.CTk):
         def _worker():
             try:
                 from aicodereviewer.backends.health import get_local_models
-                models = get_local_models()
+                from aicodereviewer.config import config
+                api_url = config.get("local_llm", "api_url", "http://localhost:1234")
+                api_type = config.get("local_llm", "api_type", "lmstudio")
+                models = get_local_models(api_url, api_type)
                 self.after(0, lambda: self._apply_local_models(models))
             finally:
                 self._model_refresh_in_progress.discard("local")

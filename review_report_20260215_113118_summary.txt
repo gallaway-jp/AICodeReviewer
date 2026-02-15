@@ -1,0 +1,108 @@
+AI Code Review Report
+============================================================
+
+Project      : D:/Development/SVN/SVNCheckout/sample_project
+Review Types : accessibility, best_practices, concurrency, documentation
+Scope        : project
+Backend      : copilot
+Files Scanned: 5
+Quality Score: 72/100
+Programmers  : p1
+Reviewers    : r1
+Generated    : 2026-02-15 11:31:18
+Language     : en
+
+Issue Summary
+----------------------------------------
+  Total issues: 5
+  Fixed       : 4
+  Resolved    : 1
+
+By Severity
+----------------------------------------
+  High        : 2
+  Medium      : 1
+  Low         : 1
+  Info        : 1
+
+By Review Type
+----------------------------------------
+  accessibility+best_practices+concurrency+documentation: 5
+
+
+Detailed Issues
+============================================================
+
+--- Issue 1 ---
+  File     : D:\Development\SVN\SVNCheckout\sample_project\api_handler.py
+  Type     : accessibility+best_practices+concurrency+documentation
+  Severity : low
+  Status   : fixed
+  Desc     : Review feedback for D:\Development\SVN\SVNCheckout\sample_project\api_handler.py
+  Snippet  : ```python
+"""
+Refactored API handler with proper error handling and SOLID principles.
+"""
+import requests
+import json
+im
+  Feedback : [ACCESSIBILITY]: no UI elements present so WCAG 2.1 AA checks (e.g., 1.1.1 Non-text Content, 4.1.2 Name, Role, Value) are not applicable; [BEST_PRACTICES]: generally good separation (APIClient, DataProcessor, FileStorage, ConfigParser, APIHandler facade) but fetch_data swallows important details by …
+
+--- Issue 2 ---
+  File     : D:\Development\SVN\SVNCheckout\sample_project\calculator.py
+  Type     : accessibility+best_practices+concurrency+documentation
+  Severity : medium
+  Status   : fixed
+  Desc     : Review feedback for D:\Development\SVN\SVNCheckout\sample_project\calculator.py
+  Snippet  : """
+Calculator module with best practices violations.
+"""
+
+# BEST PRACTICES ISSUE: Magic numbers without constants
+def c
+  Feedback : [ACCESSIBILITY]: no UI present so WCAG criteria not applicable; [BEST_PRACTICES]: many violations窶芭agic number for tax, poor naming (f, calc, doEverything, global_counter), methods doing too much (doEverything, create_user), side-effects in calculations (printing), global mutable state and duplicate…
+
+--- Issue 3 ---
+  File     : D:\Development\SVN\SVNCheckout\sample_project\data_processor.py
+  Type     : accessibility+best_practices+concurrency+documentation
+  Severity : info
+  Status   : resolved
+  Desc     : Review feedback for D:\Development\SVN\SVNCheckout\sample_project\data_processor.py
+  Snippet  : """
+Data processing module with intentional performance issues.
+"""
+import time
+
+
+class DataProcessor:
+    def __init__(
+  Feedback : [ACCESSIBILITY]: no UI so WCAG not applicable; [BEST_PRACTICES]: multiple performance anti-patterns窶盃se join for string assembly, sets/dicts for duplicate detection, avoid repeated file reads (cache config), precompute temp_list or use formulas rather than recreating in loops, and prefer expressive …
+
+--- Issue 4 ---
+  File     : D:\Development\SVN\SVNCheckout\sample_project\user_auth.py
+  Type     : accessibility+best_practices+concurrency+documentation
+  Severity : high
+  Status   : fixed
+  Desc     : Review feedback for D:\Development\SVN\SVNCheckout\sample_project\user_auth.py
+  Snippet  : """
+User authentication module with intentional security vulnerabilities.
+"""
+import pickle
+import hashlib
+import sqlite
+  Feedback : [ACCESSIBILITY]: no UI so WCAG not applicable; [BEST_PRACTICES]: severe security and design issues窶粘QL injection via string interpolation (use parameterized queries), unsafe pickle loading (avoid or validate input), weak hashing with MD5 (use bcrypt/scrypt/Argon2 and salt), hardcoded admin creds and…
+
+--- Issue 5 ---
+  File     : D:\Development\SVN\SVNCheckout\sample_project\utils.py
+  Type     : accessibility+best_practices+concurrency+documentation
+  Severity : high
+  Status   : fixed
+  Desc     : Review feedback for D:\Development\SVN\SVNCheckout\sample_project\utils.py
+  Snippet  : """
+Utility functions with maintainability issues.
+"""
+
+
+# MAINTAINABILITY ISSUE: Complex nested conditions
+def check_el
+  Feedback : [ACCESSIBILITY]: no UI so WCAG not applicable; [BEST_PRACTICES]: complex nested condition in check_eligibility and overly long process_order violate SRP窶排efactor with guard clauses, extract functions, use clear variable names and constants, eliminate single-letter names (p, a, b, c), and remove hidd…

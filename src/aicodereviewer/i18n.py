@@ -431,7 +431,7 @@ _EN: dict[str, str] = {
     "gui.tip.copilot_path":            "Path or command name for the GitHub Copilot CLI (usually 'copilot').",
     "gui.tip.copilot_timeout":        "Maximum seconds to wait for Copilot to respond.",
     "gui.tip.copilot_model":          "AI model to use with Copilot ('auto' = default).",
-    "gui.tip.local_api_url":          "HTTP URL of your local LLM server's API endpoint.",
+    "gui.tip.local_api_url":          "Base address and port of your local LLM server (e.g., http://localhost:1234). Endpoint paths are added automatically based on API type.",
     "gui.tip.local_api_type":         "API compatibility mode: 'openai' or 'anthropic'.",
     "gui.tip.local_model":            "Model name as reported by your local server.",
     "gui.tip.local_api_key":          "API key for the local server (some servers require a dummy key).",

@@ -1,0 +1,45 @@
+AI Code Review Report
+============================================================
+
+Project      : D:/Development/SVN/SVNCheckout/sample_project
+Review Types : performance
+Scope        : project
+Backend      : copilot
+Files Scanned: 5
+Quality Score: 95/100
+Programmers  : p1
+Reviewers    : r1
+Generated    : 2026-02-15 12:23:51
+Language     : en
+
+Issue Summary
+----------------------------------------
+  Total issues: 1
+  Fix_failed  : 1
+
+By Severity
+----------------------------------------
+  Medium      : 1
+
+By Review Type
+----------------------------------------
+  performance         : 1
+
+
+Detailed Issues
+============================================================
+
+--- Issue 1 ---
+  File     : D:\Development\SVN\SVNCheckout\sample_project\api_handler.py
+  Type     : performance
+  Severity : medium
+  Status   : fix_failed
+  Desc     : Review feedback (combined batch)
+  Snippet  : ```python
+"""
+Refactored API handler with proper error handling and SOLID principles.
+"""
+import requests
+import json
+im
+  Feedback : I didn't get a task — what would you like done in this repository (examples: run tests, fix a bug, edit a file, add a feature)? Provide the specific goal and any relevant files or commands.

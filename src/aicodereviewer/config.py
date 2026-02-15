@@ -105,8 +105,8 @@ class Config:
         self._add("copilot", "model", "auto")
 
         # ── local_llm ─────────────────────────────────────────────────────
-        self._add("local_llm", "api_url", "http://localhost:1234/v1")
-        self._add("local_llm", "api_type", "openai")
+        self._add("local_llm", "api_url", "http://localhost:1234")
+        self._add("local_llm", "api_type", "lmstudio")
         self._add("local_llm", "model", "default")
         self._add("local_llm", "api_key", "")
         self._add("local_llm", "timeout", "300")
