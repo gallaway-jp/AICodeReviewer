@@ -7,7 +7,7 @@ support for multi-type review sessions.
 """
 import json
 import logging
-from typing import Optional, Dict
+from typing import Dict, List, Optional, TextIO
 
 from .models import ReviewReport
 from .i18n import t
@@ -38,7 +38,7 @@ def generate_review_report(
     enabled_formats_str = config.get("output", "formats", "json,txt").strip()
     enabled_formats = set(enabled_formats_str.split(",")) if enabled_formats_str else {"json", "txt"}
     
-    generated_files = []
+    generated_files: List[str] = []
     
     # Generate JSON format
     if "json" in enabled_formats:
@@ -65,10 +65,10 @@ def generate_review_report(
         generated_files.append(md_file)
     
     # Return the first generated file (or the original output_file as fallback)
-    return generated_files[0] if generated_files else output_file
+    return generated_files[0] if generated_files else output_file  # type: ignore[return-value]
 
 
-def _write_summary(fh, report: ReviewReport):
+def _write_summary(fh: TextIO, report: ReviewReport) -> None:
     """Write a human-readable summary to an open file handle."""
     # Use the report language for the summary text
     lang = report.language or "en"
@@ -136,7 +136,7 @@ def _write_summary(fh, report: ReviewReport):
         w(f"  {t('report.feedback', lang=lang):9s}: {feedback_preview}\n")
 
 
-def _write_markdown(fh, report: ReviewReport):
+def _write_markdown(fh: TextIO, report: ReviewReport) -> None:
     """Write a Markdown-formatted report to an open file handle."""
     # Use the report language for the summary text
     lang = report.language or "en"

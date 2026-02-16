@@ -11,16 +11,15 @@ Usage::
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
 # Ensure project root is importable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from customtkinter_validator.core.config import ValidatorConfig
-from customtkinter_validator.core.runner import TestRunner
-from customtkinter_validator.test_harness.event_simulator import EventSimulator
+from customtkinter_validator.core.config import ValidatorConfig  # type: ignore[import-not-found]
+from customtkinter_validator.core.runner import TestRunner  # type: ignore[import-not-found]
+from customtkinter_validator.test_harness.event_simulator import EventSimulator  # type: ignore[import-not-found]
 
 
 def create_app():

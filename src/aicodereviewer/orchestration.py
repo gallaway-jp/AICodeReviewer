@@ -112,7 +112,7 @@ class AppRunner:
         if dry_run:
             logger.info(t("orch.dry_run_header"))
             for i, fi in enumerate(target_files, 1):
-                fp = fi.get("path", fi) if isinstance(fi, dict) else fi
+                fp = fi.get("path", fi) if isinstance(fi, dict) else fi  # type: ignore[union-attr]
                 logger.info("  %d. %s", i, fp)
             logger.info(t("orch.dry_run_total", count=num_files))
             logger.info(t("orch.dry_run_types", types=type_label))

@@ -31,7 +31,7 @@ class BedrockBackend(AIBackend):
 
     def __init__(self, region: Optional[str] = None):
         config_region = config.get("aws", "region", "us-east-1")
-        region = region or config_region
+        region = str(region or config_region)
 
         try:
             self.session, auth_desc = create_aws_session(region)

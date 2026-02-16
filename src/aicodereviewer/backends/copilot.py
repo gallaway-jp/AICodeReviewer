@@ -12,13 +12,12 @@ Prerequisites:
        / ``GITHUB_TOKEN`` env-var with a PAT that has *Copilot Requests* permission)
     3. Active GitHub Copilot Pro / Business / Enterprise subscription
 """
-import json
 import logging
 import subprocess
 import os
 import shutil
 import tempfile
-from typing import Optional
+from typing import Any, Optional
 
 from .base import AIBackend
 from aicodereviewer.config import config
@@ -43,7 +42,7 @@ class CopilotBackend(AIBackend):
         model = auto
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         self.copilot_path: str = config.get("copilot", "copilot_path", "copilot").strip()
         self.timeout: int = int(config.get("copilot", "timeout", "300"))
         self.model: str = config.get("copilot", "model", "auto").strip()

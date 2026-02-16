@@ -170,6 +170,9 @@ def main():
             return
 
     # ── run ────────────────────────────────────────────────────────────────
+    if client is None:
+        logger.error("Failed to create backend '%s'; cannot run review.", backend_name)
+        return
     runner = AppRunner(client, scan_fn=scan_project_with_scope, backend_name=backend_name)
     runner.run(
         path=args.path,

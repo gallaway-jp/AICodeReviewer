@@ -18,7 +18,7 @@ Configuration (``config.ini`` ``[local_llm]`` section)::
 """
 import logging
 import time
-from typing import Optional
+from typing import Any, Optional
 
 import requests
 
@@ -55,25 +55,25 @@ class LocalLLMBackend(AIBackend):
         api_key: Optional[str] = None,
     ):
         # Store base URL without any path suffix (e.g., http://localhost:1234, not http://localhost:1234/v1)
-        self.api_url = (
+        self.api_url: str = str(
             api_url
             or config.get("local_llm", "api_url", "http://localhost:1234")
         ).rstrip("/")
 
-        self.api_type = (
+        self.api_type: str = str(
             api_type
             or config.get("local_llm", "api_type", "lmstudio")
         ).strip().lower()
 
-        self.model = model or config.get("local_llm", "model", "default")
-        self.api_key = api_key or config.get("local_llm", "api_key", "")
-        self.timeout = int(config.get("local_llm", "timeout", "300") or "300")
-        self.max_tokens = int(config.get("local_llm", "max_tokens", "4096") or "4096")
+        self.model: str = str(model or config.get("local_llm", "model", "default"))
+        self.api_key: str = str(api_key or config.get("local_llm", "api_key", ""))
+        self.timeout: int = int(config.get("local_llm", "timeout", "300") or "300")
+        self.max_tokens: int = int(config.get("local_llm", "max_tokens", "4096") or "4096")
 
         # Rate-limiting state
         self.last_request_time: float = 0.0
-        self.min_request_interval: float = config.get(
-            "performance", "min_request_interval_seconds"
+        self.min_request_interval: float = float(
+            config.get("performance", "min_request_interval_seconds")
         )
 
         logger.info(
@@ -138,7 +138,7 @@ class LocalLLMBackend(AIBackend):
         lang: str = "en",
         spec_content: Optional[str] = None,
     ) -> str:
-        max_content = config.get("performance", "max_content_length")
+        max_content: int = int(config.get("performance", "max_content_length"))
         if len(code_content) > max_content:
             return (
                 f"Error: Content too large for processing "
@@ -156,7 +156,7 @@ class LocalLLMBackend(AIBackend):
         review_type: str = "best_practices",
         lang: str = "en",
     ) -> Optional[str]:
-        max_content = config.get("performance", "max_fix_content_length")
+        max_content: int = int(config.get("performance", "max_fix_content_length"))
         if len(code_content) > max_content:
             logger.warning("File too large for AI fix (%d chars)", len(code_content))
             return None
@@ -204,7 +204,7 @@ class LocalLLMBackend(AIBackend):
 
     def _validate_lmstudio(self) -> bool:
         """Validate LM Studio native API endpoint."""
-        headers = self._lmstudio_headers()
+        headers: dict[str, str] = self._lmstudio_headers()
         model_to_test = self.model  # Use configured model if not 'default'
 
         # Try listing models first to get a real model if using default
@@ -235,7 +235,7 @@ class LocalLLMBackend(AIBackend):
 
         # Test with a tiny inference call using validated model
         try:
-            payload = {
+            payload: dict[str, Any] = {
                 "model": model_to_test,
                 "input": "Hello",
                 "max_output_tokens": 5,
@@ -260,7 +260,7 @@ class LocalLLMBackend(AIBackend):
 
     def _invoke_lmstudio(self, system_prompt: str, user_message: str) -> str:
         """Send a chat request to LM Studio native API."""
-        headers = self._lmstudio_headers()
+        headers: dict[str, str] = self._lmstudio_headers()
         
         # Combine system prompt and user message
         full_input = f"{system_prompt}\n\n{user_message}"
@@ -268,7 +268,7 @@ class LocalLLMBackend(AIBackend):
         # Get the actual model to use (handles "default" case)
         model_to_use = self._get_model_to_use()
         
-        payload = {
+        payload: dict[str, Any] = {
             "model": model_to_use,
             "input": full_input,
             "max_output_tokens": self.max_tokens,
@@ -283,7 +283,7 @@ class LocalLLMBackend(AIBackend):
         )
 
         if resp.status_code != 200:
-            return f"Error: HTTP {resp.status_code} – {resp.text[:300]}"
+            return f"Error: HTTP {resp.status_code} \u2013 {resp.text[:300]}"
 
         data = resp.json()
         self.last_request_time = time.time()
@@ -297,8 +297,8 @@ class LocalLLMBackend(AIBackend):
                     return item.get("content", "")
         return "Error: Empty response from LM Studio."
 
-    def _lmstudio_headers(self) -> dict:
-        headers = {"Content-Type": "application/json"}
+    def _lmstudio_headers(self) -> dict[str, str]:
+        headers: dict[str, str] = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         return headers
@@ -307,7 +307,7 @@ class LocalLLMBackend(AIBackend):
 
     def _validate_ollama(self) -> bool:
         """Validate Ollama API endpoint."""
-        headers = self._ollama_headers()
+        headers: dict[str, str] = self._ollama_headers()
         model_to_test = self.model  # Use configured model if not 'default'
 
         # Try listing models first to get a real model if using default
@@ -337,7 +337,7 @@ class LocalLLMBackend(AIBackend):
 
         # Test with a tiny inference call using validated model
         try:
-            payload = {
+            payload: dict[str, Any] = {
                 "model": model_to_test,
                 "messages": [{"role": "user", "content": "Hello"}],
                 "stream": False,
@@ -362,7 +362,7 @@ class LocalLLMBackend(AIBackend):
 
     def _invoke_ollama(self, system_prompt: str, user_message: str) -> str:
         """Send a chat request to Ollama API."""
-        headers = self._ollama_headers()
+        headers: dict[str, str] = self._ollama_headers()
         
         # Build messages with system prompt
         messages = [
@@ -373,7 +373,7 @@ class LocalLLMBackend(AIBackend):
         # Get the actual model to use (handles "default" case)
         model_to_use = self._get_model_to_use()
         
-        payload = {
+        payload: dict[str, Any] = {
             "model": model_to_use,
             "messages": messages,
             "stream": False,
@@ -391,7 +391,7 @@ class LocalLLMBackend(AIBackend):
         )
 
         if resp.status_code != 200:
-            return f"Error: HTTP {resp.status_code} – {resp.text[:300]}"
+            return f"Error: HTTP {resp.status_code} \u2013 {resp.text[:300]}"
 
         data = resp.json()
         self.last_request_time = time.time()
@@ -402,8 +402,8 @@ class LocalLLMBackend(AIBackend):
             return message.get("content", "")
         return "Error: Empty response from Ollama."
 
-    def _ollama_headers(self) -> dict:
-        headers = {"Content-Type": "application/json"}
+    def _ollama_headers(self) -> dict[str, str]:
+        headers: dict[str, str] = {"Content-Type": "application/json"}
         # Ollama typically doesn't require authentication for local use
         # but we'll add it if provided
         if self.api_key:
@@ -414,7 +414,7 @@ class LocalLLMBackend(AIBackend):
 
     def _validate_openai(self) -> bool:
         """Validate an OpenAI-compatible endpoint."""
-        headers = self._openai_headers()
+        headers: dict[str, str] = self._openai_headers()
         model_to_test = self.model  # Use configured model if not 'default'
 
         # Try listing models first to get a real model if using default
@@ -442,7 +442,7 @@ class LocalLLMBackend(AIBackend):
 
         # Test with a tiny inference call using validated model
         try:
-            payload = {
+            payload: dict[str, Any] = {
                 "model": model_to_test,
                 "messages": [{"role": "user", "content": "Hello"}],
                 "max_tokens": 5,
@@ -467,13 +467,13 @@ class LocalLLMBackend(AIBackend):
 
     def _validate_anthropic(self) -> bool:
         """Validate an Anthropic-compatible endpoint."""
-        headers = self._anthropic_headers()
+        headers: dict[str, str] = self._anthropic_headers()
         model_to_test = self.model
         
         # Anthropic-compatible endpoints don't typically have a /models endpoint
         # Try a simple inference test with the configured model
         try:
-            payload = {
+            payload: dict[str, Any] = {
                 "model": model_to_test,
                 "messages": [{"role": "user", "content": "Hello"}],
                 "max_tokens": 5,
@@ -520,12 +520,12 @@ class LocalLLMBackend(AIBackend):
 
     def _invoke_openai(self, system_prompt: str, user_message: str) -> str:
         """Send a chat completion request to an OpenAI-compatible endpoint."""
-        headers = self._openai_headers()
+        headers: dict[str, str] = self._openai_headers()
         
         # Get the actual model to use (handles "default" case)
         model_to_use = self._get_model_to_use()
         
-        payload = {
+        payload: dict[str, Any] = {
             "model": model_to_use,
             "messages": [
                 {"role": "system", "content": system_prompt},
@@ -543,7 +543,7 @@ class LocalLLMBackend(AIBackend):
         )
 
         if resp.status_code != 200:
-            return f"Error: HTTP {resp.status_code} – {resp.text[:300]}"
+            return f"Error: HTTP {resp.status_code} \u2013 {resp.text[:300]}"
 
         data = resp.json()
         self.last_request_time = time.time()
@@ -555,12 +555,12 @@ class LocalLLMBackend(AIBackend):
 
     def _invoke_anthropic(self, system_prompt: str, user_message: str) -> str:
         """Send a messages request to an Anthropic-compatible endpoint."""
-        headers = self._anthropic_headers()
+        headers: dict[str, str] = self._anthropic_headers()
         
         # Get the actual model to use (handles "default" case)
         model_to_use = self._get_model_to_use()
         
-        payload = {
+        payload: dict[str, Any] = {
             "model": model_to_use,
             "system": system_prompt,
             "messages": [
@@ -578,7 +578,7 @@ class LocalLLMBackend(AIBackend):
         )
 
         if resp.status_code != 200:
-            return f"Error: HTTP {resp.status_code} – {resp.text[:300]}"
+            return f"Error: HTTP {resp.status_code} \u2013 {resp.text[:300]}"
 
         data = resp.json()
         self.last_request_time = time.time()
@@ -592,14 +592,14 @@ class LocalLLMBackend(AIBackend):
 
     # ── helpers ────────────────────────────────────────────────────────────
 
-    def _openai_headers(self) -> dict:
-        headers = {"Content-Type": "application/json"}
+    def _openai_headers(self) -> dict[str, str]:
+        headers: dict[str, str] = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         return headers
 
-    def _anthropic_headers(self) -> dict:
-        headers = {
+    def _anthropic_headers(self) -> dict[str, str]:
+        headers: dict[str, str] = {
             "Content-Type": "application/json",
             "anthropic-version": "2023-06-01",
         }
@@ -607,7 +607,7 @@ class LocalLLMBackend(AIBackend):
             headers["x-api-key"] = self.api_key
         return headers
 
-    def _enforce_rate_limit(self):
+    def _enforce_rate_limit(self) -> None:
         """Enforce minimum request interval."""
         now = time.time()
         elapsed = now - self.last_request_time

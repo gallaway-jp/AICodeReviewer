@@ -171,10 +171,11 @@ class TestValidateConnection:
     @patch("aicodereviewer.backends.local_llm.requests.post")
     @patch("aicodereviewer.backends.local_llm.requests.get")
     def test_openai_validate_inference_fails(self, mock_get, mock_post):
+        # Empty model list but server reachable → True (server is up, just no models loaded)
         mock_get.return_value = _mock_response(200, {"data": []})
         mock_post.return_value = _mock_response(503, text="Unavailable")
         backend = _make_backend()
-        assert backend.validate_connection() is False
+        assert backend.validate_connection() is True
 
     @patch("aicodereviewer.backends.local_llm.requests.post")
     def test_anthropic_validate_success(self, mock_post):

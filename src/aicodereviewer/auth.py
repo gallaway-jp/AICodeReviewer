@@ -12,13 +12,13 @@ Performance Note:
 import locale
 import logging
 import os
-from typing import Tuple, TYPE_CHECKING
+from typing import Optional, Tuple, TYPE_CHECKING
 
 import keyring
 
 # boto3 types for type checking only (not imported at runtime)
 if TYPE_CHECKING:
-    import boto3
+    import boto3  # type: ignore
 
 from .config import config
 from .i18n import t
@@ -42,7 +42,7 @@ def get_profile_name() -> str:
     return profile
 
 
-def set_profile_name(new_profile: str = None) -> str:
+def set_profile_name(new_profile: Optional[str] = None) -> str:
     """Set or change the stored AWS profile name."""
     if new_profile is None:
         print(t("auth.profile_header"))
@@ -133,8 +133,8 @@ def create_aws_session(region: str = "us-east-1") -> Tuple["boto3.Session", str]
         ``(session, description)`` tuple.
     """
     # Lazy import of AWS SDK (avoids ~300ms startup penalty)
-    import boto3
-    from botocore.exceptions import NoCredentialsError, PartialCredentialsError
+    import boto3  # type: ignore
+    from botocore.exceptions import NoCredentialsError, PartialCredentialsError  # type: ignore
 
     config_region = config.get("aws", "region") or region
 
@@ -142,8 +142,8 @@ def create_aws_session(region: str = "us-east-1") -> Tuple["boto3.Session", str]
     sso_session = (config.get("aws", "sso_session", "") or "").strip()
     if sso_session:
         try:
-            sess = boto3.Session(sso_session=sso_session, region=config_region)
-            sess.client("sts").get_caller_identity()
+            sess = boto3.Session(sso_session=sso_session, region=config_region)  # type: ignore
+            sess.client("sts").get_caller_identity()  # type: ignore
             return sess, f"SSO ({sso_session})"
         except Exception as exc:
             logger.warning("SSO auth failed (%s), trying next method …", exc)
@@ -161,7 +161,7 @@ def create_aws_session(region: str = "us-east-1") -> Tuple["boto3.Session", str]
                     aws_session_token=session_token or None,
                     region_name=config_region,
                 )
-                sess.client("sts").get_caller_identity()
+                sess.client("sts").get_caller_identity()  # type: ignore
                 return sess, f"Direct credentials ({access_key[:8]}…)"
             except (NoCredentialsError, PartialCredentialsError) as exc:
                 logger.warning("Credential auth failed (%s), trying profile …", exc)
@@ -170,7 +170,7 @@ def create_aws_session(region: str = "us-east-1") -> Tuple["boto3.Session", str]
     profile = get_profile_name()
     try:
         sess = boto3.Session(profile_name=profile, region_name=config_region)
-        sess.client("sts").get_caller_identity()
+        sess.client("sts").get_caller_identity()  # type: ignore
         return sess, f"Profile ({profile})"
     except Exception as exc:
         raise RuntimeError(f"All AWS auth methods failed. Last error: {exc}") from exc

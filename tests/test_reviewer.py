@@ -5,10 +5,10 @@ Tests for AI Code Reviewer reviewer functionality.
 Updated for v2.0 API: collect_review_issues now takes review_types (List[str])
 instead of a single review_type string.
 """
-import pytest
 from unittest.mock import MagicMock, patch
 from pathlib import Path
-from aicodereviewer.reviewer import collect_review_issues, verify_issue_resolved
+from typing import Any, Dict, List, Union
+from aicodereviewer.reviewer import collect_review_issues, verify_issue_resolved, FileInfo
 from aicodereviewer.models import ReviewIssue
 
 
@@ -21,7 +21,7 @@ class TestCollectReviewIssues:
         mock_client.get_review.return_value = "This code has security issues"
 
         mock_file = Path("/path/to/test.py")
-        target_files = [mock_file]
+        target_files: List[FileInfo] = [mock_file]  # type: ignore[list-item]
 
         with patch('builtins.open', MagicMock()) as mock_open, \
              patch('os.path.getsize', return_value=1000):
@@ -39,7 +39,7 @@ class TestCollectReviewIssues:
         mock_client = MagicMock()
         mock_client.get_review.return_value = "This code has performance issues"
 
-        target_files = [{
+        target_files: List[FileInfo] = [{  # type: ignore[list-item]
             'path': Path("/path/to/test.py"),
             'content': "print('modified code')",
             'filename': 'test.py'
@@ -57,7 +57,7 @@ class TestCollectReviewIssues:
         mock_client = MagicMock()
         mock_client.get_review.return_value = "Security vulnerability found"
 
-        target_files = [{
+        target_files: List[FileInfo] = [{  # type: ignore[list-item]
             'path': Path("/path/to/test.py"),
             'content': "print('code')",
             'filename': 'test.py'
@@ -77,7 +77,7 @@ class TestCollectReviewIssues:
         mock_client = MagicMock()
         mock_client.get_review.return_value = "Error: Something went wrong"
 
-        target_files = [Path("/path/to/test.py")]
+        target_files: List[FileInfo] = [Path("/path/to/test.py")]  # type: ignore[list-item]
 
         with patch('builtins.open', MagicMock()) as mock_open, \
              patch('os.path.getsize', return_value=1000):
@@ -91,7 +91,7 @@ class TestCollectReviewIssues:
         mock_client = MagicMock()
         mock_client.get_review.return_value = "Issues found"
 
-        target_files = [Path("/nonexistent/file.py")]
+        target_files: List[FileInfo] = [Path("/nonexistent/file.py")]  # type: ignore[list-item]
 
         issues = collect_review_issues(target_files, ["security"], mock_client, "en")
 
@@ -102,7 +102,7 @@ class TestCollectReviewIssues:
         mock_client = MagicMock()
         mock_client.get_review.return_value = "Some feedback"
 
-        target_files = [{
+        target_files: List[FileInfo] = [{  # type: ignore[list-item]
             'path': Path("/path/to/test.py"),
             'content': "print('code')",
             'filename': 'test.py'

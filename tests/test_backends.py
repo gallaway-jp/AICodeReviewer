@@ -2,6 +2,8 @@
 """
 Tests for the backend factory and backend base class utilities.
 """
+from typing import Optional
+
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -95,11 +97,11 @@ class TestAIBackendABC:
         """Subclasses have access to prompt builder helpers."""
         # Create a minimal concrete subclass
         class _Stub(AIBackend):
-            def get_review(self, code_content, **kw):
+            def get_review(self, code_content: str, review_type: str = "best_practices", lang: str = "en", spec_content: Optional[str] = None) -> str:
                 return ""
-            def get_fix(self, code_content, issue_feedback, **kw):
+            def get_fix(self, code_content: str, issue_feedback: str, review_type: str = "best_practices", lang: str = "en") -> Optional[str]:
                 return ""
-            def validate_connection(self):
+            def validate_connection(self) -> bool:
                 return True
 
         stub = _Stub()

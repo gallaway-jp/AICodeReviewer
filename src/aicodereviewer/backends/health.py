@@ -11,7 +11,7 @@ import os
 import shutil
 import subprocess
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from aicodereviewer.config import config
 from aicodereviewer.i18n import t
@@ -28,12 +28,17 @@ class CheckResult:
     fix_hint: str = ""
 
 
+def _empty_check_list() -> List[CheckResult]:
+    """Factory for empty CheckResult list (typed for dataclass field)."""
+    return []
+
+
 @dataclass
 class HealthReport:
     """Aggregated health report for a backend."""
     backend: str
     ready: bool = False
-    checks: List[CheckResult] = field(default_factory=list)
+    checks: List[CheckResult] = field(default_factory=_empty_check_list)
     summary: str = ""
 
     @property
@@ -62,14 +67,20 @@ def _check_command_exists(cmd: str, friendly_name: str) -> CheckResult:
     )
 
 
-def _run_quiet(cmd: list, timeout: int = 10) -> tuple:
+def _run_quiet(cmd: List[str], timeout: int = 10) -> tuple[int, str, str]:
     """Run a command silently, returning (returncode, stdout, stderr)."""
-    kwargs = dict(capture_output=True, text=True, timeout=timeout,
-                  encoding="utf-8", errors="replace")
-    if os.name == "nt":
-        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
     try:
-        r = subprocess.run(cmd, **kwargs)
+        if os.name == "nt":
+            r = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=timeout,
+                encoding="utf-8", errors="replace",
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+        else:
+            r = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=timeout,
+                encoding="utf-8", errors="replace",
+            )
         return r.returncode, r.stdout, r.stderr
     except FileNotFoundError:
         return -1, "", "Command not found"
@@ -107,7 +118,7 @@ def _discover_copilot_models(copilot_path: str = "copilot") -> List[str]:
     global _copilot_models_cache
     import re
 
-    rc, stdout, stderr = _run_quiet([copilot_path, "--help"], timeout=5)
+    _, stdout, stderr = _run_quiet([copilot_path, "--help"], timeout=5)
     combined = (stdout or "") + "\n" + (stderr or "")
 
     models: List[str] = []
@@ -155,7 +166,7 @@ def _discover_bedrock_models(region: str = "us-east-1") -> List[str]:
     global _bedrock_models_cache
     import json as _json
 
-    rc, stdout, stderr = _run_quiet(
+    rc, stdout, _ = _run_quiet(
         ["aws", "bedrock", "list-foundation-models",
          "--region", region,
          "--query", "modelSummaries[?modelLifecycleStatus=='ACTIVE'].modelId",
@@ -196,7 +207,7 @@ def check_bedrock() -> HealthReport:
 
     # 2. AWS credentials configured
     if aws_check.passed:
-        rc, stdout, stderr = _run_quiet(["aws", "sts", "get-caller-identity"])
+        rc, _, stderr = _run_quiet(["aws", "sts", "get-caller-identity"])
         if rc == 0:
             checks.append(CheckResult(
                 name=t("health.aws_credentials"),
@@ -219,7 +230,7 @@ def check_bedrock() -> HealthReport:
         if creds_ok:
             try:
                 region = config.get("aws", "region", "us-east-1")
-                rc, stdout, stderr = _run_quiet(
+                rc, _, stderr = _run_quiet(
                     ["aws", "bedrock", "get-foundation-model",
                      "--model-identifier", model_id,
                      "--region", region,
@@ -233,7 +244,6 @@ def check_bedrock() -> HealthReport:
                         detail=t("health.model_exists", model=model_id),
                     ))
                 else:
-                    err_msg = stderr.strip()[:200] if stderr else ""
                     checks.append(CheckResult(
                         name=t("health.model_config"),
                         passed=False,
@@ -279,7 +289,7 @@ def check_kiro() -> HealthReport:
     # 1. WSL installed
     wsl_path = shutil.which("wsl")
     if wsl_path:
-        rc, stdout, stderr = _run_quiet(["wsl", "--status"])
+        rc, _stdout, _stderr = _run_quiet(["wsl", "--status"])
         wsl_ok = rc == 0
     else:
         wsl_ok = False
@@ -295,7 +305,7 @@ def check_kiro() -> HealthReport:
     # 2. WSL distro available
     if wsl_ok:
         distro = config.get("kiro", "wsl_distro", "").strip()
-        rc, stdout, _ = _run_quiet(["wsl", "--list", "--quiet"])
+        _rc, stdout, _ = _run_quiet(["wsl", "--list", "--quiet"])
         distros_raw = stdout.replace("\x00", "").strip().splitlines()
         distros = [d.strip() for d in distros_raw if d.strip()]
         if distro:
@@ -362,7 +372,7 @@ def check_kiro() -> HealthReport:
             auth_cmd = wsl_kiro_cmd + ["--", "bash", "-lc",
                                        f"{found_cmd} whoami 2>/dev/null || "
                                        f"{found_cmd} status 2>/dev/null"]
-            rc, stdout, stderr = _run_quiet(auth_cmd, timeout=15)
+            rc, stdout, _stderr = _run_quiet(auth_cmd, timeout=15)
             # If the command exits 0 and produces output, consider authenticated
             auth_ok = rc == 0 and bool(stdout.strip())
             checks.append(CheckResult(
@@ -493,8 +503,8 @@ def check_copilot() -> HealthReport:
 # ── Local LLM model discovery ──────────────────────────────────────────────
 
 _local_models_cache: List[str] = []
-_local_models_cache_key: tuple = ()  # (api_url, api_type) tuple
-_auto_loaded_models: dict = {}  # {(api_url, api_type): model_id} - tracks models we auto-loaded
+_local_models_cache_key: Tuple[str, str] = ("", "")  # (api_url, api_type) tuple
+_auto_loaded_models: Dict[Tuple[str, str], str] = {}  # {(api_url, api_type): model_id} - tracks models we auto-loaded
 
 
 def get_local_models(api_url: str = "", api_type: str = "") -> List[str]:
@@ -541,6 +551,7 @@ def _discover_local_models(api_url: str = "http://localhost:1234", api_type: str
     import json as _json
     import urllib.request
     import urllib.error
+    from typing import Any as _Any
 
     models: List[str] = []
     api_url = api_url.rstrip("/")
@@ -552,17 +563,17 @@ def _discover_local_models(api_url: str = "http://localhost:1234", api_type: str
         try:
             # Query the models endpoint
             with urllib.request.urlopen(models_url, timeout=5) as resp:
-                data = _json.loads(resp.read().decode("utf-8"))
+                data: _Any = _json.loads(resp.read().decode("utf-8"))
                 if isinstance(data, dict) and "models" in data:
-                    model_list = data["models"]
+                    model_list: list[_Any] = data["models"]
                     if isinstance(model_list, list):
                         # Extract loaded model instance IDs
                         for m in model_list:
                             if isinstance(m, dict):
-                                loaded_instances = m.get("loaded_instances", [])
+                                loaded_instances: list[_Any] = m.get("loaded_instances", [])
                                 for instance in loaded_instances:
                                     if isinstance(instance, dict):
-                                        instance_id = instance.get("id")
+                                        instance_id: str = instance.get("id", "")
                                         if instance_id:
                                             models.append(instance_id)
                         
@@ -570,7 +581,7 @@ def _discover_local_models(api_url: str = "http://localhost:1234", api_type: str
                         if not models:
                             for m in model_list:
                                 if isinstance(m, dict):
-                                    model_key = m.get("key")
+                                    model_key: str = m.get("key", "")
                                     if model_key:
                                         models.append(model_key)
                         
@@ -587,8 +598,10 @@ def _discover_local_models(api_url: str = "http://localhost:1234", api_type: str
                 if isinstance(data, dict) and "models" in data:
                     model_list = data["models"]
                     if isinstance(model_list, list):
-                        models = sorted([m.get("name", m) if isinstance(m, dict) else m 
-                                        for m in model_list if m])
+                        models = sorted([
+                            str(m.get("name", m)) if isinstance(m, dict) else str(m) 
+                            for m in model_list if m
+                        ])
         except (urllib.error.URLError, urllib.error.HTTPError, OSError, TimeoutError, _json.JSONDecodeError) as e:
             logger.debug("Failed to discover %s models from %s: %s", api_type, models_url, e)
     
@@ -601,8 +614,10 @@ def _discover_local_models(api_url: str = "http://localhost:1234", api_type: str
                 if isinstance(data, dict) and "data" in data:
                     model_list = data["data"]
                     if isinstance(model_list, list):
-                        models = sorted([m.get("id", m) if isinstance(m, dict) else m 
-                                        for m in model_list if m])
+                        models = sorted([
+                            str(m.get("id", m)) if isinstance(m, dict) else str(m) 
+                            for m in model_list if m
+                        ])
         except (urllib.error.URLError, urllib.error.HTTPError, OSError, TimeoutError, _json.JSONDecodeError) as e:
             logger.debug("Failed to discover %s models from %s: %s", api_type, models_url, e)
     
@@ -648,22 +663,24 @@ def _auto_load_model(api_url: str, api_type: str) -> Optional[str]:
     import json as _json
     import urllib.request
     import urllib.error
+    from typing import Any as _Any
     
-    model_loaded = None
-    cache_key = (api_url, api_type)
+    model_loaded: Optional[str] = None
+    cache_key: Tuple[str, str] = (api_url, api_type)
     
     try:
         if api_type == "lmstudio":
             # Get list of all available (downloaded) models
             list_url = f"{api_url}/api/v1/models"
             with urllib.request.urlopen(list_url, timeout=5) as resp:
-                data = _json.loads(resp.read().decode("utf-8"))
+                data: _Any = _json.loads(resp.read().decode("utf-8"))
                 if isinstance(data, dict) and "models" in data and data["models"]:
                     # Find first model that isn't loaded yet
-                    for model in data["models"]:
-                        if isinstance(model, dict):
-                            model_key = model.get("key")
-                            loaded_instances = model.get("loaded_instances", [])
+                    model_entry: _Any
+                    for model_entry in data["models"]:
+                        if isinstance(model_entry, dict):
+                            model_key: str = str(model_entry.get("key", ""))
+                            loaded_instances: list[_Any] = model_entry.get("loaded_instances", [])
                             
                             # Skip if already loaded
                             if loaded_instances:
@@ -677,9 +694,9 @@ def _auto_load_model(api_url: str, api_type: str) -> Optional[str]:
                                                             headers={"Content-Type": "application/json"})
                                 
                                 with urllib.request.urlopen(req, timeout=30) as load_resp:
-                                    result = _json.loads(load_resp.read().decode("utf-8"))
-                                    if result.get("status") == "loaded":
-                                        model_loaded = result.get("instance_id") or model_key
+                                    result: _Any = _json.loads(load_resp.read().decode("utf-8"))
+                                    if isinstance(result, dict) and result.get("status") == "loaded":
+                                        model_loaded = str(result.get("instance_id", "")) or model_key
                                         _auto_loaded_models[cache_key] = model_loaded
                                         logger.info("Auto-loaded LM Studio model: %s", model_loaded)
                                         break
@@ -691,8 +708,8 @@ def _auto_load_model(api_url: str, api_type: str) -> Optional[str]:
                 data = _json.loads(resp.read().decode("utf-8"))
                 if isinstance(data, dict) and "models" in data and data["models"]:
                     # Get first model
-                    first_model = data["models"][0]
-                    model_name = first_model.get("name")
+                    first_model: _Any = data["models"][0]
+                    model_name: str = str(first_model.get("name", "")) if isinstance(first_model, dict) else ""
                     
                     if model_name:
                         # Load model by sending empty generate request
@@ -706,7 +723,7 @@ def _auto_load_model(api_url: str, api_type: str) -> Optional[str]:
                             for line in gen_resp:
                                 try:
                                     result = _json.loads(line.decode("utf-8"))
-                                    if result.get("done"):
+                                    if isinstance(result, dict) and result.get("done"):
                                         model_loaded = model_name
                                         _auto_loaded_models[cache_key] = model_loaded
                                         logger.info("Auto-loaded Ollama model: %s", model_loaded)
@@ -723,7 +740,8 @@ def _auto_load_model(api_url: str, api_type: str) -> Optional[str]:
                     # For OpenAI-compatible APIs, models are typically already loaded
                     # Just return the first model without explicitly loading
                     first_model = data["data"][0]
-                    model_loaded = first_model.get("id") or first_model.get("model")
+                    if isinstance(first_model, dict):
+                        model_loaded = str(first_model.get("id", "")) or str(first_model.get("model", ""))
                     logger.debug("OpenAI-compatible model available: %s", model_loaded)
                     # Don't track as auto-loaded since we didn't explicitly load it
     
@@ -733,7 +751,7 @@ def _auto_load_model(api_url: str, api_type: str) -> Optional[str]:
     return model_loaded
 
 
-def _cleanup_auto_loaded_models():
+def _cleanup_auto_loaded_models() -> None:
     """Unload any models that were auto-loaded by AICodeReviewer.
     
     Called on program exit via atexit handler.
@@ -882,7 +900,7 @@ def check_backend(backend_type: Optional[str] = None) -> HealthReport:
     """Run health checks for the given backend type."""
     if backend_type is None:
         backend_type = config.get("backend", "type", "bedrock")
-    backend_type = backend_type.strip().lower()
+    backend_type = str(backend_type).strip().lower()
 
     dispatchers = {
         "bedrock": check_bedrock,

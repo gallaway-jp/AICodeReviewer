@@ -27,7 +27,7 @@ def convert_svg_to_ico(svg_path, ico_path, size=256):
         print("Using cairosvg for conversion...")
         png_data = cairosvg.svg2png(url=str(svg_path), output_width=size, output_height=size)
 
-        with Image.open(io.BytesIO(png_data)) as img:
+        with Image.open(io.BytesIO(png_data)) as img:  # type: ignore[arg-type]
             ico_path.parent.mkdir(parents=True, exist_ok=True)
             img.save(str(ico_path), format='ICO', sizes=[(size, size), (128, 128), (64, 64), (32, 32), (16, 16)])
 

@@ -292,6 +292,7 @@ def scan_project_with_scope(directory: Optional[str], scope: str = 'project', di
                    For diff scope: List[Dict] with file info and content (full file if directory provided, else diff content)
     """
     if scope == 'project':
+        assert directory is not None, "directory is required for project scope"
         return scan_project(directory)
     elif scope == 'diff':
         changed_files = []
@@ -321,18 +322,11 @@ def scan_project_with_scope(directory: Optional[str], scope: str = 'project', di
         for diff_file_info in diff_files:
             if directory:
                 file_path = Path(directory) / diff_file_info['filename']
-                if file_path.exists():
-                    # Read full file content for additional context
-                    try:
-                        with open(file_path, 'r', encoding='utf-8') as f:
-                            content = f.read()
-                    except (IOError, UnicodeDecodeError):
-                        content = diff_file_info['content']  # fallback to diff content
-                else:
-                    content = diff_file_info['content']
             else:
                 file_path = Path(diff_file_info['filename'])  # relative path
-                content = diff_file_info['content']
+
+            # Always use diff content so only changed code is reviewed
+            content = diff_file_info['content']
 
             changed_files.append({
                 'path': file_path,

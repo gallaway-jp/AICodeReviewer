@@ -15,19 +15,16 @@ Provides full feature parity with the CLI:
 """
 import configparser
 import logging
-import os
 import re
 import subprocess
 import threading
 import queue
-import tkinter as tk
 import webbrowser
-from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
-import customtkinter as ctk
+import customtkinter as ctk  # type: ignore[import-untyped]
 
 from aicodereviewer.backends import create_backend
 from aicodereviewer.backends.base import REVIEW_TYPE_KEYS, REVIEW_TYPE_META
@@ -37,7 +34,7 @@ from aicodereviewer.auth import get_system_language
 from aicodereviewer.scanner import scan_project_with_scope
 from aicodereviewer.orchestration import AppRunner
 from aicodereviewer.models import ReviewIssue
-from aicodereviewer.i18n import t, set_locale, get_locale
+from aicodereviewer.i18n import t, set_locale
 
 logger = logging.getLogger(__name__)
 
@@ -51,11 +48,11 @@ class _CancelledError(Exception):
 class QueueLogHandler(logging.Handler):
     """Send log records to a :class:`queue.Queue` for GUI consumption."""
 
-    def __init__(self, log_queue: queue.Queue):
+    def __init__(self, log_queue: queue.Queue[str]):
         super().__init__()
         self.log_queue = log_queue
 
-    def emit(self, record):
+    def emit(self, record: logging.LogRecord):
         try:
             self.log_queue.put_nowait(self.format(record))
         except queue.Full:
@@ -68,7 +65,7 @@ class InfoTooltip:
     """Attach a hover tooltip to any widget via an 🛈 icon label."""
 
     @staticmethod
-    def add(parent, text: str, row: int, column: int, **grid_kw):
+    def add(parent: Any, text: str, row: int, column: int, **grid_kw: Any):
         """Place an 🛈 label at the given grid position with a hover tooltip."""
         lbl = ctk.CTkLabel(parent, text="🛈", width=20,
                            font=ctk.CTkFont(size=14),
@@ -82,14 +79,14 @@ class InfoTooltip:
 class _Tooltip:
     """Simple hover tooltip for CustomTkinter widgets."""
 
-    def __init__(self, widget, text: str):
+    def __init__(self, widget: Any, text: str):
         self.widget = widget
         self.text = text
-        self._tipwindow = None
+        self._tipwindow: Any = None
         widget.bind("<Enter>", self._show)
         widget.bind("<Leave>", self._hide)
 
-    def _show(self, event=None):
+    def _show(self, event: Any = None):
         if self._tipwindow:
             return
         import tkinter as tk
@@ -107,7 +104,7 @@ class _Tooltip:
         label.pack()
         self._tipwindow = tw
 
-    def _hide(self, event=None):
+    def _hide(self, event: Any = None):
         if self._tipwindow:
             self._tipwindow.destroy()
             self._tipwindow = None
@@ -118,7 +115,7 @@ class _Tooltip:
 class FileSelector(ctk.CTkToplevel):
     """Custom file selector window with tree structure and checkboxes."""
     
-    def __init__(self, parent, project_path: str, preselected: List[str]):
+    def __init__(self, parent: Any, project_path: str, preselected: List[str]):
         super().__init__(parent)
         self.result = []
         self.project_path = Path(project_path)
@@ -176,7 +173,7 @@ class FileSelector(ctk.CTkToplevel):
         ctk.CTkButton(btn_frame, text="Cancel", width=100,
                      command=self._on_cancel).pack(side="right", padx=5)
     
-    def _build_file_tree(self, parent_frame, files: List[Path]):
+    def _build_file_tree(self, parent_frame: Any, files: List[Path]):
         """Build the file tree with checkboxes."""
         # Organize files by directory
         tree_dict = {}
@@ -200,7 +197,7 @@ class FileSelector(ctk.CTkToplevel):
         # Render the tree
         self._render_tree(parent_frame, tree_dict, indent=0)
     
-    def _render_tree(self, parent_frame, tree_dict: dict, indent: int):
+    def _render_tree(self, parent_frame: Any, tree_dict: Dict[str, Any], indent: int):
         """Recursively render the file tree."""
         for key in sorted(tree_dict.keys()):
             value = tree_dict[key]
@@ -274,7 +271,7 @@ class App(ctk.CTk):
         self.minsize(900, 680)
 
         # Logging queue
-        self._log_queue: queue.Queue = queue.Queue(maxsize=5000)
+        self._log_queue: queue.Queue[str] = queue.Queue(maxsize=5000)
         self._install_log_handler()
 
         # State
@@ -283,7 +280,14 @@ class App(ctk.CTk):
         self._review_client = None  # keep reference for AI fix
         self._health_check_backend = None  # Track which backend is being checked
         self._health_check_timer = None    # Timeout timer for health checks
-        self._model_refresh_in_progress: set = set()  # Track background refreshes
+        self._model_refresh_in_progress: set[str] = set()  # Track background refreshes
+
+        # Forward declarations for dynamically-set attributes
+        self._settings_backend_var: Any = None
+        self._copilot_model_combo: Any = None
+        self._bedrock_model_combo: Any = None
+        self._local_model_combo: Any = None
+        self._review_runner: Optional[AppRunner] = None
 
         # Layout
         self._build_ui()
@@ -364,7 +368,7 @@ class App(ctk.CTk):
         ctk.CTkRadioButton(scope_frame, text=t("gui.review.scope_diff"),
                             variable=self.scope_var, value="diff").grid(row=0, column=3, padx=6)
 
-        # File selection sub-options (only shown when Full Project is selected)
+        # File selection sub-options (shown when Full Project is selected)
         self.file_select_frame = ctk.CTkFrame(scope_frame)
         self.file_select_frame.grid(row=1, column=0, columnspan=5, sticky="ew", padx=6, pady=3)
         self.file_select_mode_var = ctk.StringVar(value="all")
@@ -377,11 +381,36 @@ class App(ctk.CTk):
         self.select_files_btn = ctk.CTkButton(self.file_select_frame, text="Select Files...", width=120,
                                               command=self._open_file_selector, state="disabled")
         self.select_files_btn.grid(row=0, column=2, padx=6, sticky="w")
-        self.selected_files = []  # Store selected file paths
+        self.selected_files: List[str] = []  # Store selected file paths
 
-        # Diff sub-options
+        # Optional diff filter (shown when Full Project is selected)
+        self.diff_filter_frame = ctk.CTkFrame(scope_frame)
+        self.diff_filter_frame.grid(row=2, column=0, columnspan=5, sticky="ew", padx=6, pady=3)
+        self.diff_filter_frame.grid_columnconfigure(3, weight=1)
+        self.diff_filter_var = ctk.BooleanVar(value=False)
+        self.diff_filter_var.trace_add("write", self._on_diff_filter_changed)
+        self.diff_filter_cb = ctk.CTkCheckBox(
+            self.diff_filter_frame, text="Filter by Diff (review only changed code)",
+            variable=self.diff_filter_var)
+        self.diff_filter_cb.grid(row=0, column=0, columnspan=4, padx=6, pady=(2, 0), sticky="w")
+        InfoTooltip.add(self.diff_filter_frame, t("gui.tip.diff_file"), row=1, column=0)
+        ctk.CTkLabel(self.diff_filter_frame, text=t("gui.review.diff_file")).grid(row=1, column=1, padx=4)
+        self.diff_filter_file_entry = ctk.CTkEntry(
+            self.diff_filter_frame, placeholder_text=t("gui.review.diff_placeholder"), state="disabled")
+        self.diff_filter_file_entry.grid(row=1, column=2, columnspan=2, sticky="ew", padx=4)
+        self.diff_filter_browse_btn = ctk.CTkButton(
+            self.diff_filter_frame, text="…", width=30,
+            command=self._browse_diff_filter, state="disabled")
+        self.diff_filter_browse_btn.grid(row=1, column=4, padx=4)
+        InfoTooltip.add(self.diff_filter_frame, t("gui.tip.commits"), row=2, column=0)
+        ctk.CTkLabel(self.diff_filter_frame, text=t("gui.review.commits")).grid(row=2, column=1, padx=4, pady=(3, 0))
+        self.diff_filter_commits_entry = ctk.CTkEntry(
+            self.diff_filter_frame, placeholder_text=t("gui.review.commits_placeholder"), state="disabled")
+        self.diff_filter_commits_entry.grid(row=2, column=2, columnspan=2, sticky="ew", padx=4, pady=(3, 0))
+
+        # Diff sub-options (shown when Diff scope is selected)
         self.diff_frame = ctk.CTkFrame(scope_frame)
-        self.diff_frame.grid(row=2, column=0, columnspan=5, sticky="ew", padx=6, pady=3)
+        self.diff_frame.grid(row=3, column=0, columnspan=5, sticky="ew", padx=6, pady=3)
         self.diff_frame.grid_columnconfigure(2, weight=1)
         InfoTooltip.add(self.diff_frame, t("gui.tip.diff_file"), row=0, column=0)
         ctk.CTkLabel(self.diff_frame, text=t("gui.review.diff_file")).grid(row=0, column=1, padx=4)
@@ -394,7 +423,7 @@ class App(ctk.CTk):
         self.commits_entry = ctk.CTkEntry(self.diff_frame, placeholder_text=t("gui.review.commits_placeholder"))
         self.commits_entry.grid(row=1, column=2, sticky="ew", padx=4, pady=(3, 0))
         
-        # Initially hide diff_frame and show file_select_frame
+        # Initially hide diff_frame and show file_select_frame + diff_filter_frame
         self.diff_frame.grid_remove()
         row += 1
 
@@ -587,7 +616,7 @@ class App(ctk.CTk):
         self._ai_fix_running = False  # Track if batch AI fix is currently running
 
         # Tracking state for issue cards
-        self._issue_cards: List[dict] = []  # {issue, card, status_lbl, skip_frame, ...}
+        self._issue_cards: List[Dict[str, Any]] = []  # {issue, card, status_lbl, skip_frame, ...}
 
     # ══════════════════════════════════════════════════════════════════════
     #  SETTINGS TAB  – sectioned with tooltips
@@ -645,7 +674,7 @@ class App(ctk.CTk):
             row[0] += 1
 
         def _add_dropdown(label: str, section: str, key: str, default: str,
-                          values: list, tooltip_key: str = "",
+                          values: List[str], tooltip_key: str = "",
                           var_store_name: str = ""):
             InfoTooltip.add(scroll, t(tooltip_key) if tooltip_key else label,
                             row=row[0], column=0)
@@ -661,7 +690,7 @@ class App(ctk.CTk):
             row[0] += 1
 
         def _add_combobox(label: str, section: str, key: str, default: str,
-                          values: list, tooltip_key: str = "",
+                          values: List[str], tooltip_key: str = "",
                           widget_store_name: str = ""):
             """Editable combobox – user can type freely or pick from the list."""
             InfoTooltip.add(scroll, t(tooltip_key) if tooltip_key else label,
@@ -926,17 +955,35 @@ class App(ctk.CTk):
         for var in self.type_vars.values():
             var.set(value)
 
-    def _on_scope_changed(self, *_args):
+    def _on_scope_changed(self, *_args: object) -> None:
         """Handle scope radio button changes - show/hide file selection and diff frames."""
         scope = self.scope_var.get()
         if scope == "project":
             self.file_select_frame.grid()
+            self.diff_filter_frame.grid()
             self.diff_frame.grid_remove()
         else:  # diff
             self.file_select_frame.grid_remove()
+            self.diff_filter_frame.grid_remove()
             self.diff_frame.grid()
 
-    def _on_file_select_mode_changed(self, *_args):
+    def _on_diff_filter_changed(self, *_args: object) -> None:
+        """Enable/disable diff filter entry fields when checkbox toggled."""
+        enabled = self.diff_filter_var.get()
+        state = "normal" if enabled else "disabled"
+        self.diff_filter_file_entry.configure(state=state)
+        self.diff_filter_browse_btn.configure(state=state)
+        self.diff_filter_commits_entry.configure(state=state)
+
+    def _browse_diff_filter(self) -> None:
+        """Open file dialog for diff filter file."""
+        path = filedialog.askopenfilename(
+            filetypes=[("Diff / Patch", "*.diff *.patch"), ("All files", "*.*")])
+        if path:
+            self.diff_filter_file_entry.delete(0, "end")
+            self.diff_filter_file_entry.insert(0, path)
+
+    def _on_file_select_mode_changed(self, *_args: object):
         """Handle file selection mode changes - enable/disable Select Files button."""
         mode = self.file_select_mode_var.get()
         if mode == "selected":
@@ -961,7 +1008,7 @@ class App(ctk.CTk):
         
         # Update selected_files after the window closes
         if hasattr(selector, 'result') and selector.result:
-            self.selected_files = selector.result
+            self.selected_files = list(selector.result)
             self._show_toast(f"{len(self.selected_files)} file(s) selected")
 
     def _get_selected_types(self) -> List[str]:
@@ -990,19 +1037,29 @@ class App(ctk.CTk):
         except Exception as exc:
             logger.warning("Failed to save form values: %s", exc)
 
-    def _validate_inputs(self, dry_run: bool = False) -> Optional[dict]:
+    def _validate_inputs(self, dry_run: bool = False) -> Optional[Dict[str, Any]]:
         """Validate form and return a params dict, or None on failure."""
         path = self.path_entry.get().strip()
         scope = self.scope_var.get()
-        diff_file = self.diff_file_entry.get().strip() or None
-        commits = self.commits_entry.get().strip() or None
+        diff_file: Optional[str] = None
+        commits: Optional[str] = None
+        diff_filter_file: Optional[str] = None
+        diff_filter_commits: Optional[str] = None
+
+        if scope == "diff":
+            diff_file = self.diff_file_entry.get().strip() or None
+            commits = self.commits_entry.get().strip() or None
+        elif scope == "project" and self.diff_filter_var.get():
+            # Diff filter entries (project mode with optional diff)
+            diff_filter_file = self.diff_filter_file_entry.get().strip() or None
+            diff_filter_commits = self.diff_filter_commits_entry.get().strip() or None
 
         if scope == "project" and not path:
             self._show_toast(t("gui.val.path_required"), error=True)
             return None
         
         # Validate selected files mode
-        selected_files = None
+        selected_files: Optional[List[str]] = None
         if scope == "project":
             file_mode = self.file_select_mode_var.get()
             if file_mode == "selected":
@@ -1010,6 +1067,12 @@ class App(ctk.CTk):
                     self._show_toast("Please select files for review", error=True)
                     return None
                 selected_files = self.selected_files
+
+        # Validate diff filter has at least one source when enabled
+        if scope == "project" and self.diff_filter_var.get():
+            if not diff_filter_file and not diff_filter_commits:
+                self._show_toast("Please specify a diff file or commit range for diff filtering", error=True)
+                return None
         
         if scope == "diff" and not diff_file and not commits:
             self._show_toast(t("gui.val.diff_required"), error=True)
@@ -1062,6 +1125,8 @@ class App(ctk.CTk):
             reviewers=reviewers,
             backend=self.backend_var.get(),
             selected_files=selected_files,
+            diff_filter_file=diff_filter_file,
+            diff_filter_commits=diff_filter_commits,
         )
 
     def _start_review(self):
@@ -1116,7 +1181,7 @@ class App(ctk.CTk):
 
         self.cancel_btn.configure(state="disabled")
 
-    def _run_review(self, params: dict, dry_run: bool):
+    def _run_review(self, params: Dict[str, Any], dry_run: bool):
         """Execute the review in a background thread."""
         self._running = True
         self._cancel_event = threading.Event()
@@ -1125,27 +1190,103 @@ class App(ctk.CTk):
         self.progress.set(0)
         self.status_var.set(t("common.running"))
 
-        def _worker():
+        def _worker() -> None:
             try:
-                backend_name = params.pop("backend")
-                selected_files = params.pop("selected_files", None)
+                backend_name: str = params.pop("backend")
+                selected_files: Optional[List[str]] = params.pop("selected_files", None)
+                diff_filter_file: Optional[str] = params.pop("diff_filter_file", None)
+                diff_filter_commits: Optional[str] = params.pop("diff_filter_commits", None)
                 
                 client = None if dry_run else create_backend(backend_name)
                 self._review_client = client
                 
-                # Create custom scan function if selected files are specified
-                if selected_files:
-                    def custom_scan_fn(directory, scope, diff_file=None, commits=None):
-                        """Return only the selected files."""
-                        return [Path(f) for f in selected_files]
-                    scan_fn = custom_scan_fn
-                else:
-                    scan_fn = scan_project_with_scope
+                # Build a scan function that handles file selection + diff filtering
+                has_diff_filter = bool(diff_filter_file or diff_filter_commits)
                 
+                def custom_scan_fn(
+                    directory: Optional[str],
+                    scope: str,
+                    diff_file: Optional[str] = None,
+                    commits: Optional[str] = None,
+                ) -> List[Any]:
+                    """Scan with optional file selection and diff intersection."""
+                    from aicodereviewer.scanner import parse_diff_file, get_diff_from_commits
+                    
+                    if scope == "diff":
+                        # Pure diff mode — use default scanner
+                        return scan_project_with_scope(directory, scope, diff_file, commits)
+                    
+                    # Full project mode — start with all project files
+                    all_files: List[Any] = scan_project_with_scope(directory, "project")
+                    
+                    # Apply file selection filter
+                    if selected_files:
+                        selected_set = {Path(f).resolve() for f in selected_files}
+                        all_files = [
+                            f for f in all_files
+                            if Path(f).resolve() in selected_set
+                        ]
+                    
+                    # Apply diff filter (intersection with diff + use diff content only)
+                    if has_diff_filter:
+                        diff_content: Optional[str] = None
+                        if diff_filter_file:
+                            try:
+                                with open(diff_filter_file, "r", encoding="utf-8") as fh:
+                                    diff_content = fh.read()
+                            except (IOError, OSError) as exc:
+                                logger.error("Failed to read diff filter file: %s", exc)
+                                return []
+                        elif diff_filter_commits and directory:
+                            diff_content = get_diff_from_commits(directory, diff_filter_commits)
+                        
+                        if not diff_content:
+                            logger.warning("No diff content available for filtering")
+                            return []
+                        
+                        # Parse diff to get changed file names and their diff content
+                        diff_entries = parse_diff_file(diff_content)
+                        diff_by_name: Dict[str, str] = {
+                            entry["filename"]: entry["content"]
+                            for entry in diff_entries
+                        }
+                        
+                        # Intersect: keep only files that appear in the diff,
+                        # and replace content with diff-only content
+                        intersected: List[Any] = []
+                        for file_path in all_files:
+                            fp = Path(file_path)
+                            # Try matching by relative path from project root
+                            rel_path: Optional[str] = None
+                            if directory:
+                                try:
+                                    rel_path = str(fp.relative_to(directory))
+                                except ValueError:
+                                    rel_path = str(fp)
+                            else:
+                                rel_path = str(fp)
+                            
+                            # Normalize path separators for comparison
+                            rel_norm = rel_path.replace("\\\\", "/") if rel_path else ""
+                            
+                            if rel_norm in diff_by_name:
+                                intersected.append({
+                                    "path": fp,
+                                    "content": diff_by_name[rel_norm],
+                                    "filename": rel_norm,
+                                })
+                        
+                        return intersected
+                    
+                    return all_files
+                
+                scan_fn = custom_scan_fn
+                
+                assert client is not None
                 runner = AppRunner(client, scan_fn=scan_fn,
                                    backend_name=backend_name)
 
-                def progress_cb(current, total, msg):
+                def progress_cb(current: int, total: int, msg: str) -> None:
                     if self._cancel_event.is_set():
                         raise _CancelledError(t("gui.val.cancelled"))
                     if total > 0:
@@ -1272,7 +1413,7 @@ class App(ctk.CTk):
         # Action buttons
         btn_kw = dict(width=65, height=26, font=ctk.CTkFont(size=11))
         view_btn = ctk.CTkButton(
-            card, text=t("gui.results.action_view"), **btn_kw,
+            card, text=t("gui.results.action_view"), **btn_kw,  # type: ignore[reportArgumentType]
             command=lambda iss=issue: self._show_issue_detail(iss),
         )
         view_btn.grid(row=2, column=2, padx=2, pady=(0, 4))
@@ -1287,7 +1428,7 @@ class App(ctk.CTk):
         # Not gridded yet — will appear in AI Fix mode
 
         resolve_btn = ctk.CTkButton(
-            card, text=t("gui.results.action_resolve"), **btn_kw,
+            card, text=t("gui.results.action_resolve"), **btn_kw,  # type: ignore[reportArgumentType]
             fg_color="green",
             command=lambda idx=len(self._issue_cards):
                 self._resolve_issue(idx),
@@ -1295,7 +1436,7 @@ class App(ctk.CTk):
         resolve_btn.grid(row=2, column=4, padx=2, pady=(0, 4))
 
         skip_btn = ctk.CTkButton(
-            card, text=t("gui.results.action_skip"), **btn_kw,
+            card, text=t("gui.results.action_skip"), **btn_kw,  # type: ignore[reportArgumentType]
             fg_color="gray50",
             command=lambda idx=len(self._issue_cards):
                 self._toggle_skip(idx),
@@ -1346,7 +1487,7 @@ class App(ctk.CTk):
     def _update_bottom_buttons(self):
         """Enable/disable Review Changes and Finalize based on issue states."""
         all_done = all(c["issue"].status != "pending" for c in self._issue_cards)
-        all_skipped = all(c["issue"].status == "skipped" for c in self._issue_cards)
+        _all_skipped = all(c["issue"].status == "skipped" for c in self._issue_cards)
         any_to_check = any(c["issue"].status in ("resolved",) for c in self._issue_cards)
         any_pending = any(c["issue"].status == "pending" for c in self._issue_cards)
 
@@ -1580,6 +1721,8 @@ class App(ctk.CTk):
                             pass
 
                         logger.info("  AI Fix: %s …", issue.file_path)
+                        if self._review_client is None:
+                            continue
                         fix = self._review_client.get_fix(
                             code_content=code,
                             issue_feedback=issue.ai_feedback or issue.description,
@@ -1913,6 +2056,8 @@ class App(ctk.CTk):
                 issue = rec["issue"]
                 try:
                     logger.info("Verifying fix for %s …", issue.file_path)
+                    if self._review_client is None:
+                        continue
                     ok = verify_issue_resolved(
                         issue, self._review_client,
                         issue.issue_type, self.lang_var.get(),
@@ -2078,7 +2223,7 @@ class App(ctk.CTk):
         
         # Reset the config to defaults
         config.config = configparser.ConfigParser()
-        config._set_defaults()
+        config._set_defaults()  # type: ignore[reportPrivateUsage]
         
         # Reload the settings tab with default values
         # Destroy and rebuild the settings tab
@@ -2098,7 +2243,7 @@ class App(ctk.CTk):
     #  BACKEND HEALTH CHECK
     # ══════════════════════════════════════════════════════════════════════
 
-    def _on_backend_changed(self, *_args):
+    def _on_backend_changed(self, *_args: object):
         """Called when the backend radio button changes — save and re-check."""
         backend_name = self.backend_var.get()
         config.set_value("backend", "type", backend_name)

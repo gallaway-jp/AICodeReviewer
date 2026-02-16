@@ -9,7 +9,7 @@ import os
 import logging
 import re
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Union
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .models import ReviewIssue
@@ -90,7 +90,7 @@ def _read_file_content(file_path: Path) -> str:
 # ── main collection entry ──────────────────────────────────────────────────
 
 def collect_review_issues(
-    target_files: List[FileInfo],
+    target_files: Sequence[FileInfo],
     review_types: List[str],
     client: AIBackend,
     lang: str,
@@ -162,7 +162,7 @@ def collect_review_issues(
 # ── batch helper ───────────────────────────────────────────────────────────
 
 def _process_file_batch(
-    target_files: List[FileInfo],
+    target_files: Sequence[FileInfo],
     review_type: str,
     client: AIBackend,
     lang: str,
@@ -187,7 +187,7 @@ def _process_file_batch(
 
 
 def _process_files_individually(
-    target_files: List[FileInfo],
+    target_files: Sequence[FileInfo],
     review_type: str,
     client: AIBackend,
     lang: str,
@@ -241,7 +241,7 @@ def _process_files_individually(
 
 
 def _process_combined_batch(
-    target_files: List[FileInfo],
+    target_files: Sequence[FileInfo],
     review_type: str,
     client: AIBackend,
     lang: str,
@@ -281,9 +281,9 @@ def _process_combined_batch(
 
     # Build combined user message via the backend helper
     from .backends.base import AIBackend
-    combined_code = AIBackend._build_multi_file_user_message(
+    combined_code = AIBackend._build_multi_file_user_message(  # noqa: SLF001
         file_entries, review_type, spec_content
-    )
+    )  # type: ignore[reportPrivateUsage]
 
     try:
         feedback = client.get_review(

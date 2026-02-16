@@ -6,7 +6,6 @@ Reads ``config.ini`` from the current working directory or the project root
 and provides typed access to all sections with sensible defaults.
 """
 import configparser
-import os
 from pathlib import Path
 from typing import Any
 
