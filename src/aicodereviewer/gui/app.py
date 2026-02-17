@@ -249,8 +249,9 @@ class App(ctk.CTk):
     WIDTH = 1100
     HEIGHT = 820
 
-    def __init__(self):
+    def __init__(self, *, testing_mode: bool = False):
         super().__init__()
+        self._testing_mode = testing_mode
 
         # ── Detect language & apply saved preferences ──────────────────────
         saved_lang = config.get("gui", "language", "").strip()
@@ -294,10 +295,11 @@ class App(ctk.CTk):
         self._poll_log_queue()
 
         # Refresh model list for current backend in background (non-blocking)
-        self.after(100, self._refresh_current_backend_models_async)
+        if not self._testing_mode:
+            self.after(100, self._refresh_current_backend_models_async)
 
-        # Auto-run health check on startup (silent if all pass)
-        self.after(500, self._auto_health_check)
+            # Auto-run health check on startup (silent if all pass)
+            self.after(500, self._auto_health_check)
 
     # ── UI construction ────────────────────────────────────────────────────
 
@@ -939,12 +941,16 @@ class App(ctk.CTk):
     # ══════════════════════════════════════════════════════════════════════
 
     def _browse_path(self):
+        if self._testing_mode:
+            return
         d = filedialog.askdirectory()
         if d:
             self.path_entry.delete(0, "end")
             self.path_entry.insert(0, d)
 
     def _browse_diff(self):
+        if self._testing_mode:
+            return
         f = filedialog.askopenfilename(
             filetypes=[("Diff/Patch", "*.diff *.patch"), ("All", "*.*")])
         if f:
@@ -977,6 +983,8 @@ class App(ctk.CTk):
 
     def _browse_diff_filter(self) -> None:
         """Open file dialog for diff filter file."""
+        if self._testing_mode:
+            return
         path = filedialog.askopenfilename(
             filetypes=[("Diff / Patch", "*.diff *.patch"), ("All files", "*.*")])
         if path:
@@ -993,6 +1001,8 @@ class App(ctk.CTk):
 
     def _open_file_selector(self):
         """Open the custom file selector window."""
+        if self._testing_mode:
+            return
         path = self.path_entry.get().strip()
         if not path:
             self._show_toast(t("gui.val.path_required"), error=True)
@@ -1315,8 +1325,9 @@ class App(ctk.CTk):
                 self.after(0, lambda: self.status_var.set(t("gui.val.cancelled")))
             except Exception as exc:
                 logger.error("Review failed: %s", exc)
-                self.after(0, lambda: messagebox.showerror(t("common.error"),
-                                                            str(exc)))
+                if not self._testing_mode:
+                    self.after(0, lambda: messagebox.showerror(t("common.error"),
+                                                                str(exc)))
             finally:
                 self._running = False
                 self.after(0, lambda: self._set_action_buttons_state("normal"))
@@ -2215,6 +2226,8 @@ class App(ctk.CTk):
 
     def _reset_defaults(self):
         """Reset all settings to their default values."""
+        if self._testing_mode:
+            return
         # Confirm with user
         import tkinter.messagebox as mb
         if not mb.askyesno("Reset Defaults", 
@@ -2254,7 +2267,8 @@ class App(ctk.CTk):
         # Sync to settings dropdown
         self._sync_review_to_menu()
         # Run silent health check for the new backend
-        self._auto_health_check()
+        if not self._testing_mode:
+            self._auto_health_check()
 
     def _auto_health_check(self):
         """Run health check silently; show dialog only if something fails."""
@@ -2403,6 +2417,9 @@ class App(ctk.CTk):
 
     def _show_health_dialog(self, report):
         """Show a dialog with health check results."""
+        if self._testing_mode:
+            logger.info("Health dialog suppressed in testing: %s", report.summary)
+            return
         win = ctk.CTkToplevel(self)
         win.title(t("health.dialog_title"))
         win.geometry("600x450")
@@ -2490,6 +2507,9 @@ class App(ctk.CTk):
 
     def _show_health_error(self, error_msg: str):
         """Show an error dialog for health check failures."""
+        if self._testing_mode:
+            logger.warning("Health check error (suppressed in testing): %s", error_msg)
+            return
         messagebox.showerror(t("health.dialog_title"), error_msg)
 
     def _refresh_current_backend_models_async(self):
