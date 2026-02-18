@@ -1,0 +1,50 @@
+AIコードレビューレポート
+============================================================
+
+プロジェクト       : D:/Development/SVN/SVNCheckout/sample_project
+レビュータイプ      : performance
+スコープ         : project
+バックエンド       : local
+スキャンファイル数    : 1
+品質スコア        : 95/100
+プログラマー       : p1
+レビュアー        : r1
+生成日時         : 2026-02-16 22:38:12
+言語           : ja
+
+問題サマリー
+----------------------------------------
+  問題総数: 1
+  Fixed       : 1
+
+重大度別
+----------------------------------------
+  Medium      : 1
+
+レビュータイプ別
+----------------------------------------
+  performance         : 1
+
+
+問題詳細
+============================================================
+
+--- 問題 1 ---
+  ファイル     : D:\Development\SVN\SVNCheckout\sample_project\calculator.py
+  タイプ      : performance
+  重大度      : medium
+  ステータス    : fixed
+  説明       : Review feedback for D:\Development\SVN\SVNCheckout\sample_project\calculator.py
+  スニペット    : """
+Calculator module with best practices violations.
+"""
+
+# BEST PRACTICES ISSUE: Magic numbers without constants
+def c
+  フィードバック  : このコードには、以下のようなベストプラクティス違反があります。
+
+1. マジックナンバーを使用している（定数を使用せず）：`calculate_tax()`関数では、0.175という値を直接乗算しています。これは、変更が必要な場合に柔軟性がありません。
+2. 名前が不適切である：`f()`関数の引数は`x`と`y`だけではわかりづらい。
+3. クラス名がPascalCaseに従っていない：`calc`クラスの名前は、Pythonの慣習に従って`Calc`とすべきです。
+4. 変数名が不適切である：`val`変数は、意味を明確にしないため、わかりづらいです。
+5. `doEverything()…

@@ -1142,6 +1142,11 @@ class App(ctk.CTk):
     def _start_review(self):
         if self._running:
             return
+        if self._testing_mode:
+            self._show_toast(
+                "Start Review is simulated in testing mode — "
+                "see Results tab for sample data", error=False)
+            return
         params = self._validate_inputs()
         if not params:
             return
@@ -1151,6 +1156,12 @@ class App(ctk.CTk):
 
     def _start_dry_run(self):
         if self._running:
+            return
+        if self._testing_mode:
+            self._show_toast(
+                "Dry Run is simulated in testing mode — "
+                "see Log tab for output", error=False)
+            self.tabs.set(t("gui.tab.log"))
             return
         params = self._validate_inputs(dry_run=True)
         if not params:
@@ -1514,7 +1525,8 @@ class App(ctk.CTk):
             self.finalize_btn.configure(state="disabled")
 
         # AI Fix mode button — enabled when there are pending issues
-        if any_pending and self._review_client:
+        # In testing mode, allow AI Fix mode even without a live review client
+        if any_pending and (self._review_client or self._testing_mode):
             self.ai_fix_mode_btn.configure(state="normal")
         else:
             self.ai_fix_mode_btn.configure(state="disabled")
@@ -1527,8 +1539,8 @@ class App(ctk.CTk):
         issue = rec["issue"]
         editor_cmd = config.get("gui", "editor_command", "").strip()
 
-        if editor_cmd:
-            # Open in external editor
+        if editor_cmd and not self._testing_mode:
+            # Open in external editor (skip in testing mode — files are fake)
             try:
                 subprocess.Popen([editor_cmd, issue.file_path])
             except Exception as exc:
@@ -1565,17 +1577,28 @@ class App(ctk.CTk):
                                font=ctk.CTkFont(family="Consolas", size=12))
         text.pack(fill="both", expand=True, padx=10, pady=4)
 
-        try:
-            with open(issue.file_path, "r", encoding="utf-8", errors="replace") as fh:
-                content = fh.read()
-            text.insert("0.0", content)
-        except Exception as exc:
-            text.insert("0.0", f"Error reading file: {exc}")
+        if self._testing_mode:
+            # In testing mode, show code snippet (files are fictitious)
+            text.insert("0.0", issue.code_snippet or "(no code snippet)")
+        else:
+            try:
+                with open(issue.file_path, "r", encoding="utf-8", errors="replace") as fh:
+                    content = fh.read()
+                text.insert("0.0", content)
+            except Exception as exc:
+                text.insert("0.0", f"Error reading file: {exc}")
 
         btn_frame = ctk.CTkFrame(win, fg_color="transparent")
         btn_frame.pack(pady=8)
 
         def _save():
+            if self._testing_mode:
+                # In testing mode, simulate a successful save
+                issue.status = "resolved"
+                self._refresh_status(idx)
+                self._show_toast(t("gui.results.editor_saved"))
+                win.destroy()
+                return
             try:
                 with open(issue.file_path, "w", encoding="utf-8") as fh:
                     fh.write(text.get("0.0", "end").rstrip("\n") + "\n")
@@ -1693,6 +1716,16 @@ class App(ctk.CTk):
             return
 
         if not self._review_client:
+            if self._testing_mode:
+                # Simulate AI Fix: generate fake fixes for selected issues
+                for idx, rec in selected:
+                    issue = rec["issue"]
+                    issue.status = "ai_fixed"
+                    issue.ai_fix_applied = f"# AI-generated fix for {issue.file_path}\n{issue.code_snippet}"
+                    self._refresh_status(idx)
+                self._exit_ai_fix_mode()
+                self._show_toast(f"Testing mode: {len(selected)} issues marked as AI-fixed")
+                return
             self._show_toast(t("gui.results.no_fix"), error=True)
             return
 
@@ -1896,17 +1929,24 @@ class App(ctk.CTk):
                     continue
                 rec = self._issue_cards[idx]
                 issue = rec["issue"]
-                try:
-                    with open(issue.file_path, "w", encoding="utf-8") as fh:
-                        fh.write(fix_text)
+                if self._testing_mode:
+                    # In testing mode, simulate apply without file I/O
                     issue.status = "resolved"
                     issue.ai_fix_applied = fix_text
                     applied += 1
-                    logger.info("Applied AI fix: %s", issue.file_path)
-                except Exception as exc:
-                    logger.error("Failed to apply fix to %s: %s",
-                                 issue.file_path, exc)
-                    self._show_toast(str(exc), error=True)
+                    logger.info("Applied AI fix (simulated): %s", issue.file_path)
+                else:
+                    try:
+                        with open(issue.file_path, "w", encoding="utf-8") as fh:
+                            fh.write(fix_text)
+                        issue.status = "resolved"
+                        issue.ai_fix_applied = fix_text
+                        applied += 1
+                        logger.info("Applied AI fix: %s", issue.file_path)
+                    except Exception as exc:
+                        logger.error("Failed to apply fix to %s: %s",
+                                     issue.file_path, exc)
+                        self._show_toast(str(exc), error=True)
                 self._refresh_status(idx)
             win.destroy()
             self._ai_fix_running = False  # Mark as not running before exiting mode
@@ -1940,11 +1980,19 @@ class App(ctk.CTk):
         import difflib
 
         # Read original content
-        try:
-            with open(file_path, "r", encoding="utf-8", errors="replace") as fh:
-                original_content = fh.read()
-        except Exception as exc:
-            original_content = f"(Error reading file: {exc})"
+        if self._testing_mode:
+            # In testing mode, use the code snippet from the issue
+            original_content = ""
+            for rec in self._issue_cards:
+                if rec["issue"].file_path == file_path:
+                    original_content = rec["issue"].code_snippet or ""
+                    break
+        else:
+            try:
+                with open(file_path, "r", encoding="utf-8", errors="replace") as fh:
+                    original_content = fh.read()
+            except Exception as exc:
+                original_content = f"(Error reading file: {exc})"
 
         win = ctk.CTkToplevel(self)
         win.title(t("gui.results.diff_preview_title", file=filename))
@@ -2044,7 +2092,18 @@ class App(ctk.CTk):
 
     def _review_changes(self):
         """Re-check resolved issues to verify fixes, then update the UI."""
-        if self._running or not self._review_client:
+        if self._running:
+            return
+        if not self._review_client:
+            if self._testing_mode:
+                # Simulate verification: mark all resolved → fixed
+                for rec in self._issue_cards:
+                    if rec["issue"].status == "resolved":
+                        rec["issue"].status = "fixed"
+                for i in range(len(self._issue_cards)):
+                    self._refresh_status(i)
+                self._show_toast("Testing mode: resolved issues marked as fixed")
+                return
             return
         self._running = True
         self._set_action_buttons_state("disabled")
@@ -2142,6 +2201,15 @@ class App(ctk.CTk):
         self.review_changes_btn.configure(state="disabled")
         self.finalize_btn.configure(state="disabled")
 
+        # In testing mode, reload sample data so the tester can continue
+        if self._testing_mode:
+            def _reload_fixtures():
+                from aicodereviewer.gui.test_fixtures import create_sample_issues
+                self._show_issues(create_sample_issues())
+                self.status_var.set(
+                    "Testing mode: sample data reloaded after finalize")
+            self.after(400, _reload_fixtures)
+
     # ══════════════════════════════════════════════════════════════════════
     #  TOAST NOTIFICATIONS
     # ══════════════════════════════════════════════════════════════════════
@@ -2227,6 +2295,9 @@ class App(ctk.CTk):
     def _reset_defaults(self):
         """Reset all settings to their default values."""
         if self._testing_mode:
+            self._show_toast(
+                "Reset Defaults is disabled in testing mode — "
+                "settings are isolated", error=False)
             return
         # Confirm with user
         import tkinter.messagebox as mb
@@ -2351,6 +2422,11 @@ class App(ctk.CTk):
 
     def _check_backend_health(self):
         """Run prerequisite health checks for the selected backend (manual)."""
+        if self._testing_mode:
+            self._show_toast(
+                "Check Setup is simulated in testing mode — "
+                "backend connectivity is not tested", error=False)
+            return
         if self._running:
             return
         backend_name = self.backend_var.get()

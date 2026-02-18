@@ -1,0 +1,35 @@
+{
+  "project_path": "D:/Development/SVN/SVNCheckout/sample_project",
+  "review_type": "performance",
+  "scope": "project",
+  "total_files_scanned": 1,
+  "issues_found": [
+    {
+      "file_path": "D:\\Development\\SVN\\SVNCheckout\\sample_project\\calculator.py",
+      "line_number": null,
+      "issue_type": "performance",
+      "severity": "medium",
+      "description": "Review feedback for D:\\Development\\SVN\\SVNCheckout\\sample_project\\calculator.py",
+      "code_snippet": "\"\"\"\nCalculator module with best practices violations.\n\"\"\"\n\n# BEST PRACTICES ISSUE: Magic numbers without constants\ndef calculate_tax(amount):\n    return amount * 0.175\n\n\n# BEST PRACTICES ISSUE: Poor n…",
+      "ai_feedback": "このコードには、以下のようなベストプラクティス違反があります。\n\n1. マジックナンバーを使用している（定数を使用せず）：`calculate_tax()`関数では、0.175という値を直接乗算しています。これは、変更が必要な場合に柔軟性がありません。\n2. 名前が不適切である：`f()`関数の引数は`x`と`y`だけではわかりづらい。\n3. クラス名がPascalCaseに従っていない：`calc`クラスの名前は、Pythonの慣習に従って`Calc`とすべきです。\n4. 変数名が不適切である：`val`変数は、意味を明確にしないため、わかりづらいです。\n5. `doEverything()`メソッドが多くのことを行っています：1つのメソッドで複数の処理を行うのは、可読性と保守性に悪影響を及ぼします。\n6. 重複コードがある：`calculate_area_rectangle()`メソッドと`calculate_area_triangle()`メソッドは、同じ処理を行っていますが、名前だけが違います。\n7. グローバル変数を使用している：`global_counter`変数は、関数の外から参照される可能性があります。これは、テストやデバッグが困難になります。\n8. パラメーターが多い：`create_user()`関数は、8つのパラメーターを取るため、可読性が悪くなります。\n9. エラー処理が不足している：`divide()`関数では、0除算によって例外が発生しない場合があります。これを明示的に処理していないため、プログラムの動作が不安定になる可能性があります。\n\n以下は、上記のベストプラクティス違反を修正したコードです。\n\n```python\n# 1. マジックナンバーを定数に置き換える\nTAX_RATE = 0.175\ndef calculate_tax(amount):\n    return amount * TAX_RATE\n\n# 2. 名前を変更する\ndef add(x, y):\n    return x + y\n\nclass Calc: # 3. クラス名をPascalCaseに変更\n    def __init__(self):\n        self._val = 0 # 4. 変数名を修正\n    \n    # 5. メソッドを分割する\n    def calculate_area(self, width, height):\n        if width < 0 or height < 0:\n            return 0\n        area = self._calculate_area(width, height)\n        print(f\"Area: {area}\")\n        return area\n    \n    def _calculate_area(self, width, height):\n        return width * height\n    \n    # 6. 重複コードを削除する\n    def calculate_rectangle_area(self, width, height):\n        if width < 0 or height < 0:\n            return 0\n        area = self._calculate_area(width, height)\n        print(f\"Area of rectangle: {area}\")\n        return area\n    \n    def calculate_triangle_area(self, base, height):\n        if base < 0 or height < 0:\n            return 0\n        area = self._calculate_area(base, height) / 2\n        print(f\"Area of triangle: {area}\")\n        return area\n    \n    # 7. グローバル変数を使用しない\n    def increment_counter(self):\n        self._global_counter += 1\n        return self._global_counter\n    \n    def __init__(self):\n        self._global_counter = 0\n    \n    # 8. パラメーターを減らす\n    def create_user(self, name, email, occupation):\n        user = {\n            'name': name,\n            'email': email,\n            'occupation': occupation\n        }\n        return user\n    \n    # 9. エラー処理を追加する\n    def divide(self, a, b):\n        if b == 0:\n            raise ValueError(\"Cannot divide by zero\")\n        return a / b\n```\n\nこのコードは、ベストプラクティスに従ったものです。マジックナンバーを定数に置き換え、変数名を修正しています。メソッドを分割して重複コードを削除し、グローバル変数の使用を避け、パラメーターの数を減らしてエラー処理を追加しました。 ",
+      "status": "fixed",
+      "resolution_reason": null,
+      "resolved_at": null,
+      "ai_fix_applied": "```python\nTAX_RATE = 0.175\ndef calculate_tax(amount):\n    return amount * TAX_RATE\n\ndef add(x, y):\n    return x + y\n\nclass Calc:\n    def __init__(self):\n        self._val = 0\n    \n    # 5. Methods split\n    def calculate_area(self, width, height):\n        if width < 0 or height < 0:\n            return 0\n        area = self._calculate_area(width, height)\n        print(f\"Area: {area}\")\n        return area\n    \n    def _calculate_area(self, width, height):\n        return width * height\n    \n    # 6. Remove duplicate code\n    def calculate_rectangle_area(self, width, height):\n        if width < 0 or height < 0:\n            return 0\n        area = self._calculate_area(width, height)\n        print(f\"Area of rectangle: {area}\")\n        return area\n    \n    def calculate_triangle_area(self, base, height):\n        if base < 0 or height < 0:\n            return 0\n        area = self._calculate_area(base, height) / 2\n        print(f\"Area of triangle: {area}\")\n        return area\n    \n    # 7. No global mutable state\n    def increment_counter(self):\n        self._global_counter += 1\n        return self._global_counter\n    \n    def __init__(self):\n        self._global_counter = 0\n    \n    # 8. Reduce parameters\n    def create_user(self, name, email, occupation):\n        user = {\n            'name': name,\n            'email': email,\n            'occupation': occupation\n        }\n        return user\n    \n    # 9. Add error handling\n    def divide(self, a, b):\n        if b == 0:\n            raise ValueError(\"Cannot divide by zero\")\n        return a / b\n```"
+    }
+  ],
+  "generated_at": "2026-02-16T22:38:12.409159",
+  "language": "ja",
+  "review_types": [
+    "performance"
+  ],
+  "diff_source": null,
+  "quality_score": 95,
+  "programmers": [
+    "p1"
+  ],
+  "reviewers": [
+    "r1"
+  ],
+  "backend": "local"
+}
