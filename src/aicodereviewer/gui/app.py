@@ -139,39 +139,66 @@ class FileSelector(ctk.CTkToplevel):
         self.geometry(f"+{x}+{y}")
     
     def _build_ui(self):
-        """Build the file selector UI."""
+        """Build the file selector UI shell, then scan for files in the background."""
         # Header with select all/deselect all
         header_frame = ctk.CTkFrame(self)
         header_frame.pack(fill="x", padx=10, pady=10)
-        
+
         self.select_all_var = ctk.BooleanVar(value=False)
         select_all_cb = ctk.CTkCheckBox(header_frame, text="Select All / Deselect All",
                                         variable=self.select_all_var,
                                         command=self._toggle_all)
         select_all_cb.pack(side="left", padx=5)
-        
-        # Scrollable file tree
-        file_frame = ctk.CTkScrollableFrame(self, label_text="Reviewable Files")
-        file_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
-        
-        # Scan for reviewable files
-        from aicodereviewer.scanner import scan_project
-        files = scan_project(str(self.project_path))
-        
-        if not files:
-            ctk.CTkLabel(file_frame, text="No reviewable files found in project").pack(pady=20)
-        else:
-            # Group files by directory for tree structure
-            self._build_file_tree(file_frame, files)
-        
-        # Bottom buttons
+
+        # Scrollable file tree (populated asynchronously)
+        self._file_frame = ctk.CTkScrollableFrame(self, label_text="Reviewable Files")
+        self._file_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
+        # Loading indicator shown while the background scan runs
+        self._loading_lbl = ctk.CTkLabel(
+            self._file_frame, text="⏳ Scanning project files…",
+            text_color=("gray40", "gray60"))
+        self._loading_lbl.pack(pady=20)
+
+        # Bottom buttons — OK disabled until scan completes
         btn_frame = ctk.CTkFrame(self)
         btn_frame.pack(fill="x", padx=10, pady=(0, 10))
-        
-        ctk.CTkButton(btn_frame, text="OK", width=100,
-                     command=self._on_ok).pack(side="right", padx=5)
+
+        self._ok_btn = ctk.CTkButton(btn_frame, text="OK", width=100,
+                                     state="disabled", command=self._on_ok)
+        self._ok_btn.pack(side="right", padx=5)
         ctk.CTkButton(btn_frame, text="Cancel", width=100,
-                     command=self._on_cancel).pack(side="right", padx=5)
+                      command=self._on_cancel).pack(side="right", padx=5)
+
+        # Run the potentially-slow scan off the main thread
+        threading.Thread(target=self._scan_files, daemon=True).start()
+
+    def _scan_files(self) -> None:
+        """Run scan_project in a background thread, then hand results to GUI thread."""
+        from aicodereviewer.scanner import scan_project
+        try:
+            files = scan_project(str(self.project_path))
+        except Exception:
+            files = []
+        # Schedule the tree population back on the Tk main thread
+        try:
+            self.after(0, lambda: self._populate_tree(files))
+        except Exception:
+            pass  # window may have been closed before scan finished
+
+    def _populate_tree(self, files: List[Path]) -> None:
+        """Called on the main thread once the background scan finishes."""
+        # Remove loading indicator
+        self._loading_lbl.destroy()
+
+        if not files:
+            ctk.CTkLabel(self._file_frame,
+                         text="No reviewable files found in project").pack(pady=20)
+        else:
+            self._build_file_tree(self._file_frame, files)
+
+        # Enable OK now that the tree is ready
+        self._ok_btn.configure(state="normal")
     
     def _build_file_tree(self, parent_frame: Any, files: List[Path]):
         """Build the file tree with checkboxes."""
