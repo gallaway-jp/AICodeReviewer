@@ -21,6 +21,7 @@ import threading
 import queue
 import webbrowser
 from pathlib import Path
+import tkinter as tk
 from tkinter import filedialog, messagebox
 from typing import Any, Dict, List, Optional
 
@@ -1746,14 +1747,19 @@ class App(ctk.CTk):
 
         if not self._review_client:
             if self._testing_mode:
-                # Simulate AI Fix: generate fake fixes for selected issues
+                # Simulate AI Fix: generate fake fix content and route through
+                # the normal batch-fix popup so the diff preview can be tested.
+                fake_results: dict[int, str | None] = {}
                 for idx, rec in selected:
                     issue = rec["issue"]
-                    issue.status = "ai_fixed"
-                    issue.ai_fix_applied = f"# AI-generated fix for {issue.file_path}\n{issue.code_snippet}"
-                    self._refresh_status(idx)
-                self._exit_ai_fix_mode()
-                self._show_toast(f"Testing mode: {len(selected)} issues marked as AI-fixed")
+                    original = issue.code_snippet or (
+                        f"# {Path(issue.file_path).name}\n# (no snippet available)\n"
+                    )
+                    fake_results[idx] = (
+                        f"# Simulated AI fix\n"
+                        f"# Issue: {issue.description[:80]}\n\n"
+                    ) + original
+                self._show_batch_fix_popup(selected, fake_results)
                 return
             self._show_toast(t("gui.results.no_fix"), error=True)
             return
@@ -2044,22 +2050,86 @@ class App(ctk.CTk):
             lineterm=""
         ))
 
-        # Diff text view with syntax highlighting
-        diff_text = ctk.CTkTextbox(
-            win, wrap="none",
-            font=ctk.CTkFont(family="Consolas", size=12),
-        )
-        diff_text.pack(fill="both", expand=True, padx=10, pady=4)
+        # Diff text view — use tk.Text (not CTkTextbox) so we can apply colour tags
+        is_dark = ctk.get_appearance_mode().lower() == "dark"
+        bg_color  = "#1e1e1e"  if is_dark else "#ffffff"
+        fg_color  = "#d4d4d4"  if is_dark else "#1e1e1e"
 
-        # Configure tags for diff coloring
-        # Note: CTkTextbox doesn't support tags directly, so we use a simple approach
+        diff_frame = ctk.CTkFrame(win, fg_color=bg_color)
+        diff_frame.pack(fill="both", expand=True, padx=10, pady=4)
+        diff_frame.grid_rowconfigure(0, weight=1)
+        diff_frame.grid_columnconfigure(0, weight=1)
+
+        diff_text = tk.Text(
+            diff_frame, wrap="none",
+            font=("Consolas", 12),
+            bg=bg_color, fg=fg_color,
+            insertbackground=fg_color,
+            selectbackground="#264f78",
+            relief="flat",
+            borderwidth=0,
+        )
+        diff_text.grid(row=0, column=0, sticky="nsew")
+
+        vsb = ctk.CTkScrollbar(diff_frame, orientation="vertical",   command=diff_text.yview)
+        hsb = ctk.CTkScrollbar(diff_frame, orientation="horizontal", command=diff_text.xview)
+        vsb.grid(row=0, column=1, sticky="ns")
+        hsb.grid(row=1, column=0, sticky="ew")
+
+        # Auto-hide: remove the bar when all content fits; restore it when it doesn't.
+        # grid_remove() preserves grid options so grid() (no args) restores the slot.
+        def _yscroll(first, last):
+            if float(first) <= 0.0 and float(last) >= 1.0:
+                vsb.grid_remove()
+            else:
+                vsb.grid()
+            vsb.set(first, last)
+
+        def _xscroll(first, last):
+            if float(first) <= 0.0 and float(last) >= 1.0:
+                hsb.grid_remove()
+            else:
+                hsb.grid()
+            hsb.set(first, last)
+
+        diff_text.configure(yscrollcommand=_yscroll, xscrollcommand=_xscroll)
+
+        # Colour tags: added lines (green), removed lines (red), hunk headers (cyan), file headers (grey)
+        diff_text.tag_configure(
+            "add",
+            background="#1e4620" if is_dark else "#ccffcc",
+            foreground="#57d15b" if is_dark else "#006400",
+        )
+        diff_text.tag_configure(
+            "remove",
+            background="#4b1010" if is_dark else "#ffcccc",
+            foreground="#ff6b6b" if is_dark else "#8b0000",
+        )
+        diff_text.tag_configure(
+            "hunk",
+            foreground="#4ec9b0" if is_dark else "#005f5f",
+        )
+        diff_text.tag_configure(
+            "header",
+            background="#2c2c3c" if is_dark else "#e8e8f0",
+            foreground="#9ba8bf" if is_dark else "#555577",
+        )
+
         if diff:
-            diff_content = ""
             for line in diff:
-                diff_content += line + ("\n" if not line.endswith("\n") else "")
-            diff_text.insert("0.0", diff_content)
+                text = line + ("\n" if not line.endswith("\n") else "")
+                if line.startswith("+") and not line.startswith("+++"):
+                    diff_text.insert("end", text, "add")
+                elif line.startswith("-") and not line.startswith("---"):
+                    diff_text.insert("end", text, "remove")
+                elif line.startswith("@@"):
+                    diff_text.insert("end", text, "hunk")
+                elif line.startswith("---") or line.startswith("+++"):
+                    diff_text.insert("end", text, "header")
+                else:
+                    diff_text.insert("end", text)
         else:
-            diff_text.insert("0.0", t("gui.results.no_changes"))
+            diff_text.insert("end", t("gui.results.no_changes"))
 
         diff_text.configure(state="disabled")
 
