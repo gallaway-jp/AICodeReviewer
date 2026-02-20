@@ -687,6 +687,9 @@ class App(ctk.CTk):
         # Tracking state for issue cards
         self._issue_cards: List[IssueCard] = []
 
+        # Active toast frames (bottom-most first); used to stack without overlap.
+        self._active_toasts: List[ctk.CTkFrame] = []
+
     # ══════════════════════════════════════════════════════════════════════
     #  SETTINGS TAB  – sectioned with tooltips
     # ══════════════════════════════════════════════════════════════════════
@@ -2347,6 +2350,22 @@ class App(ctk.CTk):
     #  TOAST NOTIFICATIONS
     # ══════════════════════════════════════════════════════════════════════
 
+    # Approximate height of one toast row in pixels (padding + 12 pt font).
+    _TOAST_SLOT_PX = 52
+
+    def _restack_toasts(self) -> None:
+        """Re-position every active toast so they stack without overlapping."""
+        win_h = self.winfo_height() or self.HEIGHT
+        for i, frame in enumerate(self._active_toasts):
+            # Stack upward: bottom toast at rely≈0.96, next one above it, etc.
+            offset_px = i * self._TOAST_SLOT_PX
+            rely = 1.0 - (offset_px + 24) / win_h
+            try:
+                frame.place(relx=0.5, rely=rely, anchor="s")
+                frame.lift()
+            except Exception:
+                pass
+
     def _show_toast(self, message: str, *, duration: int = 6000,
                     error: bool = False):
         """Show a transient toast notification at the bottom of the window."""
@@ -2355,8 +2374,8 @@ class App(ctk.CTk):
 
         toast = ctk.CTkFrame(self, corner_radius=8,
                               fg_color=bg, border_width=0)
-        toast.place(relx=0.5, rely=0.96, anchor="s")
-        toast.lift()
+        self._active_toasts.append(toast)
+        self._restack_toasts()
 
         lbl = ctk.CTkLabel(toast, text=message, text_color=fg,
                             font=ctk.CTkFont(size=12),
@@ -2368,6 +2387,11 @@ class App(ctk.CTk):
                 toast.destroy()
             except Exception:
                 pass
+            try:
+                self._active_toasts.remove(toast)
+            except ValueError:
+                pass
+            self._restack_toasts()
 
         self.after(duration, _dismiss)
 
