@@ -2372,82 +2372,7 @@ class App(ctk.CTk):
 
     def _auto_health_check(self):
         """Run health check silently; show dialog only if something fails."""
-        if self._running:
-            return
-        backend_name = self.backend_var.get()
-        
-        # If already checking this backend, don't start another
-        if self._health_check_backend == backend_name:
-            return
-        
-        # Cancel any previous timeout timer
-        if self._health_check_timer:
-            self._health_check_timer.cancel()
-            self._health_check_timer = None
-        
-        self._health_check_backend = backend_name
-        self._set_action_buttons_state("disabled")
-        self.cancel_btn.configure(state="normal")
-        self.status_var.set(t("health.checking", backend=backend_name))
-        
-        # Start 60-second timeout timer (includes connection test)
-        def _on_timeout():
-            if self._health_check_backend == backend_name:
-                self._health_check_backend = None
-                self._health_check_timer = None
-                self.after(0, lambda: self._show_health_error(
-                    t("health.timeout", backend=backend_name)))
-                self.after(0, lambda: self._set_action_buttons_state("normal"))
-                self.after(0, lambda: self.cancel_btn.configure(state="disabled"))
-                self.after(0, lambda: self.status_var.set(t("common.ready")))
-        
-        self._health_check_timer = threading.Timer(60, _on_timeout)
-        self._health_check_timer.daemon = True
-        self._health_check_timer.start()
-
-        def _worker():
-            try:
-                report = check_backend(backend_name)
-                
-                # Only process if still checking this backend
-                if self._health_check_backend == backend_name:
-                    # Cancel timeout timer
-                    if self._health_check_timer:
-                        self._health_check_timer.cancel()
-                        self._health_check_timer = None
-                    
-                    self._health_check_backend = None
-                    
-                    if report.ready:
-                        self.after(0, lambda: self.status_var.set(
-                            t("health.auto_ok", backend=backend_name)))
-                    else:
-                        self.after(0, lambda: self._show_health_dialog(report))
-                        self.after(0, lambda: self.status_var.set(t("common.ready")))
-
-                    # Refresh Copilot model combobox with discovered models
-                    if backend_name == "copilot":
-                        self.after(0, self._refresh_copilot_model_list)
-                    elif backend_name == "bedrock":
-                        self.after(0, self._refresh_bedrock_model_list)
-                    elif backend_name == "local":
-                        self.after(0, self._refresh_local_model_list)
-                    
-                    self.after(0, lambda: self._set_action_buttons_state("normal"))
-                    self.after(0, lambda: self.cancel_btn.configure(state="disabled"))
-            except Exception as exc:
-                if self._health_check_backend == backend_name:
-                    logger.error("Health check failed: %s", exc)
-                    if self._health_check_timer:
-                        self._health_check_timer.cancel()
-                        self._health_check_timer = None
-                    self._health_check_backend = None
-                    self.after(0, lambda: self._show_health_error(str(exc)))
-                    self.after(0, lambda: self._set_action_buttons_state("normal"))
-                    self.after(0, lambda: self.cancel_btn.configure(state="disabled"))
-                    self.after(0, lambda: self.status_var.set(t("common.ready")))
-
-        threading.Thread(target=_worker, daemon=True).start()
+        self._run_health_check(self.backend_var.get(), always_show_dialog=False)
 
     def _check_backend_health(self):
         """Run prerequisite health checks for the selected backend (manual)."""
@@ -2456,24 +2381,38 @@ class App(ctk.CTk):
                 "Check Setup is simulated in testing mode — "
                 "backend connectivity is not tested", error=False)
             return
+        self._run_health_check(self.backend_var.get(), always_show_dialog=True)
+
+    def _run_health_check(self, backend_name: str, *, always_show_dialog: bool):
+        """Shared implementation for auto and manual backend health checks.
+
+        Parameters
+        ----------
+        backend_name:
+            The backend identifier to check (e.g. ``"copilot"``, ``"bedrock"``).
+        always_show_dialog:
+            When *True* (manual check), the results dialog is always shown.
+            When *False* (auto check), the dialog is shown only on failure;
+            a silent status-bar message is used on success, and the model list
+            is refreshed directly in the worker thread callback.
+        """
         if self._running:
             return
-        backend_name = self.backend_var.get()
-        
+
         # If already checking this backend, don't start another
         if self._health_check_backend == backend_name:
             return
-        
+
         # Cancel any previous timeout timer
         if self._health_check_timer:
             self._health_check_timer.cancel()
             self._health_check_timer = None
-        
+
         self._health_check_backend = backend_name
         self._set_action_buttons_state("disabled")
         self.cancel_btn.configure(state="normal")
         self.status_var.set(t("health.checking", backend=backend_name))
-        
+
         # Start 60-second timeout timer (includes connection test)
         def _on_timeout():
             if self._health_check_backend == backend_name:
@@ -2484,7 +2423,7 @@ class App(ctk.CTk):
                 self.after(0, lambda: self._set_action_buttons_state("normal"))
                 self.after(0, lambda: self.cancel_btn.configure(state="disabled"))
                 self.after(0, lambda: self.status_var.set(t("common.ready")))
-        
+
         self._health_check_timer = threading.Timer(60, _on_timeout)
         self._health_check_timer.daemon = True
         self._health_check_timer.start()
@@ -2492,20 +2431,39 @@ class App(ctk.CTk):
         def _worker():
             try:
                 report = check_backend(backend_name)
-                
+
                 # Only process if still checking this backend
                 if self._health_check_backend == backend_name:
                     # Cancel timeout timer
                     if self._health_check_timer:
                         self._health_check_timer.cancel()
                         self._health_check_timer = None
-                    
+
                     self._health_check_backend = None
-                    
-                    self.after(0, lambda: self._show_health_dialog(report))
+
+                    if always_show_dialog:
+                        # Manual check: always show the full results dialog.
+                        # Model list refresh is handled inside _show_health_dialog.
+                        self.after(0, lambda: self._show_health_dialog(report))
+                        self.after(0, lambda: self.status_var.set(t("common.ready")))
+                    else:
+                        # Auto check: silent success; dialog only on failure.
+                        if report.ready:
+                            self.after(0, lambda: self.status_var.set(
+                                t("health.auto_ok", backend=backend_name)))
+                            # Refresh model combobox with discovered models
+                            if backend_name == "copilot":
+                                self.after(0, self._refresh_copilot_model_list)
+                            elif backend_name == "bedrock":
+                                self.after(0, self._refresh_bedrock_model_list)
+                            elif backend_name == "local":
+                                self.after(0, self._refresh_local_model_list)
+                        else:
+                            self.after(0, lambda: self._show_health_dialog(report))
+                            self.after(0, lambda: self.status_var.set(t("common.ready")))
+
                     self.after(0, lambda: self._set_action_buttons_state("normal"))
                     self.after(0, lambda: self.cancel_btn.configure(state="disabled"))
-                    self.after(0, lambda: self.status_var.set(t("common.ready")))
             except Exception as exc:
                 if self._health_check_backend == backend_name:
                     logger.error("Health check failed: %s", exc)
