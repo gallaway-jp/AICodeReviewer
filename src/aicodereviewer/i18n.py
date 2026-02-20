@@ -482,6 +482,8 @@ _EN: dict[str, str] = {
     "gui.results.finalized":          "Report finalized and saved.",
     "gui.results.editor_title":       "Edit – {file}",
     "gui.results.editor_saved":       "File saved.",
+    "gui.results.editor_discard_title": "Discard changes?",
+    "gui.results.editor_discard_msg":   "You have unsaved changes. Discard them?",
     "gui.results.editor_save":        "Save & Close",
 
     # ── AI Fix mode ────────────────────────────────────────────────────────
@@ -924,6 +926,8 @@ _JA: dict[str, str] = {
     "gui.results.finalized":          "レポートを最終化して保存しました。",
     "gui.results.editor_title":       "編集 – {file}",
     "gui.results.editor_saved":       "ファイルを保存しました。",
+    "gui.results.editor_discard_title": "変更を破棄しますか？",
+    "gui.results.editor_discard_msg":   "未保存の変更があります。破棄しますか？",
     "gui.results.editor_save":        "保存して閉じる",
 
     # ── AI Fix mode ────────────────────────────────────────────────────────

@@ -281,6 +281,76 @@ class FileSelector(ctk.CTkToplevel):
 
 # ═══════════════════════════════════════════════════════════════════════════
 
+class ConfirmDialog(ctk.CTkToplevel):
+    """Modal Yes/No confirmation dialog that matches the CTk theme.
+
+    Usage::
+
+        dlg = ConfirmDialog(parent, title="...", message="...")
+        if dlg.confirmed:
+            ...
+    """
+
+    def __init__(self, parent: ctk.CTk, *, title: str, message: str) -> None:
+        super().__init__(parent)
+        self.title(title)
+        self.resizable(False, False)
+        self.grab_set()
+        self.confirmed: bool = False
+
+        self.grid_columnconfigure(0, weight=1)
+
+        msg_lbl = ctk.CTkLabel(
+            self,
+            text=message,
+            wraplength=340,
+            justify="left",
+            font=ctk.CTkFont(size=13),
+        )
+        msg_lbl.grid(row=0, column=0, padx=24, pady=(24, 16), sticky="w")
+
+        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+        btn_frame.grid(row=1, column=0, padx=24, pady=(0, 20), sticky="e")
+
+        ctk.CTkButton(
+            btn_frame,
+            text=t("common.yes"),
+            width=90,
+            command=self._yes,
+        ).grid(row=0, column=0, padx=(0, 8))
+
+        ctk.CTkButton(
+            btn_frame,
+            text=t("common.no"),
+            width=90,
+            fg_color=("gray75", "gray30"),
+            hover_color=("gray65", "gray40"),
+            text_color=("gray10", "gray90"),
+            command=self._no,
+        ).grid(row=0, column=1)
+
+        # Centre over parent
+        self.update_idletasks()
+        pw = parent.winfo_width()
+        ph = parent.winfo_height()
+        px = parent.winfo_rootx()
+        py = parent.winfo_rooty()
+        dw = self.winfo_width()
+        dh = self.winfo_height()
+        self.geometry(f"+{px + (pw - dw) // 2}+{py + (ph - dh) // 2}")
+
+        self.protocol("WM_DELETE_WINDOW", self._no)
+        self.wait_window()
+
+    def _yes(self) -> None:
+        self.confirmed = True
+        self.destroy()
+
+    def _no(self) -> None:
+        self.confirmed = False
+        self.destroy()
+
+
 class IssueCard(TypedDict):
     """Type-safe record stored in ``App._issue_cards``."""
     issue: "ReviewIssue"
@@ -1653,6 +1723,9 @@ class App(ctk.CTk):
             except Exception as exc:
                 text.insert("0.0", f"Error reading file: {exc}")
 
+        # Snapshot content right after load so Cancel can detect changes.
+        original_content = text.get("0.0", "end")
+
         btn_frame = ctk.CTkFrame(win, fg_color="transparent")
         btn_frame.pack(pady=8)
 
@@ -1677,8 +1750,21 @@ class App(ctk.CTk):
         ctk.CTkButton(btn_frame, text=t("gui.results.editor_save"),
                        fg_color="green", command=_save).grid(
             row=0, column=0, padx=6)
+
+        def _cancel():
+            if text.get("0.0", "end") != original_content:
+                if not ConfirmDialog(
+                    win,
+                    title=t("gui.results.editor_discard_title"),
+                    message=t("gui.results.editor_discard_msg"),
+                ).confirmed:
+                    return
+            win.destroy()
+
+        win.protocol("WM_DELETE_WINDOW", _cancel)
+
         ctk.CTkButton(btn_frame, text=t("common.cancel"),
-                       command=win.destroy).grid(row=0, column=1, padx=6)
+                       command=_cancel).grid(row=0, column=1, padx=6)
 
     # ── Skip: inline reason toggle ─────────────────────────────────────────
 
