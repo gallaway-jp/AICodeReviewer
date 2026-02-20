@@ -24,7 +24,7 @@ import webbrowser
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TypedDict
 
 import customtkinter as ctk  # type: ignore[import-untyped]
 
@@ -280,6 +280,21 @@ class FileSelector(ctk.CTkToplevel):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+
+class IssueCard(TypedDict):
+    """Type-safe record stored in ``App._issue_cards``."""
+    issue: "ReviewIssue"
+    card: Any
+    status_lbl: Any
+    view_btn: Any
+    resolve_btn: Any
+    skip_btn: Any
+    fix_checkbox: Any
+    fix_check_var: Any
+    skip_frame: Any
+    skip_entry: Any
+    color: str
+
 
 class App(ctk.CTk):
     """Root window of the AICodeReviewer GUI."""
@@ -656,7 +671,7 @@ class App(ctk.CTk):
         self._ai_fix_running = False  # Track if batch AI fix is currently running
 
         # Tracking state for issue cards
-        self._issue_cards: List[Dict[str, Any]] = []  # {issue, card, status_lbl, skip_frame, ...}
+        self._issue_cards: List[IssueCard] = []
 
     # ══════════════════════════════════════════════════════════════════════
     #  SETTINGS TAB  – sectioned with tooltips
@@ -1506,7 +1521,7 @@ class App(ctk.CTk):
         skip_frame.grid_columnconfigure(0, weight=1)
         # Not gridded yet — toggled by _toggle_skip
 
-        self._issue_cards.append(dict(
+        self._issue_cards.append(IssueCard(
             issue=issue,
             card=card,
             status_lbl=status_lbl,
