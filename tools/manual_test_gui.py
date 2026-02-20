@@ -55,9 +55,6 @@ def main() -> None:
     from aicodereviewer.gui.app import App
     app = App(testing_mode=True)
 
-    # Mark as manual-test so the app can enable extra demo behaviour
-    app._manual_test_mode = True  # type: ignore[attr-defined]
-
     # ── 3. Inject sample issues into the Results tab ───────────────────────
     from aicodereviewer.gui.test_fixtures import create_sample_issues
     sample_issues = create_sample_issues()

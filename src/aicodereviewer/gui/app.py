@@ -1507,7 +1507,6 @@ class App(ctk.CTk):
     def _update_bottom_buttons(self):
         """Enable/disable Review Changes and Finalize based on issue states."""
         all_done = all(c["issue"].status != "pending" for c in self._issue_cards)
-        _all_skipped = all(c["issue"].status == "skipped" for c in self._issue_cards)
         any_to_check = any(c["issue"].status in ("resolved",) for c in self._issue_cards)
         any_pending = any(c["issue"].status == "pending" for c in self._issue_cards)
 
