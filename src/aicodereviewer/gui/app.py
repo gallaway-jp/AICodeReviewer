@@ -2314,7 +2314,7 @@ class App(ctk.CTk):
         
         # Reload the settings tab with default values
         # Destroy and rebuild the settings tab
-        for widget in self.tabs.tab("Settings").winfo_children():
+        for widget in self.tabs.tab(t("gui.tab.settings")).winfo_children():
             widget.destroy()
         
         self._build_settings_tab()
