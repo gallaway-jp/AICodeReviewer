@@ -1696,10 +1696,15 @@ class App(ctk.CTk):
             # Restore status label to current state
             s_key, s_color = self._status_display(rec["issue"], rec["color"])
             rec["status_lbl"].configure(text=t(s_key), text_color=s_color)
+            # View is always restored regardless of status
+            rec["view_btn"].grid(row=2, column=2, padx=2, pady=(0, 4))
+            # Resolve / Skip only make sense while an issue is still pending
             if rec["issue"].status == "pending":
-                rec["view_btn"].grid(row=2, column=2, padx=2, pady=(0, 4))
                 rec["resolve_btn"].grid(row=2, column=4, padx=2, pady=(0, 4))
                 rec["skip_btn"].grid(row=2, column=5, padx=2, pady=(0, 4))
+            else:
+                rec["resolve_btn"].grid_remove()
+                rec["skip_btn"].grid_remove()
 
         self._update_bottom_buttons()
 
