@@ -2744,12 +2744,21 @@ class App(ctk.CTk):
     # ══════════════════════════════════════════════════════════════════════
 
     def _install_log_handler(self):
-        handler = QueueLogHandler(self._log_queue)
-        handler.setFormatter(logging.Formatter("%(message)s"))
-        logging.getLogger().addHandler(handler)
+        self._queue_handler = QueueLogHandler(self._log_queue)
+        self._queue_handler.setFormatter(logging.Formatter("%(message)s"))
+        logging.getLogger().addHandler(self._queue_handler)
+
+    def destroy(self):
+        """Clean up log handler and stop poll loop before destroying the window."""
+        self._log_polling = False
+        if hasattr(self, "_queue_handler"):
+            logging.getLogger().removeHandler(self._queue_handler)
+        super().destroy()
 
     def _poll_log_queue(self):
         """Drain the log queue into the log textbox."""
+        if not getattr(self, "_log_polling", True):
+            return
         batch = []
         while True:
             try:
