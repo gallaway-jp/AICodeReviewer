@@ -1072,9 +1072,13 @@ class App(ctk.CTk):
                                        font=ctk.CTkFont(family="Consolas", size=12))
         self.log_box.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
 
-        clear_btn = ctk.CTkButton(tab, text=t("gui.log.clear"), width=100,
-                                   command=self._clear_log)
-        clear_btn.grid(row=1, column=0, pady=4)
+        btn_frame = ctk.CTkFrame(tab, fg_color="transparent")
+        btn_frame.grid(row=1, column=0, pady=4)
+
+        ctk.CTkButton(btn_frame, text=t("gui.log.clear"), width=110,
+                      command=self._clear_log).grid(row=0, column=0, padx=6)
+        ctk.CTkButton(btn_frame, text=t("gui.log.save"), width=110,
+                      command=self._save_log).grid(row=0, column=1, padx=6)
 
     # ══════════════════════════════════════════════════════════════════════
     #  ACTIONS – file browsing, validation, review execution
@@ -2984,6 +2988,23 @@ class App(ctk.CTk):
         self.log_box.configure(state="normal")
         self.log_box.delete("0.0", "end")
         self.log_box.configure(state="disabled")
+
+    def _save_log(self):
+        """Save the current log contents to a user-chosen text file."""
+        path = filedialog.asksaveasfilename(
+            defaultextension=".txt",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+            title=t("gui.log.save_dialog_title"),
+        )
+        if not path:
+            return
+        try:
+            content = self.log_box.get("0.0", "end")
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(content)
+            self._show_toast(t("gui.log.saved", path=Path(path).name))
+        except Exception as exc:
+            self._show_toast(str(exc), error=True)
 
 
 # ── public launcher ────────────────────────────────────────────────────────

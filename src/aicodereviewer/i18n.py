@@ -163,6 +163,9 @@ _EN: dict[str, str] = {
 
     # ── GUI Log tab ────────────────────────────────────────────────────────
     "gui.log.clear":                  "Clear Log",
+    "gui.log.save":                   "Save Log\u2026",
+    "gui.log.save_dialog_title":      "Save log to file",
+    "gui.log.saved":                  "Log saved to {path}",
 
     # ── GUI Connection test ────────────────────────────────────────────────
     "gui.conn.title":                 "Connection Test",
@@ -609,6 +612,9 @@ _JA: dict[str, str] = {
 
     # ── GUI Log tab ────────────────────────────────────────────────────────
     "gui.log.clear":                  "ログをクリア",
+    "gui.log.save":                   "ログを保存…",
+    "gui.log.save_dialog_title":      "ログをファイルに保存",
+    "gui.log.saved":                  "ログを {path} に保存しました",
 
     # ── GUI Connection test ────────────────────────────────────────────────
     "gui.conn.title":                 "接続テスト",
