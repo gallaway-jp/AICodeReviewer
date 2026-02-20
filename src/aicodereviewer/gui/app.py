@@ -98,6 +98,7 @@ class _Tooltip:
         self._tipwindow: Any = None
         widget.bind("<Enter>", self._show)
         widget.bind("<Leave>", self._hide)
+        widget.bind("<Destroy>", self._hide)
 
     def _show(self, event: Any = None):
         if self._tipwindow:
@@ -118,7 +119,10 @@ class _Tooltip:
 
     def _hide(self, event: Any = None):
         if self._tipwindow:
-            self._tipwindow.destroy()
+            try:
+                self._tipwindow.destroy()
+            except Exception:
+                pass
             self._tipwindow = None
 
 
