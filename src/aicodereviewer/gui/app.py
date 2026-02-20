@@ -1492,6 +1492,7 @@ class App(ctk.CTk):
             "ignored":    ("gui.results.ignored", "gray50"),
             "skipped":    ("gui.results.skipped", "gray50"),
             "fixed":      ("gui.results.fixed", "green"),
+            "ai_fixed":   ("gui.results.ai_fixed", "green"),
             "fix_failed": ("gui.results.fix_failed", "#dc2626"),
         }
         return m.get(issue.status, ("gui.results.pending", default_color))
