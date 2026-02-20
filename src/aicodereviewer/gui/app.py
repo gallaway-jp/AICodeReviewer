@@ -2446,13 +2446,13 @@ class App(ctk.CTk):
     # ══════════════════════════════════════════════════════════════════════
 
     def _on_backend_changed(self, *_args: object):
-        """Called when the backend radio button changes — save and re-check."""
+        """Called when the backend radio button changes — update in-memory config and re-check.
+
+        The disk write is intentionally deferred to the "Save Settings" button so that
+        switching backends on the Review tab cannot overwrite unsaved Settings-tab edits.
+        """
         backend_name = self.backend_var.get()
         config.set_value("backend", "type", backend_name)
-        try:
-            config.save()
-        except Exception:
-            pass
         # Sync to settings dropdown
         self._sync_review_to_menu()
         # Run silent health check for the new backend
