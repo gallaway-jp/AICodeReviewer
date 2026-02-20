@@ -14,6 +14,7 @@ Provides full feature parity with the CLI:
 - Localised UI (English / Japanese) with theme support
 """
 import configparser
+import difflib
 import logging
 import re
 import subprocess
@@ -29,11 +30,22 @@ import customtkinter as ctk  # type: ignore[import-untyped]
 
 from aicodereviewer.backends import create_backend
 from aicodereviewer.backends.base import REVIEW_TYPE_KEYS, REVIEW_TYPE_META
-from aicodereviewer.backends.health import check_backend
+from aicodereviewer.backends.health import (
+    check_backend,
+    get_copilot_models,
+    get_bedrock_models,
+    get_local_models,
+)
 from aicodereviewer.config import config
 from aicodereviewer.auth import get_system_language
-from aicodereviewer.scanner import scan_project_with_scope
+from aicodereviewer.scanner import (
+    scan_project_with_scope,
+    scan_project,
+    parse_diff_file,
+    get_diff_from_commits,
+)
 from aicodereviewer.orchestration import AppRunner
+from aicodereviewer.reviewer import verify_issue_resolved
 from aicodereviewer.models import ReviewIssue
 from aicodereviewer.i18n import t, set_locale
 
@@ -90,7 +102,6 @@ class _Tooltip:
     def _show(self, event: Any = None):
         if self._tipwindow:
             return
-        import tkinter as tk
         x = self.widget.winfo_rootx() + 20
         y = self.widget.winfo_rooty() + self.widget.winfo_height() + 2
         tw = tk.Toplevel(self.widget)
@@ -176,7 +187,6 @@ class FileSelector(ctk.CTkToplevel):
 
     def _scan_files(self) -> None:
         """Run scan_project in a background thread, then hand results to GUI thread."""
-        from aicodereviewer.scanner import scan_project
         try:
             files = scan_project(str(self.project_path))
         except Exception:
@@ -1254,8 +1264,6 @@ class App(ctk.CTk):
                     commits: Optional[str] = None,
                 ) -> List[Any]:
                     """Scan with optional file selection and diff intersection."""
-                    from aicodereviewer.scanner import parse_diff_file, get_diff_from_commits
-                    
                     if scope == "diff":
                         # Pure diff mode — use default scanner
                         return scan_project_with_scope(directory, scope, diff_file, commits)
@@ -2012,8 +2020,6 @@ class App(ctk.CTk):
 
     def _show_diff_preview(self, file_path: str, new_content: str, filename: str):
         """Show a side-by-side diff preview of the proposed fix."""
-        import difflib
-
         # Read original content
         if self._testing_mode:
             # In testing mode, use the code snippet from the issue
@@ -2220,7 +2226,6 @@ class App(ctk.CTk):
                      len(resolved_cards))
 
         def _worker():
-            from aicodereviewer.reviewer import verify_issue_resolved
             for i, rec in resolved_cards:
                 issue = rec["issue"]
                 try:
@@ -2399,8 +2404,7 @@ class App(ctk.CTk):
                 "settings are isolated", error=False)
             return
         # Confirm with user
-        import tkinter.messagebox as mb
-        if not mb.askyesno("Reset Defaults", 
+        if not messagebox.askyesno("Reset Defaults", 
                           "This will reset all settings to their default values. Continue?"):
             return
         
@@ -2657,7 +2661,6 @@ class App(ctk.CTk):
 
     def _refresh_copilot_model_list(self):
         """Update the Copilot model combobox with dynamically discovered models (GUI thread)."""
-        from aicodereviewer.backends.health import get_copilot_models
         models = get_copilot_models()
         if models and hasattr(self, "_copilot_model_combo"):
             current = self._copilot_model_combo.get()
@@ -2672,7 +2675,6 @@ class App(ctk.CTk):
 
         def _worker():
             try:
-                from aicodereviewer.backends.health import get_copilot_models
                 models = get_copilot_models()
                 self.after(0, lambda: self._apply_copilot_models(models))
             finally:
@@ -2689,7 +2691,6 @@ class App(ctk.CTk):
 
     def _refresh_bedrock_model_list(self):
         """Update the Bedrock model combobox with dynamically discovered models (GUI thread)."""
-        from aicodereviewer.backends.health import get_bedrock_models
         models = get_bedrock_models()
         if models and hasattr(self, "_bedrock_model_combo"):
             current = self._bedrock_model_combo.get()
@@ -2705,7 +2706,6 @@ class App(ctk.CTk):
 
         def _worker():
             try:
-                from aicodereviewer.backends.health import get_bedrock_models
                 models = get_bedrock_models()
                 self.after(0, lambda: self._apply_bedrock_models(models))
             finally:
@@ -2723,8 +2723,6 @@ class App(ctk.CTk):
 
     def _refresh_local_model_list(self):
         """Update the Local LLM model combobox with dynamically discovered models (GUI thread)."""
-        from aicodereviewer.backends.health import get_local_models
-        from aicodereviewer.config import config
         api_url = config.get("local_llm", "api_url", "http://localhost:1234")
         api_type = config.get("local_llm", "api_type", "lmstudio")
         models = get_local_models(api_url, api_type)
@@ -2742,8 +2740,6 @@ class App(ctk.CTk):
 
         def _worker():
             try:
-                from aicodereviewer.backends.health import get_local_models
-                from aicodereviewer.config import config
                 api_url = config.get("local_llm", "api_url", "http://localhost:1234")
                 api_type = config.get("local_llm", "api_type", "lmstudio")
                 models = get_local_models(api_url, api_type)
