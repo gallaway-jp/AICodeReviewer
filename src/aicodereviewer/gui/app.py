@@ -296,6 +296,20 @@ class IssueCard(TypedDict):
     color: str
 
 
+# Fields in _setting_entries that must be numeric.
+# Maps (section, key) → (human label, expected type, min_value).
+_NUMERIC_SETTINGS: dict[tuple[str, str], tuple[str, type, float]] = {
+    ("kiro",        "timeout"):                    ("Kiro timeout",             int,   1),
+    ("copilot",     "timeout"):                    ("Copilot timeout",          int,   1),
+    ("local_llm",   "timeout"):                    ("Local LLM timeout",        int,   1),
+    ("local_llm",   "max_tokens"):                 ("Max tokens",               int,   1),
+    ("performance", "max_requests_per_minute"):    ("Max requests/min",         int,   1),
+    ("performance", "min_request_interval_seconds"): ("Min request interval",  float, 0),
+    ("performance", "max_file_size_mb"):            ("Max file size (MB)",       float, 0),
+    ("processing",  "batch_size"):                  ("Batch size",              int,   1),
+}
+
+
 class App(ctk.CTk):
     """Root window of the AICodeReviewer GUI."""
 
@@ -2362,6 +2376,25 @@ class App(ctk.CTk):
     # ══════════════════════════════════════════════════════════════════════
 
     def _save_settings(self):
+        # --- Validate numeric fields before writing anything ---
+        for (section, key), (label, num_type, min_val) in _NUMERIC_SETTINGS.items():
+            widget = self._setting_entries.get((section, key))
+            if widget is None:
+                continue
+            raw = widget.get().strip()
+            try:
+                value = num_type(raw)
+                if value < min_val:
+                    raise ValueError(f"{value} < {min_val}")
+            except (ValueError, TypeError):
+                self._show_toast(
+                    f"{label}: \"{raw}\" is not a valid "
+                    f"{'integer' if num_type is int else 'number'} "
+                    f"(minimum {min_val})",
+                    error=True,
+                )
+                return
+
         # Reverse-map theme / language display values to config keys
         theme_reverse = {
             t("gui.settings.ui_theme_system"): "system",
