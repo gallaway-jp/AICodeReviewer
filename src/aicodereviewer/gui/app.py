@@ -1157,17 +1157,12 @@ class App(ctk.CTk):
     def _start_dry_run(self):
         if self._running:
             return
-        if self._testing_mode:
-            self._show_toast(
-                "Dry Run is simulated in testing mode — "
-                "see Log tab for output", error=False)
-            self.tabs.set(t("gui.tab.log"))
-            return
         params = self._validate_inputs(dry_run=True)
         if not params:
             return
-        # Save form values for next session
-        self._save_form_values()
+        # Save form values for next session (safe in testing mode — redirected to temp file)
+        if not self._testing_mode:
+            self._save_form_values()
         self._run_review(params, dry_run=True)
 
     def _set_action_buttons_state(self, state: str):
@@ -1302,10 +1297,12 @@ class App(ctk.CTk):
                     return all_files
                 
                 scan_fn = custom_scan_fn
-                
-                assert client is not None
-                runner = AppRunner(client, scan_fn=scan_fn,
-                                   backend_name=backend_name)
+
+                runner = AppRunner(
+                    client,  # type: ignore[arg-type]  # None is safe for dry_run
+                    scan_fn=scan_fn,
+                    backend_name=backend_name,
+                )
 
                 def progress_cb(current: int, total: int, msg: str) -> None:
                     if self._cancel_event.is_set():
