@@ -1283,7 +1283,7 @@ class App(ctk.CTk):
                                 rel_path = str(fp)
                             
                             # Normalize path separators for comparison
-                            rel_norm = rel_path.replace("\\\\", "/") if rel_path else ""
+                            rel_norm = rel_path.replace("\\", "/") if rel_path else ""
                             
                             if rel_norm in diff_by_name:
                                 intersected.append({
