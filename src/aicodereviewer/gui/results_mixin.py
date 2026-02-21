@@ -573,9 +573,25 @@ class ResultsTabMixin:
         editor_outer = tk.Frame(win, bd=0, highlightthickness=0)
         editor_outer.pack(fill="both", expand=True, padx=10, pady=(6, 0))
 
-        vscroll = tk.Scrollbar(editor_outer, orient="vertical")
+        # Create CTkScrollbar instances (styled with theme colors)
+        vscroll = ctk.CTkScrollbar(
+            editor_outer,
+            orientation="vertical",
+            border_spacing=0,
+            fg_color=("gray90", "gray17"),
+            button_color=("gray70", "gray30"),
+            button_hover_color=("gray60", "gray40"),
+        )
         vscroll.pack(side="right", fill="y")
-        hscroll = tk.Scrollbar(editor_outer, orient="horizontal")
+
+        hscroll = ctk.CTkScrollbar(
+            editor_outer,
+            orientation="horizontal",
+            border_spacing=0,
+            fg_color=("gray90", "gray17"),
+            button_color=("gray70", "gray30"),
+            button_hover_color=("gray60", "gray40"),
+        )
         hscroll.pack(side="bottom", fill="x")
 
         # line-numbers pane
