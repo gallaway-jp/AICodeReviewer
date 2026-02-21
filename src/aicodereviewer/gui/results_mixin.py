@@ -505,44 +505,381 @@ class ResultsTabMixin:
 
         self._refresh_status(idx)
 
-    def _open_builtin_editor(self, idx: int):
+    def _open_builtin_editor(self, idx: int):  # noqa: PLR0915
         rec = self._issue_cards[idx]
         issue = rec["issue"]
         fname = Path(issue.file_path).name
+        file_ext = Path(issue.file_path).suffix.lower()
 
+        # ── mutable state ──────────────────────────────────────────────────
+        _find_bar_visible = [False]
+        _search_positions: list[str] = []
+        _search_idx = [-1]
+        _highlight_timer: list[Any] = [None]
+
+        # ── window ─────────────────────────────────────────────────────────
+        base_title = t("gui.results.editor_title", file=fname)
         win = ctk.CTkToplevel(self)
-        win.title(t("gui.results.editor_title", file=fname))
-        win.geometry("850x600")
+        win.title(base_title)
+        win.geometry("980x700")
+        win.minsize(700, 480)
         win.grab_set()
         win.after(10, lambda w=win: _fix_titlebar(w))
-        win.bind("<Control-w>", lambda e: win.destroy())
 
-        fb_lbl = ctk.CTkLabel(win, text=issue.ai_feedback[:200],
-                               wraplength=800, anchor="w",
-                               text_color=("gray30", "gray70"),
-                               font=ctk.CTkFont(size=11))
-        fb_lbl.pack(fill="x", padx=10, pady=(8, 2))
+        # ── theme-aware colours ────────────────────────────────────────────
+        dark = ctk.get_appearance_mode().lower() == "dark"
+        if dark:
+            bg        = "#1e1e1e"
+            fg        = "#d4d4d4"
+            ln_bg     = "#252526"
+            ln_fg     = "#858585"
+            sel_bg    = "#264f78"
+            cur_line  = "#2a2d2e"
+            insert_c  = "#aeafad"
+            kw_c      = "#569cd6"
+            str_c     = "#ce9178"
+            cmt_c     = "#6a9955"
+            bi_c      = "#4ec9b0"
+            num_c     = "#b5cea8"
+            dec_c     = "#dcdcaa"
+        else:
+            bg        = "#ffffff"
+            fg        = "#1f1f1f"
+            ln_bg     = "#f3f3f3"
+            ln_fg     = "#888888"
+            sel_bg    = "#add6ff"
+            cur_line  = "#f0f8ff"
+            insert_c  = "#000000"
+            kw_c      = "#0000ff"
+            str_c     = "#a31515"
+            cmt_c     = "#008000"
+            bi_c      = "#267f99"
+            num_c     = "#098658"
+            dec_c     = "#795e26"
 
-        text = ctk.CTkTextbox(win, wrap="none",
-                               font=ctk.CTkFont(family="Consolas", size=12))
-        text.pack(fill="both", expand=True, padx=10, pady=4)
+        # ── feedback label ─────────────────────────────────────────────────
+        fb_frame = ctk.CTkFrame(win, fg_color=("gray88", "gray17"),
+                                corner_radius=6)
+        fb_frame.pack(fill="x", padx=10, pady=(10, 0))
+        ctk.CTkLabel(
+            fb_frame,
+            text=f"⚠  {issue.ai_feedback[:260]}",
+            wraplength=900, anchor="w", justify="left",
+            text_color=("gray30", "gray65"),
+            font=ctk.CTkFont(size=11),
+        ).pack(padx=10, pady=6, anchor="w")
 
+        # ── editor area ────────────────────────────────────────────────────
+        editor_outer = tk.Frame(win, bd=0, highlightthickness=0)
+        editor_outer.pack(fill="both", expand=True, padx=10, pady=(6, 0))
+
+        vscroll = tk.Scrollbar(editor_outer, orient="vertical")
+        vscroll.pack(side="right", fill="y")
+        hscroll = tk.Scrollbar(editor_outer, orient="horizontal")
+        hscroll.pack(side="bottom", fill="x")
+
+        # line-numbers pane
+        ln_pane = tk.Text(
+            editor_outer, width=5, padx=6, takefocus=0,
+            bg=ln_bg, fg=ln_fg, bd=0, highlightthickness=0,
+            selectbackground=ln_bg, selectforeground=ln_fg,
+            state="disabled", wrap="none", cursor="arrow",
+            font=("Consolas", 13),
+        )
+        ln_pane.pack(side="left", fill="y")
+
+        # thin separator between line-nums and code
+        sep = tk.Frame(editor_outer, width=1,
+                       bg="#3c3c3c" if dark else "#d0d0d0")
+        sep.pack(side="left", fill="y")
+
+        # main editor
+        text = tk.Text(
+            editor_outer,
+            bg=bg, fg=fg, bd=0, highlightthickness=0,
+            insertbackground=insert_c,
+            selectbackground=sel_bg,
+            wrap="none",
+            font=("Consolas", 13),
+            undo=True, autoseparators=True, maxundo=-1,
+            tabs=("4c",),
+            yscrollcommand=lambda *a: (vscroll.set(*a), _update_ln()),
+            xscrollcommand=hscroll.set,
+            padx=10, pady=4,
+            spacing1=1, spacing3=2,
+        )
+        text.pack(side="left", fill="both", expand=True)
+        vscroll.configure(command=lambda *a: (text.yview(*a), _update_ln()))
+        hscroll.configure(command=text.xview)
+
+        # ── syntax-highlight tags ──────────────────────────────────────────
+        _TAGS = {
+            "keyword":    {"foreground": kw_c,  "font": ("Consolas", 13, "bold")},
+            "string":     {"foreground": str_c},
+            "comment":    {"foreground": cmt_c, "font": ("Consolas", 13, "italic")},
+            "builtin":    {"foreground": bi_c},
+            "number":     {"foreground": num_c},
+            "decorator":  {"foreground": dec_c},
+            "cur_line":   {"background": cur_line},
+            "find_match": {"background": "#f8c112", "foreground": "#000000"},
+            "find_cur":   {"background": "#ff8c00", "foreground": "#000000"},
+        }
+        for tag, opts in _TAGS.items():
+            text.tag_configure(tag, **opts)
+        # keep cur_line below syntax tags
+        text.tag_lower("cur_line")
+
+        _KW = frozenset({
+            "False", "None", "True", "and", "as", "assert", "async", "await",
+            "break", "class", "continue", "def", "del", "elif", "else",
+            "except", "finally", "for", "from", "global", "if", "import",
+            "in", "is", "lambda", "nonlocal", "not", "or", "pass", "raise",
+            "return", "try", "while", "with", "yield",
+        })
+        _BI = frozenset({
+            "print", "len", "range", "int", "str", "list", "dict", "set",
+            "tuple", "bool", "float", "type", "isinstance", "hasattr",
+            "getattr", "setattr", "super", "zip", "map", "filter",
+            "enumerate", "sorted", "reversed", "open", "input", "abs",
+            "min", "max", "sum", "any", "all", "id", "hash", "repr",
+            "format", "object", "property", "staticmethod", "classmethod",
+            "Exception", "ValueError", "TypeError", "KeyError", "IndexError",
+            "AttributeError", "RuntimeError", "StopIteration", "OSError",
+        })
+
+        def _highlight_python() -> None:
+            for tag in ("keyword", "string", "comment", "builtin",
+                        "number", "decorator"):
+                text.tag_remove(tag, "1.0", "end")
+            import io
+            import token as _t
+            import tokenize as _tok
+            src = text.get("1.0", "end")
+            try:
+                toks = list(_tok.generate_tokens(io.StringIO(src).readline))
+            except _tok.TokenError:
+                toks = []
+            for kind, val, (r1, c1), (r2, c2), _ in toks:
+                s, e = f"{r1}.{c1}", f"{r2}.{c2}"
+                if kind == _t.NAME:
+                    if val in _KW:
+                        text.tag_add("keyword", s, e)
+                    elif val in _BI:
+                        text.tag_add("builtin", s, e)
+                elif kind == _t.STRING:
+                    text.tag_add("string", s, e)
+                elif kind == _t.COMMENT:
+                    text.tag_add("comment", s, e)
+                elif kind == _t.NUMBER:
+                    text.tag_add("number", s, e)
+            # decorators via regex
+            import re as _re
+            for m in _re.finditer(r"^[ \t]*(@\w+)", src, _re.MULTILINE):
+                ln = src[: m.start()].count("\n") + 1
+                col = m.start() - src.rfind("\n", 0, m.start()) - 1
+                text.tag_add("decorator",
+                             f"{ln}.{col}", f"{ln}.{col + len(m.group(1))}")
+
+        def _schedule_highlight(*_a: Any) -> None:
+            if _highlight_timer[0]:
+                win.after_cancel(_highlight_timer[0])
+            _highlight_timer[0] = win.after(
+                260, _highlight_python if file_ext == ".py" else lambda: None
+            )
+
+        # ── line-number updater ────────────────────────────────────────────
+        def _update_ln(*_a: Any) -> None:
+            try:
+                first = int(text.index("@0,0").split(".")[0])
+                last  = int(text.index(f"@0,{text.winfo_height()}").split(".")[0])
+                total = int(text.index("end-1c").split(".")[0])
+                ln_pane.configure(state="normal")
+                ln_pane.delete("1.0", "end")
+                ln_pane.insert("end", "\n".join(
+                    f"{n:>4}" for n in range(first, min(last + 3, total + 1))
+                ))
+                ln_pane.configure(state="disabled")
+            except Exception:
+                pass
+
+        # ── current-line highlight ─────────────────────────────────────────
+        def _update_cur_line(*_a: Any) -> None:
+            text.tag_remove("cur_line", "1.0", "end")
+            row = text.index("insert").split(".")[0]
+            text.tag_add("cur_line", f"{row}.0", f"{row}.end+1c")
+            text.tag_lower("cur_line")
+            _update_status()
+
+        # ── status bar ─────────────────────────────────────────────────────
+        sb = ctk.CTkFrame(win, fg_color=("gray80", "gray22"),
+                          height=24, corner_radius=0)
+        sb.pack(fill="x", side="bottom")
+        sb.pack_propagate(False)
+
+        pos_lbl = ctk.CTkLabel(sb, text="Ln 1, Col 1",
+                               font=ctk.CTkFont(size=11), anchor="w")
+        pos_lbl.pack(side="left", padx=8)
+
+        ctk.CTkLabel(
+            sb,
+            text="Ctrl+S  Save    Ctrl+F  Find    Ctrl+Z  Undo",
+            font=ctk.CTkFont(size=11),
+            text_color=("gray50", "gray55"),
+            anchor="e",
+        ).pack(side="right", padx=10)
+
+        lang_lbl = ctk.CTkLabel(
+            sb,
+            text=(file_ext.lstrip(".").upper() or "TEXT"),
+            font=ctk.CTkFont(size=11), anchor="e",
+        )
+        lang_lbl.pack(side="right", padx=10)
+
+        def _update_status(*_a: Any) -> None:
+            try:
+                r, c = text.index("insert").split(".")
+                pos_lbl.configure(text=f"Ln {r}, Col {int(c) + 1}")
+            except Exception:
+                pass
+
+        # ── find bar (hidden until Ctrl+F) ─────────────────────────────────
+        find_frame = ctk.CTkFrame(win, fg_color=("gray85", "gray22"),
+                                  corner_radius=0)
+        find_var = tk.StringVar()
+        find_case = tk.BooleanVar(value=False)
+
+        ctk.CTkLabel(find_frame, text="Find:",
+                     font=ctk.CTkFont(size=12)).pack(side="left", padx=(8, 2))
+        find_entry = ctk.CTkEntry(find_frame, textvariable=find_var,
+                                  width=220, font=ctk.CTkFont(size=12))
+        find_entry.pack(side="left", padx=4)
+        ctk.CTkCheckBox(find_frame, text="Aa", variable=find_case,
+                        font=ctk.CTkFont(size=11),
+                        width=50, checkbox_width=16, checkbox_height=16,
+                        ).pack(side="left", padx=(2, 6))
+
+        find_count_lbl = ctk.CTkLabel(find_frame, text="",
+                                      font=ctk.CTkFont(size=11),
+                                      text_color=("gray50", "gray55"))
+        find_count_lbl.pack(side="left", padx=4)
+
+        def _do_find(direction: int = 1) -> None:
+            text.tag_remove("find_match", "1.0", "end")
+            text.tag_remove("find_cur",   "1.0", "end")
+            query = find_var.get()
+            if not query:
+                find_count_lbl.configure(text="")
+                return
+            _search_positions.clear()
+            pos = "1.0"
+            nocase = not find_case.get()
+            while True:
+                pos = text.search(query, pos, stopindex="end", nocase=nocase)
+                if not pos:
+                    break
+                end = f"{pos}+{len(query)}c"
+                text.tag_add("find_match", pos, end)
+                _search_positions.append(pos)
+                pos = end
+            if not _search_positions:
+                find_count_lbl.configure(text="No results")
+                find_entry.configure(border_color="red")
+                return
+            find_entry.configure(border_color=("gray50", "gray50"))
+            _search_idx[0] = (_search_idx[0] + direction) % len(_search_positions)
+            cur = _search_positions[_search_idx[0]]
+            text.tag_remove("find_match", cur, f"{cur}+{len(query)}c")
+            text.tag_add("find_cur", cur, f"{cur}+{len(query)}c")
+            text.see(cur)
+            text.mark_set("insert", cur)
+            find_count_lbl.configure(
+                text=f"{_search_idx[0] + 1} / {len(_search_positions)}")
+
+        ctk.CTkButton(find_frame, text="▲", width=32,
+                      command=lambda: _do_find(-1)).pack(side="left", padx=2)
+        ctk.CTkButton(find_frame, text="▼", width=32,
+                      command=lambda: _do_find(1)).pack(side="left", padx=2)
+        ctk.CTkButton(find_frame, text="✕", width=28, fg_color="transparent",
+                      hover_color=("gray70", "gray30"),
+                      command=lambda: _toggle_find()).pack(side="right", padx=4)
+
+        find_var.trace_add("write", lambda *_: (_search_idx.__setitem__(0, -1),
+                                                _do_find(1) if find_var.get() else
+                                                find_count_lbl.configure(text="")))
+        find_entry.bind("<Return>",  lambda e: _do_find(1))
+        find_entry.bind("<Shift-Return>", lambda e: _do_find(-1))
+
+        def _toggle_find(*_a: Any) -> None:
+            if _find_bar_visible[0]:
+                find_frame.pack_forget()
+                _find_bar_visible[0] = False
+                text.focus_set()
+            else:
+                find_frame.pack(fill="x", side="bottom", before=sb)
+                _find_bar_visible[0] = True
+                find_entry.focus_set()
+                try:
+                    sel = text.get("sel.first", "sel.last")
+                    if sel and "\n" not in sel:
+                        find_var.set(sel)
+                        _search_idx[0] = -1
+                        _do_find(1)
+                except tk.TclError:
+                    pass
+
+        # ── load content ───────────────────────────────────────────────────
         if self._testing_mode:
-            text.insert("0.0", issue.code_snippet or "(no code snippet)")
+            raw = issue.code_snippet or "(no code snippet)"
         else:
             try:
-                with open(issue.file_path, "r", encoding="utf-8", errors="replace") as fh:
-                    content = fh.read()
-                text.insert("0.0", content)
+                with open(issue.file_path, "r", encoding="utf-8",
+                          errors="replace") as fh:
+                    raw = fh.read()
             except Exception as exc:
-                text.insert("0.0", f"Error reading file: {exc}")
+                raw = f"Error reading file: {exc}"
 
-        original_content = text.get("0.0", "end")
+        text.insert("1.0", raw)
+        original_ref = [raw]
 
+        # initial highlighting + line numbers
+        if file_ext == ".py":
+            _highlight_python()
+        _update_ln()
+        _update_cur_line()
+
+        # scroll to reported line if known
+        if not self._testing_mode and issue.line_number:
+            try:
+                text.see(f"{issue.line_number}.0")
+                text.mark_set("insert", f"{issue.line_number}.0")
+                _update_cur_line()
+            except Exception:
+                pass
+
+        # ── event bindings ─────────────────────────────────────────────────
+        def _on_key(*_a: Any) -> None:
+            cur = text.get("1.0", "end-1c")
+            title_mark = "● " if cur != original_ref[0] else ""
+            win.title(f"{title_mark}{base_title}")
+            _update_ln()
+            _update_cur_line()
+            _schedule_highlight()
+
+        text.bind("<KeyRelease>",     _on_key)
+        text.bind("<ButtonRelease-1>", _update_cur_line)
+        text.bind("<Configure>",       _update_ln)
+        text.bind("<MouseWheel>",
+                  lambda e: win.after(10, _update_ln))
+
+        # Tab → 4 spaces
+        text.bind("<Tab>",
+                  lambda e: (text.insert("insert", "    "), "break")[1])
+
+        # ── buttons ────────────────────────────────────────────────────────
         btn_frame = ctk.CTkFrame(win, fg_color="transparent")
-        btn_frame.pack(pady=8)
+        btn_frame.pack(pady=8, side="bottom")
 
-        def _save():
+        def _save() -> None:
             if self._testing_mode:
                 issue.status = "resolved"
                 self._refresh_status(idx)
@@ -550,8 +887,9 @@ class ResultsTabMixin:
                 win.destroy()
                 return
             try:
+                content_out = text.get("1.0", "end").rstrip("\n") + "\n"
                 with open(issue.file_path, "w", encoding="utf-8") as fh:
-                    fh.write(text.get("0.0", "end").rstrip("\n") + "\n")
+                    fh.write(content_out)
                 issue.status = "resolved"
                 self._refresh_status(idx)
                 self._show_toast(t("gui.results.editor_saved"))
@@ -559,12 +897,8 @@ class ResultsTabMixin:
                 self._show_toast(str(exc), error=True)
             win.destroy()
 
-        ctk.CTkButton(btn_frame, text=t("gui.results.editor_save"),
-                       fg_color="green", command=_save).grid(
-            row=0, column=0, padx=6)
-
-        def _cancel():
-            if text.get("0.0", "end") != original_content:
+        def _cancel() -> None:
+            if text.get("1.0", "end-1c") != original_ref[0]:
                 if not ConfirmDialog(
                     win,
                     title=t("gui.results.editor_discard_title"),
@@ -573,10 +907,24 @@ class ResultsTabMixin:
                     return
             win.destroy()
 
+        ctk.CTkButton(btn_frame, text=t("gui.results.editor_save"),
+                      fg_color="green", hover_color="#1a7a1a",
+                      width=160, command=_save).grid(row=0, column=0, padx=6)
+        ctk.CTkButton(btn_frame, text=t("common.cancel"),
+                      width=100, command=_cancel).grid(row=0, column=1, padx=6)
+
+        # ── keyboard shortcuts ─────────────────────────────────────────────
+        win.bind("<Control-s>", lambda e: _save())
+        win.bind("<Control-S>", lambda e: _save())
+        win.bind("<Control-f>", lambda e: _toggle_find())
+        win.bind("<Control-F>", lambda e: _toggle_find())
+        win.bind("<Escape>",
+                 lambda e: (_toggle_find() if _find_bar_visible[0]
+                             else _cancel()))
+        win.bind("<Control-w>", lambda e: _cancel())
         win.protocol("WM_DELETE_WINDOW", _cancel)
 
-        ctk.CTkButton(btn_frame, text=t("common.cancel"),
-                       command=_cancel).grid(row=0, column=1, padx=6)
+        text.focus_set()
 
     # ── Skip ───────────────────────────────────────────────────────────────
 
