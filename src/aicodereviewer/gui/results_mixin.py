@@ -1632,6 +1632,34 @@ class ResultsTabMixin:
         close_btn.grid(row=0, column=1, padx=6)
         close_btn_ref[0] = close_btn
 
+        # Auto-populate third pane if new_content has been user-edited
+        if new_content.rstrip("\n") != original_content.rstrip("\n"):
+            # Third pane should show the user-edited version
+            user_content_ref[0] = new_content
+            utxt = _make_diff_pane("  ✎  ai + user fixed")
+            user_text_ref[0]  = utxt
+            user_frame_ref[0] = utxt.master
+            utxt.configure(
+                yscrollcommand=lambda f, l: _sync_yscroll(utxt, f, l))
+            # Populate with the user content
+            _populate_user_pane(new_content)
+            # Reveal Undo button
+            undo_btn = ctk.CTkButton(
+                btn_frame, text="↩  Undo User Changes",
+                fg_color=("gray75", "gray30"),
+                hover_color=("gray60", "gray20"),
+                command=_undo_user_changes,
+            )
+            undo_btn.grid(row=0, column=2, padx=6)
+            undo_btn_ref[0] = undo_btn
+            # Change Close -> Save and Close
+            close_btn_ref[0].configure(
+                text="\u2714  Save and Close",
+                fg_color="green",
+                hover_color="#1a7a1a",
+                command=_save_and_close,
+            )
+
     # ── View detail ────────────────────────────────────────────────────────
 
     def _show_issue_detail(self, issue: ReviewIssue):
