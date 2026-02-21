@@ -200,63 +200,83 @@ class LocalLLMBackend(AIBackend):
             logger.error("Local LLM connection test failed: %s", exc)
             return False
 
+    # ── shared validation helper ───────────────────────────────────────────
+
+    def _validate_with_model_discovery(
+        self,
+        list_url: str,
+        list_parser: str,
+        test_url: str,
+        test_payload_fn: Any,
+        headers: dict[str, str],
+        label: str,
+    ) -> bool:
+        """Common validation logic: discover models, then run a test inference.
+
+        Args:
+            list_url: URL to GET the model list (empty to skip discovery).
+            list_parser: Key indicating response format (``'openai'``, ``'ollama'``, ``'lmstudio'``).
+            test_url: URL to POST a test inference request.
+            test_payload_fn: Callable ``(model_name) -> dict`` that builds the test payload.
+            headers: HTTP headers for both requests.
+            label: Human-readable label for log messages.
+        """
+        model_to_test = self.model
+
+        # Step 1 – discover available models
+        if list_url:
+            try:
+                resp = requests.get(list_url, headers=headers, timeout=10)
+                if resp.status_code == 200:
+                    models = self._parse_model_list(resp.json(), list_parser)
+                    if models:
+                        logger.info("Available %s models: %s", label, ", ".join(models[:5]))
+                        if self.model == "default":
+                            model_to_test = models[0]
+                    else:
+                        logger.warning("No models available on %s server.", label)
+                        return True  # server reachable, that's enough
+            except Exception as exc:
+                logger.error("Failed to list %s models: %s", label, exc)
+                return False
+
+        # Step 2 – tiny inference test
+        try:
+            payload = test_payload_fn(model_to_test)
+            resp = requests.post(test_url, headers=headers, json=payload, timeout=30)
+            if resp.status_code == 200:
+                return True
+            logger.error("%s returned HTTP %d: %s", label, resp.status_code, resp.text[:200])
+            return False
+        except Exception as exc:
+            logger.error("%s inference test failed: %s", label, exc)
+            return False
+
+    @staticmethod
+    def _parse_model_list(data: dict, parser: str) -> list[str]:
+        """Extract model identifiers from an API response."""
+        if parser in ("openai", "lmstudio"):
+            return [m.get("id", "") for m in data.get("data", []) if m.get("id")]
+        if parser == "ollama":
+            return [m.get("name", "") for m in data.get("models", []) if m.get("name")]
+        return []
+
     # ── LM Studio native API ───────────────────────────────────────────────
 
     def _validate_lmstudio(self) -> bool:
         """Validate LM Studio native API endpoint."""
-        headers: dict[str, str] = self._lmstudio_headers()
-        model_to_test = self.model  # Use configured model if not 'default'
-
-        # Try listing models first to get a real model if using default
-        try:
-            resp = requests.get(
-                f"{self.api_url}/api/v1/models",
-                headers=headers,
-                timeout=10,
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                models = data.get("data", [])
-                if models:
-                    model_ids = [m.get("id", "") for m in models]
-                    logger.info("Available LM Studio models: %s", ", ".join(model_ids[:5]))
-                    # Use first available model for testing if default is not valid
-                    if self.model == "default" and model_ids:
-                        model_to_test = model_ids[0]
-                else:
-                    # No models loaded - that's a configuration issue, but don't fail validation
-                    # Just indicate we can reach the server
-                    logger.warning("No models available on LM Studio server. Models need to be loaded first.")
-                    # Return True if we could reach the models endpoint
-                    return True
-        except Exception as e:
-            logger.error("Failed to list LM Studio models: %s", e)
-            return False
-
-        # Test with a tiny inference call using validated model
-        try:
-            payload: dict[str, Any] = {
-                "model": model_to_test,
-                "input": "Hello",
-                "max_output_tokens": 5,
-                "temperature": 0,
-            }
-            resp = requests.post(
-                f"{self.api_url}/api/v1/chat",
-                headers=headers,
-                json=payload,
-                timeout=30,
-            )
-            if resp.status_code == 200:
-                return True
-            else:
-                logger.error(
-                    "LM Studio returned HTTP %d: %s", resp.status_code, resp.text[:200],
-                )
-                return False
-        except Exception as e:
-            logger.error("LM Studio inference test failed: %s", e)
-            return False
+        headers = self._lmstudio_headers()
+        return self._validate_with_model_discovery(
+            list_url=f"{self.api_url}/api/v1/models",
+            list_parser="lmstudio",
+            test_url=f"{self.api_url}/api/v1/chat",
+            test_payload_fn=lambda model: {
+                "model": model, "input": "Hello",
+                "max_output_tokens": 5, "temperature": 0,
+            },
+            headers=headers,
+            label="LM Studio",
+        )
 
     def _invoke_lmstudio(self, system_prompt: str, user_message: str) -> str:
         """Send a chat request to LM Studio native API."""
@@ -307,58 +327,20 @@ class LocalLLMBackend(AIBackend):
 
     def _validate_ollama(self) -> bool:
         """Validate Ollama API endpoint."""
-        headers: dict[str, str] = self._ollama_headers()
-        model_to_test = self.model  # Use configured model if not 'default'
-
-        # Try listing models first to get a real model if using default
-        try:
-            resp = requests.get(
-                f"{self.api_url}/api/tags",
-                headers=headers,
-                timeout=10,
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                models = data.get("models", [])
-                if models:
-                    model_names = [m.get("name", "") for m in models]
-                    logger.info("Available Ollama models: %s", ", ".join(model_names[:5]))
-                    # Use first available model for testing if default is not valid
-                    if self.model == "default" and model_names:
-                        model_to_test = model_names[0]
-                else:
-                    # No models pulled - that's a configuration issue, but server is reachable
-                    logger.warning("No models available on Ollama server. Models need to be pulled first.")
-                    # Return True if we could reach the models endpoint
-                    return True
-        except Exception as e:
-            logger.error("Failed to list Ollama models: %s", e)
-            return False
-
-        # Test with a tiny inference call using validated model
-        try:
-            payload: dict[str, Any] = {
-                "model": model_to_test,
+        headers = self._ollama_headers()
+        return self._validate_with_model_discovery(
+            list_url=f"{self.api_url}/api/tags",
+            list_parser="ollama",
+            test_url=f"{self.api_url}/api/chat",
+            test_payload_fn=lambda model: {
+                "model": model,
                 "messages": [{"role": "user", "content": "Hello"}],
                 "stream": False,
                 "options": {"temperature": 0},
-            }
-            resp = requests.post(
-                f"{self.api_url}/api/chat",
-                headers=headers,
-                json=payload,
-                timeout=30,
-            )
-            if resp.status_code == 200:
-                return True
-            else:
-                logger.error(
-                    "Ollama returned HTTP %d: %s", resp.status_code, resp.text[:200],
-                )
-                return False
-        except Exception as e:
-            logger.error("Ollama inference test failed: %s", e)
-            return False
+            },
+            headers=headers,
+            label="Ollama",
+        )
 
     def _invoke_ollama(self, system_prompt: str, user_message: str) -> str:
         """Send a chat request to Ollama API."""
@@ -414,86 +396,36 @@ class LocalLLMBackend(AIBackend):
 
     def _validate_openai(self) -> bool:
         """Validate an OpenAI-compatible endpoint."""
-        headers: dict[str, str] = self._openai_headers()
-        model_to_test = self.model  # Use configured model if not 'default'
-
-        # Try listing models first to get a real model if using default
-        try:
-            resp = requests.get(
-                f"{self.api_url}/v1/models",
-                headers=headers,
-                timeout=10,
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                models = [m.get("id", "") for m in data.get("data", [])]
-                if models:
-                    logger.info("Available models: %s", ", ".join(models[:5]))
-                    # Use first available model for testing if default is not valid
-                    if self.model == "default" and models:
-                        model_to_test = models[0]
-                else:
-                    # No models available - server is reachable, that's enough for now
-                    logger.warning("No models available on server. Configuration issue.")
-                    return True
-        except Exception as e:
-            logger.error("Failed to list OpenAI-compatible models: %s", e)
-            return False
-
-        # Test with a tiny inference call using validated model
-        try:
-            payload: dict[str, Any] = {
-                "model": model_to_test,
+        headers = self._openai_headers()
+        return self._validate_with_model_discovery(
+            list_url=f"{self.api_url}/v1/models",
+            list_parser="openai",
+            test_url=f"{self.api_url}/v1/chat/completions",
+            test_payload_fn=lambda model: {
+                "model": model,
                 "messages": [{"role": "user", "content": "Hello"}],
                 "max_tokens": 5,
                 "temperature": 0,
-            }
-            resp = requests.post(
-                f"{self.api_url}/v1/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=30,
-            )
-            if resp.status_code == 200:
-                return True
-            else:
-                logger.error(
-                    "Local LLM returned HTTP %d: %s", resp.status_code, resp.text[:200],
-                )
-                return False
-        except Exception as e:
-            logger.error("OpenAI-compatible inference test failed: %s", e)
-            return False
+            },
+            headers=headers,
+            label="OpenAI-compatible",
+        )
 
     def _validate_anthropic(self) -> bool:
         """Validate an Anthropic-compatible endpoint."""
-        headers: dict[str, str] = self._anthropic_headers()
-        model_to_test = self.model
-        
-        # Anthropic-compatible endpoints don't typically have a /models endpoint
-        # Try a simple inference test with the configured model
-        try:
-            payload: dict[str, Any] = {
-                "model": model_to_test,
+        headers = self._anthropic_headers()
+        return self._validate_with_model_discovery(
+            list_url="",  # Anthropic endpoints don't have a /models endpoint
+            list_parser="",
+            test_url=f"{self.api_url}/v1/messages",
+            test_payload_fn=lambda model: {
+                "model": model,
                 "messages": [{"role": "user", "content": "Hello"}],
                 "max_tokens": 5,
-            }
-            resp = requests.post(
-                f"{self.api_url}/v1/messages",
-                headers=headers,
-                json=payload,
-                timeout=30,
-            )
-            if resp.status_code == 200:
-                return True
-            else:
-                logger.error(
-                    "Anthropic-compatible endpoint returned HTTP %d: %s", resp.status_code, resp.text[:200],
-                )
-                return False
-        except Exception as e:
-            logger.error("Anthropic-compatible inference test failed: %s", e)
-            return False
+            },
+            headers=headers,
+            label="Anthropic-compatible",
+        )
 
     # ── invocation ─────────────────────────────────────────────────────────
 

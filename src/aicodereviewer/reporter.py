@@ -5,20 +5,46 @@ Report generation for code review results.
 Produces JSON (machine-readable) and plain-text summary reports with
 support for multi-type review sessions.
 """
+from __future__ import annotations
+
 import json
 import logging
-from typing import Dict, List, Optional, TextIO
+from dataclasses import dataclass, field
+from typing import TextIO
 
 from .models import ReviewReport
 from .i18n import t
 from .config import config
 
+__all__ = ["ReportStatistics", "generate_review_report"]
+
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ReportStatistics:
+    """Aggregated statistics computed from a :class:`ReviewReport`."""
+
+    status_counts: dict[str, int] = field(default_factory=dict)
+    severity_counts: dict[str, int] = field(default_factory=dict)
+    type_counts: dict[str, int] = field(default_factory=dict)
+
+    @classmethod
+    def from_report(cls, report: ReviewReport) -> ReportStatistics:
+        """Compute statistics from a report's issue list."""
+        status: dict[str, int] = {}
+        severity: dict[str, int] = {}
+        types: dict[str, int] = {}
+        for issue in report.issues_found:
+            status[issue.status] = status.get(issue.status, 0) + 1
+            severity[issue.severity] = severity.get(issue.severity, 0) + 1
+            types[issue.issue_type] = types.get(issue.issue_type, 0) + 1
+        return cls(status_counts=status, severity_counts=severity, type_counts=types)
 
 
 def generate_review_report(
     report: ReviewReport,
-    output_file: Optional[str] = None,
+    output_file: str | None = None,
 ) -> str:
     """
     Save the review report in selected formats (JSON, TXT, and/or MD).
@@ -38,7 +64,7 @@ def generate_review_report(
     enabled_formats_str = config.get("output", "formats", "json,txt").strip()
     enabled_formats = set(enabled_formats_str.split(",")) if enabled_formats_str else {"json", "txt"}
     
-    generated_files: List[str] = []
+    generated_files: list[str] = []
     
     # Generate JSON format
     if "json" in enabled_formats:
@@ -90,31 +116,24 @@ def _write_summary(fh: TextIO, report: ReviewReport) -> None:
         w(f"{t('report.diff_source', lang=lang):13s}: {report.diff_source}\n")
 
     # Status breakdown
+    stats = ReportStatistics.from_report(report)
     w(f"\n{t('report.issue_summary', lang=lang)}\n")
     w("-" * 40 + "\n")
-    status_counts: Dict[str, int] = {}
-    severity_counts: Dict[str, int] = {}
-    type_counts: Dict[str, int] = {}
-    for issue in report.issues_found:
-        status_counts[issue.status] = status_counts.get(issue.status, 0) + 1
-        severity_counts[issue.severity] = severity_counts.get(issue.severity, 0) + 1
-        type_counts[issue.issue_type] = type_counts.get(issue.issue_type, 0) + 1
-
     w(f"  {t('report.total_issues', lang=lang)}: {len(report.issues_found)}\n")
-    for status, cnt in sorted(status_counts.items()):
+    for status, cnt in sorted(stats.status_counts.items()):
         w(f"  {status.capitalize():12s}: {cnt}\n")
 
-    if severity_counts:
+    if stats.severity_counts:
         w(f"\n{t('report.by_severity', lang=lang)}\n")
         w("-" * 40 + "\n")
         for sev in ("critical", "high", "medium", "low", "info"):
-            if sev in severity_counts:
-                w(f"  {sev.capitalize():12s}: {severity_counts[sev]}\n")
+            if sev in stats.severity_counts:
+                w(f"  {sev.capitalize():12s}: {stats.severity_counts[sev]}\n")
 
-    if type_counts:
+    if stats.type_counts:
         w(f"\n{t('report.by_review_type', lang=lang)}\n")
         w("-" * 40 + "\n")
-        for rtype, cnt in sorted(type_counts.items()):
+        for rtype, cnt in sorted(stats.type_counts.items()):
             w(f"  {rtype:20s}: {cnt}\n")
 
     # Detailed issues
@@ -163,42 +182,35 @@ def _write_markdown(fh: TextIO, report: ReviewReport) -> None:
     w("\n")
     
     # Status breakdown
+    stats = ReportStatistics.from_report(report)
     w(f"## {t('report.issue_summary', lang=lang)}\n\n")
-    status_counts: Dict[str, int] = {}
-    severity_counts: Dict[str, int] = {}
-    type_counts: Dict[str, int] = {}
-    for issue in report.issues_found:
-        status_counts[issue.status] = status_counts.get(issue.status, 0) + 1
-        severity_counts[issue.severity] = severity_counts.get(issue.severity, 0) + 1
-        type_counts[issue.issue_type] = type_counts.get(issue.issue_type, 0) + 1
-
     w(f"**{t('report.total_issues', lang=lang)}**: {len(report.issues_found)}\n\n")
     
     # Status counts table
-    if status_counts:
+    if stats.status_counts:
         w("### By Status\n\n")
         w("| Status | Count |\n")
         w("|--------|-------|\n")
-        for status, cnt in sorted(status_counts.items()):
+        for status, cnt in sorted(stats.status_counts.items()):
             w(f"| {status.capitalize()} | {cnt} |\n")
         w("\n")
 
     # Severity counts table
-    if severity_counts:
+    if stats.severity_counts:
         w(f"### {t('report.by_severity', lang=lang)}\n\n")
         w("| Severity | Count |\n")
         w("|----------|-------|\n")
         for sev in ("critical", "high", "medium", "low", "info"):
-            if sev in severity_counts:
-                w(f"| {sev.capitalize()} | {severity_counts[sev]} |\n")
+            if sev in stats.severity_counts:
+                w(f"| {sev.capitalize()} | {stats.severity_counts[sev]} |\n")
         w("\n")
 
     # Review type counts table
-    if type_counts:
+    if stats.type_counts:
         w(f"### {t('report.by_review_type', lang=lang)}\n\n")
         w("| Review Type | Count |\n")
         w("|-------------|-------|\n")
-        for rtype, cnt in sorted(type_counts.items()):
+        for rtype, cnt in sorted(stats.type_counts.items()):
             w(f"| {rtype} | {cnt} |\n")
         w("\n")
 

@@ -19,6 +19,15 @@ import subprocess
 import logging
 from typing import Optional, List, Tuple
 
+__all__ = [
+    "windows_to_wsl_path",
+    "wsl_to_windows_path",
+    "is_wsl_available",
+    "get_wsl_distros",
+    "run_in_wsl",
+    "ensure_wsl_tool",
+]
+
 logger = logging.getLogger(__name__)
 
 

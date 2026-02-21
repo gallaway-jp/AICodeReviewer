@@ -6,9 +6,13 @@ Defines core data structures for review issues, reports, and quality scoring.
 Supports multi-type reviews where a single session can combine several
 review categories.
 """
+from __future__ import annotations
+
 from dataclasses import dataclass, asdict, field
 from datetime import datetime
-from typing import List, Optional, Dict, Any
+from typing import Any
+
+__all__ = ["ReviewIssue", "ReviewReport", "calculate_quality_score"]
 
 
 @dataclass
@@ -30,16 +34,16 @@ class ReviewIssue:
         ai_fix_applied: Code content of the applied fix.
     """
     file_path: str
-    line_number: Optional[int] = None
+    line_number: int | None = None
     issue_type: str = ""
     severity: str = "medium"
     description: str = ""
     code_snippet: str = ""
     ai_feedback: str = ""
     status: str = "pending"
-    resolution_reason: Optional[str] = None
-    resolved_at: Optional[datetime] = None
-    ai_fix_applied: Optional[str] = None
+    resolution_reason: str | None = None
+    resolved_at: datetime | None = None
+    ai_fix_applied: str | None = None
 
 
 @dataclass
@@ -69,17 +73,17 @@ class ReviewReport:
     review_type: str  # kept for backward compat – comma-joined
     scope: str
     total_files_scanned: int
-    issues_found: List[ReviewIssue]
+    issues_found: list[ReviewIssue]
     generated_at: datetime
     language: str
-    review_types: List[str] = field(default_factory=list)
-    diff_source: Optional[str] = None
-    quality_score: Optional[int] = None
-    programmers: List[str] = field(default_factory=list)
-    reviewers: List[str] = field(default_factory=list)
+    review_types: list[str] = field(default_factory=list)
+    diff_source: str | None = None
+    quality_score: int | None = None
+    programmers: list[str] = field(default_factory=list)
+    reviewers: list[str] = field(default_factory=list)
     backend: str = "bedrock"
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialise to a JSON-safe dictionary."""
         data = asdict(self)
         data["generated_at"] = self.generated_at.isoformat()
@@ -89,7 +93,7 @@ class ReviewReport:
         return data
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ReviewReport":
+    def from_dict(cls, data: dict[str, Any]) -> ReviewReport:
         """Deserialise from a dictionary (e.g. loaded from JSON)."""
         data["generated_at"] = datetime.fromisoformat(data["generated_at"])
         for issue in data["issues_found"]:
@@ -113,7 +117,7 @@ _SEVERITY_DEDUCTIONS = {
 }
 
 
-def calculate_quality_score(issues: List[ReviewIssue]) -> int:
+def calculate_quality_score(issues: list[ReviewIssue]) -> int:
     """
     Calculate an aggregated quality score (0-100) based on issues.
 

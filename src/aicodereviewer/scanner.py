@@ -22,6 +22,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .config import config
 
+__all__ = [
+    "scan_project",
+    "parse_diff_file",
+    "detect_vcs_type",
+    "get_diff_from_commits",
+    "scan_project_with_scope",
+]
+
 logger = logging.getLogger(__name__)
 
 
@@ -61,28 +69,25 @@ def scan_project(directory: str) -> List[Path]:
     
     files = []
     
-    if enable_parallel:
-        # Parallel scanning: collect directory batches and scan in parallel
-        dir_batches = []
-        for root, dirs, filenames in os.walk(directory):
-            dirs[:] = [d for d in dirs if d not in ignore_dirs]
-            if filenames:
-                dir_batches.append((root, filenames, valid_extensions))
-        
-        if dir_batches:
-            with ThreadPoolExecutor(max_workers=4) as executor:
-                futures = [executor.submit(_scan_directory_batch, root, filenames, valid_extensions) 
-                          for root, filenames, valid_extensions in dir_batches]
-                for future in as_completed(futures):
-                    files.extend(future.result())
-        logger.debug(f"Parallel scan complete: {len(files)} files found")
+    # Collect per-directory batches (common to both paths)
+    dir_batches: List = []
+    for root, dirs, filenames in os.walk(directory):
+        dirs[:] = [d for d in dirs if d not in ignore_dirs]
+        if filenames:
+            dir_batches.append((root, filenames))
+
+    if enable_parallel and dir_batches:
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = [
+                executor.submit(_scan_directory_batch, root, fns, valid_extensions)
+                for root, fns in dir_batches
+            ]
+            for future in as_completed(futures):
+                files.extend(future.result())
+        logger.debug("Parallel scan complete: %d files found", len(files))
     else:
-        # Sequential scanning (default)
-        for root, dirs, filenames in os.walk(directory):
-            dirs[:] = [d for d in dirs if d not in ignore_dirs]
-            for filename in filenames:
-                if Path(filename).suffix.lower() in valid_extensions:
-                    files.append(Path(root) / filename)
+        for root, fns in dir_batches:
+            files.extend(_scan_directory_batch(root, fns, valid_extensions))
     
     return files
 
@@ -226,7 +231,7 @@ def get_diff_from_commits(project_path: str, commit_range: str) -> Optional[str]
     vcs_type = detect_vcs_type(project_path)
 
     if vcs_type is None:
-        logger.warning(f"No version control system detected in {project_path}")
+        logger.warning("No version control system detected in %s", project_path)
         logger.info("Please ensure the project is a Git or SVN repository.")
         return None
 
@@ -261,16 +266,16 @@ def get_diff_from_commits(project_path: str, commit_range: str) -> Optional[str]
                 encoding="utf-8", errors="replace",
             )
         else:
-            logger.error(f"Unsupported VCS type: {vcs_type}")
+            logger.error("Unsupported VCS type: %s", vcs_type)
             return None
 
         return result.stdout
 
     except subprocess.CalledProcessError as e:
-        logger.error(f"Error getting diff from {vcs_type.upper()}: {e}")
+        logger.error("Error getting diff from %s: %s", vcs_type.upper(), e)
         return None
     except FileNotFoundError:
-        logger.error(f"{vcs_type.upper()} not found. Please ensure {vcs_type} is installed and in PATH.")
+        logger.error("%s not found. Please ensure %s is installed and in PATH.", vcs_type.upper(), vcs_type)
         return None
 
 
@@ -303,11 +308,11 @@ def scan_project_with_scope(directory: Optional[str], scope: str = 'project', di
                 with open(diff_file, 'r', encoding='utf-8') as f:
                     diff_content = f.read()
             except FileNotFoundError:
-                print(f"Diff file not found: {diff_file}")
+                logger.error("Diff file not found: %s", diff_file)
                 return []
         elif commits:
             if directory is None:
-                print("Directory is required when using --commits for diff scope")
+                logger.error("Directory is required when using --commits for diff scope")
                 return []
             diff_content = get_diff_from_commits(directory, commits)
             if diff_content is None:

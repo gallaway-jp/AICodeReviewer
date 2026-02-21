@@ -5,9 +5,57 @@ Centralised configuration management for AICodeReviewer.
 Reads ``config.ini`` from the current working directory or the project root
 and provides typed access to all sections with sensible defaults.
 """
+from __future__ import annotations
+
 import configparser
 from pathlib import Path
 from typing import Any
+
+__all__ = ["Config", "config"]
+
+
+# ── type conversion rules ────────────────────────────────────────────────
+# Maps (section, key_pattern | exact_key) → converter.
+# Checked in order; first match wins.
+
+def _to_bytes_mb(v: str) -> int:
+    """Convert a megabyte string to bytes."""
+    return int(v) * 1024 * 1024
+
+
+def _to_bool(v: str) -> bool:
+    return v.lower() in ("true", "1", "yes")
+
+
+_CONVERTERS: list[tuple[str, str, Any]] = [
+    # (section, key suffix/name, converter)
+    # Performance section
+    ("performance", "*_mb",              _to_bytes_mb),
+    ("performance", "*_seconds",         float),
+    ("performance", "file_cache_size",   int),
+    ("performance", "max_requests_per_minute", int),
+    ("performance", "max_content_length", int),
+    ("performance", "max_fix_content_length", int),
+    # Processing section
+    ("processing",  "batch_size",        int),
+    ("processing",  "enable_*",          _to_bool),
+    # Logging section
+    ("logging",     "enable_*",          _to_bool),
+]
+
+
+def _find_converter(section: str, key: str) -> Any | None:
+    """Look up the appropriate type converter for a (section, key) pair."""
+    for rule_section, pattern, converter in _CONVERTERS:
+        if rule_section != section:
+            continue
+        if pattern.startswith("*") and key.endswith(pattern[1:]):
+            return converter
+        if pattern.endswith("*") and key.startswith(pattern[:-1]):
+            return converter
+        if pattern == key:
+            return converter
+    return None
 
 
 class Config:
@@ -122,37 +170,16 @@ class Config:
         """
         Retrieve a configuration value with automatic type conversion.
 
-        Type rules by section:
-        - performance: ``*_mb`` → bytes, ``*_seconds`` → float, others → int
-        - processing: ``batch_size`` → int, ``enable_*`` → bool
-        - logging: ``enable_*`` → bool
-        - model / aws / kiro / copilot / backend: string
+        The conversion rules are defined in :data:`_CONVERTERS` at module
+        level.  If no rule matches, the raw string is returned.
         """
         try:
             value = self.config.get(section, key)
             value = value.split("#")[0].strip()  # strip inline comments
 
-            if section == "performance":
-                if key.endswith("_mb"):
-                    return int(value) * 1024 * 1024
-                if key.endswith("_seconds") or key.endswith("_interval_seconds"):
-                    return float(value)
-                if key in {
-                    "file_cache_size",
-                    "max_requests_per_minute",
-                    "max_content_length",
-                    "max_fix_content_length",
-                }:
-                    return int(value)
-            elif section == "processing":
-                if key == "batch_size":
-                    return int(value)
-                if key.startswith("enable_"):
-                    return value.lower() == "true"
-            elif section == "logging":
-                if key.startswith("enable_"):
-                    return value.lower() == "true"
-
+            converter = _find_converter(section, key)
+            if converter is not None:
+                return converter(value)
             return value
 
         except (configparser.NoSectionError, configparser.NoOptionError):

@@ -18,6 +18,13 @@ from .models import ReviewReport, ReviewIssue, calculate_quality_score
 from .i18n import t
 from .backends.base import AIBackend
 
+__all__ = [
+    "ScanFunction",
+    "ProgressCallback",
+    "CancelCheck",
+    "AppRunner",
+]
+
 # Type aliases for complex callables
 ScanFunction = Callable[
     [Optional[str], str, Optional[str], Optional[str]],

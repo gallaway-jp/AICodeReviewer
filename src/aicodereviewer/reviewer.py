@@ -8,6 +8,7 @@ and structured issue parsing.
 import os
 import logging
 import re
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Union
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -16,6 +17,15 @@ from .models import ReviewIssue
 from .config import config
 from .backends.base import AIBackend
 
+__all__ = [
+    "ProgressCallback",
+    "CancelCheck",
+    "FileInfo",
+    "clear_file_cache",
+    "collect_review_issues",
+    "verify_issue_resolved",
+]
+
 # Type aliases
 ProgressCallback = Callable[[int, int, str], None]
 CancelCheck = Callable[[], bool]
@@ -23,26 +33,79 @@ FileInfo = Union[Path, Dict[str, Any]]
 
 logger = logging.getLogger(__name__)
 
-# Cache for file contents
-_file_content_cache: Dict[str, str] = {}
+
+# ── file content cache ─────────────────────────────────────────────────────
+
+class _BoundedCache:
+    """Simple bounded LRU cache for file contents.
+
+    Evicts the oldest entry when *maxsize* is reached, preventing
+    unbounded memory growth during large project reviews.
+    """
+
+    def __init__(self, maxsize: int = 100):
+        self._data: OrderedDict[str, str] = OrderedDict()
+        self.maxsize = maxsize
+
+    def get(self, key: str) -> Optional[str]:
+        if key in self._data:
+            self._data.move_to_end(key)
+            return self._data[key]
+        return None
+
+    def put(self, key: str, value: str) -> None:
+        if key in self._data:
+            self._data.move_to_end(key)
+        else:
+            if len(self._data) >= self.maxsize:
+                self._data.popitem(last=False)
+        self._data[key] = value
+
+    def clear(self) -> None:
+        self._data.clear()
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def __contains__(self, key: object) -> bool:
+        return key in self._data
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, dict):
+            return dict(self._data) == other
+        if isinstance(other, _BoundedCache):
+            return self._data == other._data
+        return NotImplemented
+
+
+_file_content_cache = _BoundedCache()
+
+
+def clear_file_cache() -> None:
+    """Clear the file-content cache (useful between review sessions)."""
+    _file_content_cache.clear()
 
 
 # ── severity parsing ───────────────────────────────────────────────────────
+
+# ── severity keyword mapping ───────────────────────────────────────────────
+
+_SEVERITY_KEYWORDS: Dict[str, tuple[str, ...]] = {
+    "critical": ("critical", "critically"),
+    "high":     ("high", "severe"),
+    "medium":   ("medium",),
+    "low":      ("low", "minor"),
+    "info":     ("info", "informational", "note"),
+}
+
 
 def _parse_severity(feedback: str) -> str:
     """Infer severity from AI feedback text using keyword heuristics."""
     try:
         text = feedback.lower()
-        if any(k in text for k in ("critical", "critically")):
-            return "critical"
-        if any(k in text for k in ("high", "severe")):
-            return "high"
-        if "medium" in text:
-            return "medium"
-        if any(k in text for k in ("low", "minor")):
-            return "low"
-        if any(k in text for k in ("info", "informational", "note")):
-            return "info"
+        for level, keywords in _SEVERITY_KEYWORDS.items():
+            if any(k in text for k in keywords):
+                return level
     except Exception:
         pass
     return "medium"
@@ -62,8 +125,9 @@ def _extract_description(feedback: str, filename: str) -> str:
 def _read_file_content(file_path: Path) -> str:
     """Read file with caching and size limits."""
     cache_key = str(file_path)
-    if cache_key in _file_content_cache:
-        return _file_content_cache[cache_key]
+    cached = _file_content_cache.get(cache_key)
+    if cached is not None:
+        return cached
 
     try:
         file_size = os.path.getsize(file_path)
@@ -77,9 +141,7 @@ def _read_file_content(file_path: Path) -> str:
         with open(file_path, "r", encoding="utf-8", errors="ignore") as fh:
             content = fh.read()
 
-        cache_limit = config.get("performance", "file_cache_size")
-        if len(_file_content_cache) < cache_limit:
-            _file_content_cache[cache_key] = content
+        _file_content_cache.put(cache_key, content)
         return content
 
     except (OSError, UnicodeDecodeError) as exc:
@@ -280,7 +342,6 @@ def _process_combined_batch(
                 len(file_entries), review_type, ", ".join(names))
 
     # Build combined user message via the backend helper
-    from .backends.base import AIBackend
     combined_code = AIBackend._build_multi_file_user_message(  # noqa: SLF001
         file_entries, review_type, spec_content
     )  # type: ignore[reportPrivateUsage]

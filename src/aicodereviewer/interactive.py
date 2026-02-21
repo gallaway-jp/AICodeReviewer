@@ -18,6 +18,8 @@ from .fixer import apply_ai_fix
 from .i18n import t
 from .backends.base import AIBackend
 
+__all__ = ["get_valid_choice", "interactive_review_confirmation"]
+
 logger = logging.getLogger(__name__)
 
 

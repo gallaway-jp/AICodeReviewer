@@ -9,8 +9,13 @@ Functions:
     cleanup_old_backups: Remove backup files older than specified age
 """
 import glob
+import logging
 import os
 import time
+
+__all__ = ["cleanup_old_backups"]
+
+logger = logging.getLogger(__name__)
 
 
 def cleanup_old_backups(project_path: str, max_age_hours: int = 24):
@@ -40,7 +45,7 @@ def cleanup_old_backups(project_path: str, max_age_hours: int = 24):
             if os.path.getmtime(backup_file) < current_time - max_age_seconds:
                 try:
                     os.remove(backup_file)
-                    print(f"🗑️ Cleaned up old backup: {backup_file}")
+                    logger.info("Cleaned up old backup: %s", backup_file)
                 except OSError:
                     pass  # Ignore if can't delete
     except Exception:

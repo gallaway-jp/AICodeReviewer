@@ -16,6 +16,9 @@ from typing import Dict, Any
 from contextlib import contextmanager
 
 from .config import config
+
+__all__ = ["PerformanceMonitor", "performance_monitor"]
+
 logger = logging.getLogger(__name__)
 
 
@@ -79,7 +82,8 @@ class PerformanceMonitor:
             }
 
             logger.info(
-                f"Performance: {operation_name} took {duration:.2f}s, memory change: {memory_delta / (1024*1024):.2f}MB"
+                "Performance: %s took %.2fs, memory change: %.2fMB",
+                operation_name, duration, memory_delta / (1024 * 1024),
             )
 
     def get_metrics(self) -> Dict[str, Any]:

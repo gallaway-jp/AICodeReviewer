@@ -1,0 +1,16 @@
+﻿Refactor: Project-wide cleanup and improvements
+
+Summary of changes:
+
+- reporter.py: Extracted ReportStatistics dataclass; DRYed summary/markdown generation; modernized type annotations.
+- reviewer.py: Added bounded LRU _BoundedCache with clear_file_cache(); extracted severity mapping; removed redundant imports.
+- local_llm.py (backends): DRYed model validation into shared helpers _validate_with_model_discovery() and _parse_model_list().
+- config.py: Replaced nested conversion logic with data-driven _CONVERTERS and _find_converter(); added rom __future__ import annotations.
+- scanner.py: Unified parallel/sequential scanning into shared batching; replaced prints with logging; improved VCS logging.
+- models.py: Modernized type hints to PEP 604 / built-in generics and added annotations import.
+- main.py: Extracted _validate_args() and _run_review() helpers to shorten main().
+- backup.py, performance.py, fixer.py, orchestration.py, interactive.py, auth.py, path_utils.py: Added __all__ exports and small logging fixes.
+
+Notes:
+- All unit tests pass except two environment-specific tests (same as baseline): config backend default and system language settings.
+- If push fails due to remote/auth, you'll need to run git push locally or configure credentials.

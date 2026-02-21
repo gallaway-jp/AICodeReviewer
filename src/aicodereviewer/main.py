@@ -136,6 +136,14 @@ def main():
     review_types = _parse_review_types(args.review_types)
 
     # ── validation ─────────────────────────────────────────────────────────
+    _validate_args(parser, args, review_types)
+
+    # ── run ────────────────────────────────────────────────────────────────
+    _run_review(args, review_types, target_lang)
+
+
+def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace, review_types: list) -> None:
+    """Validate semantic constraints on parsed arguments."""
     if args.scope == "diff" and not args.diff_file and not args.commits:
         parser.error("--diff-file or --commits required for diff scope")
     if args.scope == "diff" and args.diff_file and args.commits:
@@ -150,13 +158,15 @@ def main():
     if "specification" in review_types and not args.spec_file:
         parser.error("--spec-file required when using specification type")
 
-    # ── backend ────────────────────────────────────────────────────────────
-    client = None
+
+def _run_review(args: argparse.Namespace, review_types: list, target_lang: str) -> None:
+    """Create the backend, load the spec file if needed, and execute the review."""
     backend_name = args.backend or "bedrock"
+
+    client = None
     if not args.dry_run:
         client = create_backend(backend_name)
 
-    # ── spec file ──────────────────────────────────────────────────────────
     spec_content = None
     if args.spec_file and not args.dry_run:
         try:
@@ -169,10 +179,10 @@ def main():
             logger.error(t("cli.spec_read_error", error=exc))
             return
 
-    # ── run ────────────────────────────────────────────────────────────────
     if client is None:
         logger.error("Failed to create backend '%s'; cannot run review.", backend_name)
         return
+
     runner = AppRunner(client, scan_fn=scan_project_with_scope, backend_name=backend_name)
     runner.run(
         path=args.path,

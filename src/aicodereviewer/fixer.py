@@ -13,6 +13,8 @@ from .models import ReviewIssue
 from .config import config
 from .backends.base import AIBackend
 
+__all__ = ["apply_ai_fix"]
+
 logger = logging.getLogger(__name__)
 
 
