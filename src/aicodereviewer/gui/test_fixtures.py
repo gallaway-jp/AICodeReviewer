@@ -24,7 +24,12 @@ _ISSUE_TEMPLATES: List[Dict[str, object]] = [
         "line_number": 42,
         "issue_type": "security",
         "severity": "critical",
-        "description": "SQL injection via unsanitised user input in login query",
+        "description": (
+            "SQL injection via unsanitised user input in login query. "
+            "The username parameter is concatenated directly into the SQL string "
+            "without parameterised queries or escaping, allowing an attacker to "
+            "bypass authentication or exfiltrate the entire users table."
+        ),
         "code_snippet": (
             "def authenticate(user, password):\n"
             "    query = f\"SELECT * FROM users WHERE name='{user}'\"\n"

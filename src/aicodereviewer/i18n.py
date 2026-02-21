@@ -488,6 +488,8 @@ _EN: dict[str, str] = {
     "gui.results.editor_discard_title": "Discard changes?",
     "gui.results.editor_discard_msg":   "You have unsaved changes. Discard them?",
     "gui.results.editor_save":        "Save & Close",
+    "gui.results.desc_more":           "▼ more",
+    "gui.results.desc_less":           "▲ less",
 
     # ── Results filter bar ─────────────────────────────────────────────────
     "gui.results.filter_severity":    "Severity:",
@@ -608,6 +610,8 @@ _JA: dict[str, str] = {
     "gui.results.filter_all_types":   "すべての種類",
     "gui.results.filter_clear":       "クリア",
     "gui.results.filter_count":       "{visible}/{total} 件表示",
+    "gui.results.desc_more":           "▼ もっと見る",
+    "gui.results.desc_less":           "▲ 閉じる",
 
     # ── GUI Settings tab ───────────────────────────────────────────────────
     "gui.settings.backend":           "バックエンド",

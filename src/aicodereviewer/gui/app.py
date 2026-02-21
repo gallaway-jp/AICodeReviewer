@@ -360,6 +360,8 @@ class IssueCard(TypedDict):
     issue: "ReviewIssue"
     card: Any
     status_lbl: Any
+    desc_lbl: Any        # Label showing the (possibly truncated) description
+    expand_btn: Any      # "▼ more" / "▲ less" button; None when desc fits in 120 chars
     view_btn: Any
     resolve_btn: Any
     skip_btn: Any
@@ -1712,9 +1714,45 @@ class App(ctk.CTk):
                       font=ctk.CTkFont(weight="bold")).grid(
             row=0, column=0, columnspan=6, sticky="w", padx=6, pady=(4, 0))
 
-        desc = issue.description[:120]
-        ctk.CTkLabel(card, text=desc, anchor="w", wraplength=700).grid(
-            row=1, column=0, columnspan=6, sticky="w", padx=6)
+        _TRUNC = 120
+        full_desc = issue.description
+        truncated = len(full_desc) > _TRUNC
+        desc_text = full_desc[:_TRUNC] + "…" if truncated else full_desc
+        desc_lbl = ctk.CTkLabel(card, text=desc_text, anchor="w", wraplength=680)
+        desc_lbl.grid(row=1, column=0, columnspan=5, sticky="w", padx=6)
+
+        # "▼ more" / "▲ less" toggle (only shown when description is long)
+        expand_btn: Any = None
+        if truncated:
+            _expanded = [False]  # mutable cell for the closure
+
+            def _toggle_desc(
+                lbl=desc_lbl,
+                full=full_desc,
+                short=desc_text,
+                state=_expanded,
+            ) -> None:
+                if state[0]:
+                    lbl.configure(text=short)
+                    expand_btn.configure(text=t("gui.results.desc_more"))
+                    state[0] = False
+                else:
+                    lbl.configure(text=full)
+                    expand_btn.configure(text=t("gui.results.desc_less"))
+                    state[0] = True
+
+            expand_btn = ctk.CTkButton(
+                card,
+                text=t("gui.results.desc_more"),
+                width=70, height=20,
+                font=ctk.CTkFont(size=10),
+                fg_color="transparent",
+                border_width=1,
+                text_color=("gray40", "gray70"),
+                hover_color=("gray85", "gray25"),
+                command=_toggle_desc,
+            )
+            expand_btn.grid(row=1, column=5, padx=(0, 6), pady=(0, 2), sticky="e")
 
         # Status label
         s_key, s_color = self._status_display(issue, color)
@@ -1766,6 +1804,8 @@ class App(ctk.CTk):
             issue=issue,
             card=card,
             status_lbl=status_lbl,
+            desc_lbl=desc_lbl,
+            expand_btn=expand_btn,
             view_btn=view_btn,
             resolve_btn=resolve_btn,
             skip_btn=skip_btn,
