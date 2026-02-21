@@ -505,7 +505,12 @@ class ResultsTabMixin:
 
         self._refresh_status(idx)
 
-    def _open_builtin_editor(self, idx: int):  # noqa: PLR0915
+    def _open_builtin_editor(  # noqa: PLR0915
+        self,
+        idx: int,
+        _initial_content: str | None = None,
+        _on_save: Any = None,
+    ):
         rec = self._issue_cards[idx]
         issue = rec["issue"]
         fname = Path(issue.file_path).name
@@ -866,7 +871,9 @@ class ResultsTabMixin:
                     pass
 
         # ── load content ───────────────────────────────────────────────────
-        if self._testing_mode:
+        if _initial_content is not None:
+            raw = _initial_content
+        elif self._testing_mode:
             raw = issue.code_snippet or "(no code snippet)"
         else:
             try:
@@ -918,6 +925,11 @@ class ResultsTabMixin:
         btn_frame.pack(pady=8, side="bottom")
 
         def _save() -> None:
+            content_out = text.get("1.0", "end").rstrip("\n") + "\n"
+            if _on_save is not None:
+                _on_save(content_out)
+                win.destroy()
+                return
             if self._testing_mode:
                 issue.status = "resolved"
                 self._refresh_status(idx)
@@ -925,7 +937,6 @@ class ResultsTabMixin:
                 win.destroy()
                 return
             try:
-                content_out = text.get("1.0", "end").rstrip("\n") + "\n"
                 with open(issue.file_path, "w", encoding="utf-8") as fh:
                     fh.write(content_out)
                 issue.status = "resolved"
@@ -1211,8 +1222,8 @@ class ResultsTabMixin:
                     frame, text=t("gui.results.preview_changes"),
                     width=100, height=24, font=ctk.CTkFont(size=11),
                     fg_color="#2563eb",
-                    command=lambda fp=issue.file_path, ft=fix_text, fn=fname:
-                        self._show_diff_preview(fp, ft, fn),
+                    command=lambda fp=issue.file_path, ft=fix_text, fn=fname, ix=idx:
+                        self._show_diff_preview(fp, ft, fn, ix),
                 )
                 preview_btn.grid(row=0, column=1, sticky="e", padx=6, pady=(4, 0))
 
@@ -1289,7 +1300,7 @@ class ResultsTabMixin:
         ctk.CTkButton(btn_frame, text=t("common.cancel"),
                        command=_cancel).grid(row=0, column=1, padx=6)
 
-    def _show_diff_preview(self, file_path: str, new_content: str, filename: str):
+    def _show_diff_preview(self, file_path: str, new_content: str, filename: str, idx: int = 0):
         if self._testing_mode:
             original_content = ""
             for rec in self._issue_cards:
@@ -1318,6 +1329,9 @@ class ResultsTabMixin:
         is_dark = ctk.get_appearance_mode().lower() == "dark"
         bg_color = "#1e1e1e" if is_dark else "#ffffff"
         fg_color = "#d4d4d4" if is_dark else "#1e1e1e"
+        hdr_bg   = "#252526" if is_dark else "#f0f0f0"
+        hdr_fg   = "#cccccc" if is_dark else "#444444"
+        sash_col = "#555555" if is_dark else "#bbbbbb"
 
         orig_lines_list = original_content.splitlines()
         new_lines_list  = new_content.splitlines()
@@ -1356,26 +1370,60 @@ class ResultsTabMixin:
                     left_tags.append("pad")
                     right_tags.append("add")
 
-        split_frame = ctk.CTkFrame(win, fg_color="transparent")
-        split_frame.pack(fill="both", expand=True, padx=10, pady=4)
-        split_frame.grid_rowconfigure(1, weight=1)
-        split_frame.grid_columnconfigure(0, weight=1)
-        split_frame.grid_columnconfigure(2, weight=1)
-
         rem_bg = "#4b1010" if is_dark else "#ffcccc"
         rem_fg = "#ff6b6b" if is_dark else "#8b0000"
         add_bg = "#1e4620" if is_dark else "#ccffcc"
         add_fg = "#57d15b" if is_dark else "#006400"
         pad_bg = "#2a2a2a" if is_dark else "#efefef"
 
-        def _make_pane(col: int, header: str) -> tk.Text:
-            ctk.CTkLabel(
-                split_frame, text=header,
-                font=ctk.CTkFont(size=11, weight="bold"),
-                anchor="w",
-            ).grid(row=0, column=col, sticky="ew", pady=(0, 2))
+        # ── content area: outer_row holds vsb + PanedWindow ───────────────
+        outer_row = tk.Frame(win, bg=bg_color)
+        outer_row.pack(fill="both", expand=True, padx=10, pady=4)
+
+        vsb = ctk.CTkScrollbar(outer_row, orientation="vertical")
+        vsb.pack(side="right", fill="y")
+
+        paned = tk.PanedWindow(
+            outer_row, orient="horizontal",
+            bg=sash_col, sashwidth=6,
+            sashcursor="sb_h_double_arrow",
+            bd=0, opaqueresize=True,
+        )
+        paned.pack(fill="both", expand=True)
+
+        _syncing: list = [False]
+        _all_texts: list[tk.Text] = []
+
+        def _on_vsb(*args: Any) -> None:
+            for tw in _all_texts:
+                tw.yview(*args)
+
+        vsb.configure(command=_on_vsb)
+
+        def _sync_yscroll(source: tk.Text, first: str, last: str) -> None:
+            vsb.set(first, last)
+            if not _syncing[0]:
+                _syncing[0] = True
+                for tw in _all_texts:
+                    if tw is not source:
+                        tw.yview("moveto", first)
+                _syncing[0] = False
+
+        def _make_diff_pane(header: str) -> tk.Text:
+            frame = tk.Frame(paned, bg=bg_color)
+            frame.rowconfigure(1, weight=1)
+            frame.columnconfigure(0, weight=1)
+            paned.add(frame, stretch="always", minsize=150)
+
+            tk.Label(
+                frame, text=header,
+                bg=hdr_bg, fg=hdr_fg,
+                font=("Consolas", 10, "bold"),
+                anchor="w", padx=8, pady=3,
+            ).grid(row=0, column=0, sticky="ew")
+
             txt = tk.Text(
-                split_frame, wrap="none",
+                frame, wrap="none",
                 font=("Consolas", 11),
                 bg=bg_color, fg=fg_color,
                 insertbackground=fg_color,
@@ -1383,75 +1431,34 @@ class ResultsTabMixin:
                 relief="flat", borderwidth=0,
                 exportselection=False,
             )
-            txt.grid(row=1, column=col, sticky="nsew")
+            txt.grid(row=1, column=0, sticky="nsew")
             txt.tag_configure("rem", background=rem_bg, foreground=rem_fg)
             txt.tag_configure("add", background=add_bg, foreground=add_fg)
             txt.tag_configure("pad", background=pad_bg)
+
+            hsb = ctk.CTkScrollbar(frame, orientation="horizontal", command=txt.xview)
+            hsb.grid(row=2, column=0, sticky="ew")
+
+            def _xscroll(first: str, last: str, _h: Any = hsb) -> None:
+                if float(first) <= 0.0 and float(last) >= 1.0:
+                    _h.grid_remove()
+                else:
+                    _h.grid()
+                _h.set(first, last)
+
+            txt.configure(xscrollcommand=_xscroll)
+            _all_texts.append(txt)
             return txt
 
-        left_text  = _make_pane(0, f"  ─ original / {filename}")
+        left_text  = _make_diff_pane("  ─  original")
+        right_text = _make_diff_pane("  +  ai fixed")
 
-        tk.Frame(
-            split_frame, width=2,
-            bg="#555555" if is_dark else "#cccccc"
-        ).grid(row=0, column=1, rowspan=2, sticky="ns", padx=2)
+        left_text.configure(
+            yscrollcommand=lambda f, l: _sync_yscroll(left_text, f, l))
+        right_text.configure(
+            yscrollcommand=lambda f, l: _sync_yscroll(right_text, f, l))
 
-        right_text = _make_pane(2, f"  + fixed / {filename}")
-
-        _syncing: list = [False]
-
-        def _on_vsb(*args):
-            left_text.yview(*args)
-            right_text.yview(*args)
-
-        def _left_yscroll(first, last):
-            if not _syncing[0]:
-                _syncing[0] = True
-                right_text.yview("moveto", first)
-                _syncing[0] = False
-            if float(first) <= 0.0 and float(last) >= 1.0:
-                vsb.grid_remove()
-            else:
-                vsb.grid()
-            vsb.set(first, last)
-
-        def _right_yscroll(first, last):
-            if not _syncing[0]:
-                _syncing[0] = True
-                left_text.yview("moveto", first)
-                _syncing[0] = False
-            vsb.set(first, last)
-
-        vsb = ctk.CTkScrollbar(split_frame, orientation="vertical", command=_on_vsb)
-        vsb.grid(row=1, column=3, sticky="ns")
-
-        left_text.configure(yscrollcommand=_left_yscroll)
-        right_text.configure(yscrollcommand=_right_yscroll)
-
-        split_frame.grid_rowconfigure(2, weight=0)
-
-        left_hsb  = ctk.CTkScrollbar(split_frame, orientation="horizontal", command=left_text.xview)
-        right_hsb = ctk.CTkScrollbar(split_frame, orientation="horizontal", command=right_text.xview)
-        left_hsb.grid(row=2,  column=0, sticky="ew")
-        right_hsb.grid(row=2, column=2, sticky="ew")
-
-        def _left_xscroll(first, last):
-            if float(first) <= 0.0 and float(last) >= 1.0:
-                left_hsb.grid_remove()
-            else:
-                left_hsb.grid()
-            left_hsb.set(first, last)
-
-        def _right_xscroll(first, last):
-            if float(first) <= 0.0 and float(last) >= 1.0:
-                right_hsb.grid_remove()
-            else:
-                right_hsb.grid()
-            right_hsb.set(first, last)
-
-        left_text.configure(xscrollcommand=_left_xscroll)
-        right_text.configure(xscrollcommand=_right_xscroll)
-
+        # populate diff
         if left_lines:
             for ll, rl, lt, rt in zip(left_lines, right_lines, left_tags, right_tags):
                 left_text.insert("end",  ll + "\n", () if lt == "ctx" else lt)
@@ -1463,8 +1470,81 @@ class ResultsTabMixin:
         left_text.configure(state="disabled")
         right_text.configure(state="disabled")
 
-        ctk.CTkButton(win, text=t("common.close"),
-                      command=win.destroy).pack(pady=8)
+        # ── user-edit pane state ──────────────────────────────────────────
+        user_text_ref:  list[tk.Text | None]  = [None]
+        user_frame_ref: list[tk.Frame | None] = [None]
+        undo_btn_ref:   list[Any]             = [None]
+
+        def _populate_user_pane(user_content: str) -> None:
+            utxt = user_text_ref[0]
+            if utxt is None:
+                return
+            utxt.configure(state="normal")
+            utxt.delete("1.0", "end")
+            ai_lines  = new_content.splitlines()
+            usr_lines = user_content.splitlines()
+            m2 = difflib.SequenceMatcher(None, ai_lines, usr_lines, autojunk=False)
+            for op, i1, i2, j1, j2 in m2.get_opcodes():
+                if op == "equal":
+                    for line in usr_lines[j1:j2]:
+                        utxt.insert("end", line + "\n")
+                elif op in ("replace", "insert"):
+                    lb2 = ai_lines[i1:i2]
+                    rb2 = usr_lines[j1:j2]
+                    for k in range(max(len(lb2), len(rb2))):
+                        line = rb2[k] if k < len(rb2) else ""
+                        tag2 = "add" if k < len(rb2) else "pad"
+                        utxt.insert("end", line + "\n", tag2)
+                elif op == "delete":
+                    for _ in ai_lines[i1:i2]:
+                        utxt.insert("end", "\n", "pad")
+            utxt.configure(state="disabled")
+
+        def _on_user_save(user_content: str) -> None:
+            if user_text_ref[0] is None:
+                # First save: create third pane
+                utxt = _make_diff_pane("  ✎  ai + user fixed")
+                user_text_ref[0]  = utxt
+                user_frame_ref[0] = utxt.master
+                utxt.configure(
+                    yscrollcommand=lambda f, l: _sync_yscroll(utxt, f, l))
+                # Reveal Undo button
+                undo_btn = ctk.CTkButton(
+                    btn_frame, text="↩  Undo User Changes",
+                    fg_color=("gray75", "gray30"),
+                    hover_color=("gray60", "gray20"),
+                    command=_undo_user_changes,
+                )
+                undo_btn.grid(row=0, column=2, padx=6)
+                undo_btn_ref[0] = undo_btn
+            _populate_user_pane(user_content)
+
+        def _undo_user_changes() -> None:
+            if user_frame_ref[0] is not None:
+                if user_text_ref[0] in _all_texts:
+                    _all_texts.remove(user_text_ref[0])
+                paned.remove(user_frame_ref[0])
+                user_frame_ref[0] = None
+                user_text_ref[0]  = None
+            if undo_btn_ref[0] is not None:
+                undo_btn_ref[0].grid_remove()
+                undo_btn_ref[0] = None
+
+        def _open_editor() -> None:
+            self._open_builtin_editor(
+                idx,
+                _initial_content=new_content,
+                _on_save=_on_user_save,
+            )
+
+        # ── buttons ───────────────────────────────────────────────────────
+        btn_frame = ctk.CTkFrame(win, fg_color="transparent")
+        btn_frame.pack(pady=8)
+
+        ctk.CTkButton(btn_frame, text="✎  Edit",
+                      command=_open_editor).grid(row=0, column=0, padx=6)
+        ctk.CTkButton(btn_frame, text=t("common.close"),
+                      command=win.destroy).grid(row=0, column=1, padx=6)
 
     # ── View detail ────────────────────────────────────────────────────────
 
