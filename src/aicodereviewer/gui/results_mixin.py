@@ -1379,10 +1379,8 @@ class ResultsTabMixin:
         # ── content area: outer_row holds vsb + PanedWindow ───────────────
         outer_row = tk.Frame(win, bg=bg_color)
         outer_row.pack(fill="both", expand=True, padx=10, pady=4)
-
-        vsb = ctk.CTkScrollbar(outer_row, orientation="vertical")
-        vsb.pack(side="right", fill="y")
-        _vsb_visible = [True]
+        outer_row.columnconfigure(0, weight=1)
+        outer_row.rowconfigure(0, weight=1)
 
         paned = tk.PanedWindow(
             outer_row, orient="horizontal",
@@ -1390,7 +1388,11 @@ class ResultsTabMixin:
             sashcursor="sb_h_double_arrow",
             bd=0, opaqueresize=True,
         )
-        paned.pack(fill="both", expand=True)
+        paned.grid(row=0, column=0, sticky="nsew")
+
+        vsb = ctk.CTkScrollbar(outer_row, orientation="vertical")
+        vsb.grid(row=0, column=1, sticky="ns")
+        _vsb_visible = [True]
 
         _syncing: list = [False]
         _all_texts: list[tk.Text] = []
@@ -1402,15 +1404,16 @@ class ResultsTabMixin:
         vsb.configure(command=_on_vsb)
 
         def _sync_yscroll(source: tk.Text, first: str, last: str) -> None:
-            if float(first) <= 0.0 and float(last) >= 1.0:
+            lo, hi = float(first), float(last)
+            if lo <= 0.0 and hi >= 1.0:
                 if _vsb_visible[0]:
-                    vsb.pack_forget()
+                    vsb.grid_remove()
                     _vsb_visible[0] = False
             else:
                 if not _vsb_visible[0]:
-                    vsb.pack(side="right", fill="y")
+                    vsb.grid()
                     _vsb_visible[0] = True
-            vsb.set(first, last)
+                vsb.set(first, last)
             if not _syncing[0]:
                 _syncing[0] = True
                 for tw in _all_texts:
@@ -1479,6 +1482,15 @@ class ResultsTabMixin:
         left_text.configure(state="disabled")
         right_text.configure(state="disabled")
 
+        # Deferred vsb check: geometry isn't settled yet during insertion
+        def _force_vsb_check() -> None:
+            try:
+                lo, hi = left_text.yview()
+                _sync_yscroll(left_text, str(lo), str(hi))
+            except Exception:
+                pass
+        win.after(200, _force_vsb_check)
+
         # ── user-edit pane state ──────────────────────────────────────────
         user_text_ref:    list[tk.Text | None]  = [None]
         user_frame_ref:   list[tk.Frame | None] = [None]
@@ -1535,6 +1547,13 @@ class ResultsTabMixin:
             if not content:
                 win.destroy()
                 return
+            if self._testing_mode:
+                if idx < len(self._issue_cards):
+                    self._issue_cards[idx]["issue"].status = "resolved"
+                    self._refresh_status(idx)
+                self._show_toast(t("gui.results.editor_saved"))
+                win.destroy()
+                return
             try:
                 out = content if content.endswith("\n") else content + "\n"
                 with open(file_path, "w", encoding="utf-8") as fh:
@@ -1574,7 +1593,7 @@ class ResultsTabMixin:
                 # Change Close -> Save and Close
                 if close_btn_ref[0] is not None:
                     close_btn_ref[0].configure(
-                        text="💾  Save and Close",
+                        text="\u2714  Save and Close",
                         fg_color="green",
                         hover_color="#1a7a1a",
                         command=_save_and_close,
