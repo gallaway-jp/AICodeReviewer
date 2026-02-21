@@ -572,6 +572,9 @@ class ResultsTabMixin:
         # ── editor area ────────────────────────────────────────────────────
         editor_outer = tk.Frame(win, bd=0, highlightthickness=0)
         editor_outer.pack(fill="both", expand=True, padx=10, pady=(6, 0))
+        # Use grid so scrollbars can be removed/restored without breaking layout
+        editor_outer.columnconfigure(2, weight=1)
+        editor_outer.rowconfigure(0, weight=1)
 
         # Create CTkScrollbar instances (styled with theme colors)
         vscroll = ctk.CTkScrollbar(
@@ -582,7 +585,7 @@ class ResultsTabMixin:
             button_color=("gray70", "gray30"),
             button_hover_color=("gray60", "gray40"),
         )
-        vscroll.pack(side="right", fill="y")
+        vscroll.grid(row=0, column=3, sticky="ns")
 
         hscroll = ctk.CTkScrollbar(
             editor_outer,
@@ -592,45 +595,7 @@ class ResultsTabMixin:
             button_color=("gray70", "gray30"),
             button_hover_color=("gray60", "gray40"),
         )
-        hscroll.pack(side="bottom", fill="x")
-
-        _vscroll_visible = [True]
-        _hscroll_visible = [True]
-
-        def _toggle_scrollbar_visibility() -> None:
-            """Show/hide scrollbars only when necessary."""
-            try:
-                # Check if vertical scrollbar is needed
-                total_lines = int(text.index("end-1c").split(".")[0])
-                line_height = text.winfo_height() // 13  # approximate line height
-                need_vscroll = total_lines > line_height if line_height > 0 else False
-
-                # Check if horizontal scrollbar is needed
-                max_line_width = 0
-                for i in range(1, min(total_lines + 1, 100)):  # sample first 100 lines
-                    line_text = text.get(f"{i}.0", f"{i}.end")
-                    # rough estimate: chars * avg char width
-                    width = len(line_text) * 8
-                    max_line_width = max(max_line_width, width)
-                need_hscroll = max_line_width > (text.winfo_width() - 20) if text.winfo_width() > 20 else False
-
-                # Toggle vertical scrollbar
-                if need_vscroll and not _vscroll_visible[0]:
-                    vscroll.pack(side="right", fill="y")
-                    _vscroll_visible[0] = True
-                elif not need_vscroll and _vscroll_visible[0]:
-                    vscroll.pack_forget()
-                    _vscroll_visible[0] = False
-
-                # Toggle horizontal scrollbar
-                if need_hscroll and not _hscroll_visible[0]:
-                    hscroll.pack(side="bottom", fill="x")
-                    _hscroll_visible[0] = True
-                elif not need_hscroll and _hscroll_visible[0]:
-                    hscroll.pack_forget()
-                    _hscroll_visible[0] = False
-            except Exception:
-                pass
+        hscroll.grid(row=1, column=2, sticky="ew")
 
         # line-numbers pane
         ln_pane = tk.Text(
@@ -640,12 +605,30 @@ class ResultsTabMixin:
             state="disabled", wrap="none", cursor="arrow",
             font=("Consolas", 13),
         )
-        ln_pane.pack(side="left", fill="y")
+        ln_pane.grid(row=0, column=0, sticky="ns")
 
         # thin separator between line-nums and code
         sep = tk.Frame(editor_outer, width=1,
                        bg="#3c3c3c" if dark else "#d0d0d0")
-        sep.pack(side="left", fill="y")
+        sep.grid(row=0, column=1, sticky="ns")
+
+        # Auto-hide callbacks: use actual scroll fractions (lo=0, hi=1 → fits)
+        def _autohide_vscroll(*args: Any) -> None:
+            vscroll.set(*args)
+            lo, hi = float(args[0]), float(args[1])
+            if lo <= 0.0 and hi >= 1.0:
+                vscroll.grid_remove()
+            else:
+                vscroll.grid()
+            _update_ln()
+
+        def _autohide_hscroll(*args: Any) -> None:
+            hscroll.set(*args)
+            lo, hi = float(args[0]), float(args[1])
+            if lo <= 0.0 and hi >= 1.0:
+                hscroll.grid_remove()
+            else:
+                hscroll.grid()
 
         # main editor
         text = tk.Text(
@@ -657,12 +640,12 @@ class ResultsTabMixin:
             font=("Consolas", 13),
             undo=True, autoseparators=True, maxundo=-1,
             tabs=("4c",),
-            yscrollcommand=lambda *a: (vscroll.set(*a) if _vscroll_visible[0] else None, _update_ln()),
-            xscrollcommand=lambda *a: (hscroll.set(*a) if _hscroll_visible[0] else None),
+            yscrollcommand=_autohide_vscroll,
+            xscrollcommand=_autohide_hscroll,
             padx=10, pady=4,
             spacing1=1, spacing3=2,
         )
-        text.pack(side="left", fill="both", expand=True)
+        text.grid(row=0, column=2, sticky="nsew")
         vscroll.configure(command=lambda *a: (text.yview(*a), _update_ln()))
         hscroll.configure(command=text.xview)
 
@@ -848,7 +831,6 @@ class ResultsTabMixin:
             text.mark_set("insert", cur)
             find_count_lbl.configure(
                 text=f"{_search_idx[0] + 1} / {len(_search_positions)}")
-            _toggle_scrollbar_visibility()
 
         ctk.CTkButton(find_frame, text="▲", width=32,
                       command=lambda: _do_find(-1)).pack(side="left", padx=2)
@@ -901,7 +883,6 @@ class ResultsTabMixin:
             _highlight_python()
         _update_ln()
         _update_cur_line()
-        _toggle_scrollbar_visibility()
 
         # scroll to reported line if known
         if not self._testing_mode and issue.line_number:
@@ -919,12 +900,11 @@ class ResultsTabMixin:
             win.title(f"{title_mark}{base_title}")
             _update_ln()
             _update_cur_line()
-            _toggle_scrollbar_visibility()
             _schedule_highlight()
 
         text.bind("<KeyRelease>",     _on_key)
         text.bind("<ButtonRelease-1>", _update_cur_line)
-        text.bind("<Configure>",       lambda *a: (_update_ln(), _toggle_scrollbar_visibility()))
+        text.bind("<Configure>",       _update_ln)
         text.bind("<MouseWheel>",
                   lambda e: win.after(10, _update_ln))
 
