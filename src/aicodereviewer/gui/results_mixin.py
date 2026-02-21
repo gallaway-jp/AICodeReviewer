@@ -573,6 +573,7 @@ class ResultsTabMixin:
         editor_outer = tk.Frame(win, bd=0, highlightthickness=0)
         editor_outer.pack(fill="both", expand=True, padx=10, pady=(6, 0))
         # Use grid so scrollbars can be removed/restored without breaking layout
+        editor_outer.configure(bg=ln_bg)  # prevent white flash in corner gaps
         editor_outer.columnconfigure(2, weight=1)
         editor_outer.rowconfigure(0, weight=1)
 
@@ -605,12 +606,12 @@ class ResultsTabMixin:
             state="disabled", wrap="none", cursor="arrow",
             font=("Consolas", 13),
         )
-        ln_pane.grid(row=0, column=0, sticky="ns")
+        ln_pane.grid(row=0, column=0, rowspan=2, sticky="ns")
 
         # thin separator between line-nums and code
         sep = tk.Frame(editor_outer, width=1,
                        bg="#3c3c3c" if dark else "#d0d0d0")
-        sep.grid(row=0, column=1, sticky="ns")
+        sep.grid(row=0, column=1, rowspan=2, sticky="ns")
 
         # Auto-hide callbacks: use actual scroll fractions (lo=0, hi=1 → fits)
         def _autohide_vscroll(*args: Any) -> None:
