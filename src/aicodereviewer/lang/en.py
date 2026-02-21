@@ -455,7 +455,7 @@ STRINGS: dict[str, str] = {
     "gui.results.batch_fix_summary":  "{success} fixes generated, {failed} failed",
     "gui.results.batch_fix_applied":  "{count} AI fixes applied.",
     "gui.results.apply_fixes":        "Apply Selected Fixes",
-    "gui.results.preview_changes":    "Preview",
+    "gui.results.preview_changes":    "Preview / Edit",
     "gui.results.diff_preview_title": "Changes Preview: {file}",
     "gui.results.diff_preview_header": "Proposed changes for {file}",
     "gui.results.original_code":      "Original",

@@ -1205,7 +1205,7 @@ class ResultsTabMixin:
 
             if fix_text:
                 var = ctk.BooleanVar(value=True)
-                fix_checks[idx] = (var, fix_text)
+                fix_checks[idx] = [var, fix_text]
 
                 frame = ctk.CTkFrame(scroll, border_width=1,
                                       border_color="#7c3aed")
@@ -1220,14 +1220,17 @@ class ResultsTabMixin:
 
                 preview_btn = ctk.CTkButton(
                     frame, text=t("gui.results.preview_changes"),
-                    width=100, height=24, font=ctk.CTkFont(size=11),
+                    width=120, height=24, font=ctk.CTkFont(size=11),
                     fg_color="#2563eb",
-                    command=lambda fp=issue.file_path, ft=fix_text, fn=fname, ix=idx:
-                        self._show_diff_preview(fp, ft, fn, ix),
+                    command=lambda fp=issue.file_path, fn=fname, ix=idx:
+                        self._show_diff_preview(
+                            fp, fix_checks[ix][1], fn, ix,
+                            _on_content_update=lambda c, _ix=ix: fix_checks[_ix].__setitem__(1, c),
+                        ),
                 )
                 preview_btn.grid(row=0, column=1, sticky="e", padx=6, pady=(4, 0))
 
-                desc = (issue.description or issue.ai_feedback or "")[:100]
+                desc = issue.description or issue.ai_feedback or ""
                 ctk.CTkLabel(frame, text=desc, anchor="w",
                               wraplength=700,
                               text_color=("gray40", "gray60"),
@@ -1300,7 +1303,7 @@ class ResultsTabMixin:
         ctk.CTkButton(btn_frame, text=t("common.cancel"),
                        command=_cancel).grid(row=0, column=1, padx=6)
 
-    def _show_diff_preview(self, file_path: str, new_content: str, filename: str, idx: int = 0):
+    def _show_diff_preview(self, file_path: str, new_content: str, filename: str, idx: int = 0, _on_content_update: Any = None):
         if self._testing_mode:
             original_content = ""
             for rec in self._issue_cards:
@@ -1450,6 +1453,7 @@ class ResultsTabMixin:
 
             hsb = ctk.CTkScrollbar(frame, orientation="horizontal", command=txt.xview)
             hsb.grid(row=2, column=0, sticky="ew")
+            hsb.grid_remove()  # start hidden; _xscroll shows when needed
 
             def _xscroll(first: str, last: str, _h: Any = hsb) -> None:
                 if float(first) <= 0.0 and float(last) >= 1.0:
@@ -1482,14 +1486,20 @@ class ResultsTabMixin:
         left_text.configure(state="disabled")
         right_text.configure(state="disabled")
 
-        # Deferred vsb check: geometry isn't settled yet during insertion
-        def _force_vsb_check() -> None:
+        # Deferred scrollbar check: geometry isn't settled during insertion
+        def _force_scrollbar_check() -> None:
             try:
                 lo, hi = left_text.yview()
                 _sync_yscroll(left_text, str(lo), str(hi))
             except Exception:
                 pass
-        win.after(200, _force_vsb_check)
+            # Recheck horizontal scrollbars now that layout is settled
+            for txt in _all_texts:
+                try:
+                    txt.xview_moveto(txt.xview()[0])
+                except Exception:
+                    pass
+        win.after(200, _force_scrollbar_check)
 
         # ── user-edit pane state ──────────────────────────────────────────
         user_text_ref:    list[tk.Text | None]  = [None]
@@ -1552,6 +1562,8 @@ class ResultsTabMixin:
                     self._issue_cards[idx]["issue"].status = "resolved"
                     self._refresh_status(idx)
                 self._show_toast(t("gui.results.editor_saved"))
+                if _on_content_update is not None:
+                    _on_content_update(content)
                 win.destroy()
                 return
             try:
@@ -1565,6 +1577,8 @@ class ResultsTabMixin:
             except Exception as exc:
                 self._show_toast(str(exc), error=True)
                 return
+            if _on_content_update is not None:
+                _on_content_update(content)
             win.destroy()
 
         def _on_user_save(user_content: str) -> None:
