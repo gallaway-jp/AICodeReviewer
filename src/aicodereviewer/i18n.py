@@ -491,6 +491,10 @@ _EN: dict[str, str] = {
     "gui.results.desc_more":           "▼ more",
     "gui.results.desc_less":           "▲ less",
 
+    # ── Keyboard shortcut hints ──────────────────────────────────────────
+    "gui.shortcut.start_review":      "Start review (Ctrl+Enter)",
+    "gui.shortcut.save_settings":     "Save settings (Ctrl+S)",
+
     # ── Results filter bar ─────────────────────────────────────────────────
     "gui.results.filter_severity":    "Severity:",
     "gui.results.filter_status":      "Status:",
@@ -612,6 +616,10 @@ _JA: dict[str, str] = {
     "gui.results.filter_count":       "{visible}/{total} 件表示",
     "gui.results.desc_more":           "▼ もっと見る",
     "gui.results.desc_less":           "▲ 閉じる",
+
+    # ── Keyboard shortcut hints ──────────────────────────────────────────
+    "gui.shortcut.start_review":      "レビュー開始 (Ctrl+Enter)",
+    "gui.shortcut.save_settings":     "設定を保存 (Ctrl+S)",
 
     # ── GUI Settings tab ───────────────────────────────────────────────────
     "gui.settings.backend":           "バックエンド",

@@ -474,6 +474,21 @@ class App(ctk.CTk):
             state="disabled", command=self._cancel_operation)
         self.cancel_btn.grid(row=0, column=1, padx=(8, 0))
 
+        self._bind_shortcuts()
+
+    def _bind_shortcuts(self) -> None:
+        """Bind application-wide keyboard shortcuts."""
+        # Ctrl+Enter → Start Review (ignored while already running)
+        self.bind_all("<Control-Return>",
+                      lambda e: self._start_review() if not self._running else None)
+        # Ctrl+S → Save Settings (only when the Settings tab is active)
+        self.bind_all("<Control-s>", self._on_ctrl_s)
+
+    def _on_ctrl_s(self, event: Any) -> None:
+        """Handle Ctrl+S: save settings only when the Settings tab is focused."""
+        if self.tabs.get() == t("gui.tab.settings"):
+            self._save_settings()
+
     # ══════════════════════════════════════════════════════════════════════
     #  REVIEW TAB  – includes inline results panel
     # ══════════════════════════════════════════════════════════════════════
@@ -692,6 +707,7 @@ class App(ctk.CTk):
                                       fg_color="green", hover_color="#228B22",
                                       command=self._start_review)
         self.run_btn.grid(row=0, column=0, padx=6)
+        _Tooltip(self.run_btn, t("gui.shortcut.start_review"))
         self.dry_btn = ctk.CTkButton(btn_frame, text=t("gui.review.dry_run"),
                                       command=self._start_dry_run)
         self.dry_btn.grid(row=0, column=1, padx=6)
@@ -1110,6 +1126,7 @@ class App(ctk.CTk):
         save_btn = ctk.CTkButton(button_frame, text=t("gui.settings.save"),
                                   command=self._save_settings)
         save_btn.grid(row=0, column=0, padx=(0, 10))
+        _Tooltip(save_btn, t("gui.shortcut.save_settings"))
         
         reset_btn = ctk.CTkButton(button_frame, text="Reset Defaults",
                                    command=self._reset_defaults,
@@ -1895,6 +1912,7 @@ class App(ctk.CTk):
         win.title(t("gui.results.editor_title", file=fname))
         win.geometry("850x600")
         win.grab_set()
+        win.bind("<Control-w>", lambda e: win.destroy())
 
         # Show AI feedback at top for context
         fb_lbl = ctk.CTkLabel(win, text=issue.ai_feedback[:200],
@@ -2208,6 +2226,7 @@ class App(ctk.CTk):
         win = ctk.CTkToplevel(self)
         win.title(t("gui.results.batch_fix_title",
                      count=success_count))
+        win.bind("<Control-w>", lambda e: win.destroy())
         win.geometry("950x650")
         win.grab_set()
 
@@ -2352,6 +2371,7 @@ class App(ctk.CTk):
         win.title(t("gui.results.diff_preview_title", file=filename))
         win.geometry("1000x700")
         win.grab_set()
+        win.bind("<Control-w>", lambda e: win.destroy())
 
         # Header
         ctk.CTkLabel(
@@ -2487,6 +2507,7 @@ class App(ctk.CTk):
         win.title(t("gui.results.issue_title", type=issue.issue_type))
         win.geometry("700x500")
         win.grab_set()
+        win.bind("<Control-w>", lambda e: win.destroy())
 
         text = ctk.CTkTextbox(win, wrap="word")
         text.pack(fill="both", expand=True, padx=10, pady=10)
@@ -2914,6 +2935,7 @@ class App(ctk.CTk):
         win.title(t("health.dialog_title"))
         win.geometry("600x450")
         win.grab_set()
+        win.bind("<Control-w>", lambda e: win.destroy())
 
         # Refresh Copilot model list if health check passed
         if report.backend == "copilot" and report.ready:
