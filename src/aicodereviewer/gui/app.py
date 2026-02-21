@@ -439,7 +439,8 @@ class App(ctk.CTk):
         self.minsize(900, 680)
 
         # Logging queue
-        self._log_queue: queue.Queue[str] = queue.Queue(maxsize=5000)
+        self._log_queue: queue.Queue = queue.Queue(maxsize=5000)
+        self._log_lines: List[tuple] = []  # (levelno, text) for all received records
         self._install_log_handler()
 
         # State
@@ -1205,14 +1206,29 @@ class App(ctk.CTk):
     def _build_log_tab(self):
         tab = self.tabs.add(t("gui.tab.log"))
         tab.grid_columnconfigure(0, weight=1)
-        tab.grid_rowconfigure(0, weight=1)
+        tab.grid_rowconfigure(1, weight=1)
+
+        # ── Filter bar ────────────────────────────────────────────────────
+        filter_frame = ctk.CTkFrame(tab, fg_color="transparent")
+        filter_frame.grid(row=0, column=0, sticky="ew", padx=6, pady=(4, 0))
+
+        ctk.CTkLabel(filter_frame, text="Level:").grid(row=0, column=0, padx=(0, 4))
+        self._log_level_var = ctk.StringVar(value="All")
+        _LOG_LEVELS = ["All", "DEBUG", "INFO", "WARNING", "ERROR"]
+        self._log_level_menu = ctk.CTkOptionMenu(
+            filter_frame,
+            variable=self._log_level_var,
+            values=_LOG_LEVELS,
+            width=110,
+            command=self._on_log_level_changed)
+        self._log_level_menu.grid(row=0, column=1, padx=(0, 8))
 
         self.log_box = ctk.CTkTextbox(tab, state="disabled", wrap="word",
                                        font=ctk.CTkFont(family="Consolas", size=12))
-        self.log_box.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
+        self.log_box.grid(row=1, column=0, sticky="nsew", padx=6, pady=6)
 
         btn_frame = ctk.CTkFrame(tab, fg_color="transparent")
-        btn_frame.grid(row=1, column=0, pady=4)
+        btn_frame.grid(row=2, column=0, pady=4)
 
         ctk.CTkButton(btn_frame, text=t("gui.log.clear"), width=110,
                       command=self._clear_log).grid(row=0, column=0, padx=6)
@@ -3339,9 +3355,12 @@ class App(ctk.CTk):
         super().destroy()
 
     def _poll_log_queue(self):
-        """Drain the log queue into the log textbox."""
+        """Drain the log queue into the log textbox, respecting the level filter."""
         if not getattr(self, "_log_polling", True):
             return
+        _LEVEL_MAP = {"All": 0, "DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40}
+        min_level = _LEVEL_MAP.get(
+            getattr(self, "_log_level_var", None) and self._log_level_var.get(), 0)
         batch = []
         while True:
             try:
@@ -3349,13 +3368,29 @@ class App(ctk.CTk):
             except queue.Empty:
                 break
         if batch:
-            self.log_box.configure(state="normal")
-            self.log_box.insert("end", "\n".join(batch) + "\n")
-            self.log_box.see("end")
-            self.log_box.configure(state="disabled")
+            self._log_lines.extend(batch)
+            visible = [text for lvl, text in batch if lvl >= min_level]
+            if visible:
+                self.log_box.configure(state="normal")
+                self.log_box.insert("end", "\n".join(visible) + "\n")
+                self.log_box.see("end")
+                self.log_box.configure(state="disabled")
         self.after(100, self._poll_log_queue)
 
+    def _on_log_level_changed(self, _value: str = "") -> None:
+        """Re-render the log box showing only lines at or above the chosen level."""
+        _LEVEL_MAP = {"All": 0, "DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40}
+        min_level = _LEVEL_MAP.get(self._log_level_var.get(), 0)
+        visible = [text for lvl, text in self._log_lines if lvl >= min_level]
+        self.log_box.configure(state="normal")
+        self.log_box.delete("0.0", "end")
+        if visible:
+            self.log_box.insert("0.0", "\n".join(visible) + "\n")
+            self.log_box.see("end")
+        self.log_box.configure(state="disabled")
+
     def _clear_log(self):
+        self._log_lines.clear()
         self.log_box.configure(state="normal")
         self.log_box.delete("0.0", "end")
         self.log_box.configure(state="disabled")
