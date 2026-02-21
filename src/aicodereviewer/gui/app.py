@@ -15,7 +15,10 @@ Provides full feature parity with the CLI:
 """
 import configparser
 import ctypes
+import dataclasses
+import datetime
 import difflib
+import json
 import logging
 import re
 import subprocess
@@ -879,6 +882,18 @@ class App(ctk.CTk):
             state="disabled", command=self._finalize_report)
         self.finalize_btn.grid(row=0, column=2, padx=6)
 
+        self.save_session_btn = ctk.CTkButton(
+            btn_frame, text=t("gui.results.save_session"),
+            fg_color="#0e7490", hover_color="#0c6983",
+            width=110, state="disabled", command=self._save_session)
+        self.save_session_btn.grid(row=0, column=3, padx=(18, 6))
+
+        self.load_session_btn = ctk.CTkButton(
+            btn_frame, text=t("gui.results.load_session"),
+            fg_color="#374151", hover_color="#1f2937",
+            width=110, command=self._load_session)
+        self.load_session_btn.grid(row=0, column=4, padx=6)
+
         # AI Fix mode buttons (hidden initially)
         self.start_ai_fix_btn = ctk.CTkButton(
             btn_frame, text=t("gui.results.start_ai_fix"),
@@ -1728,6 +1743,8 @@ class App(ctk.CTk):
 
     def _show_issues(self, issues: List[ReviewIssue]):
         """Populate the Results tab with issue cards (no report saved yet)."""
+        # Keep _issues in sync with whatever is being displayed (covers testing-mode fixtures)
+        self._issues = issues
         # Clear old results
         for w in self.results_frame.winfo_children():
             w.destroy()
@@ -1737,6 +1754,7 @@ class App(ctk.CTk):
             self.results_summary.configure(text=t("gui.results.no_results"))
             self.review_changes_btn.configure(state="disabled")
             self.finalize_btn.configure(state="disabled")
+            self.save_session_btn.configure(state="disabled")
             self._filter_bar.grid_remove()
             self.results_severity_bar.grid_remove()
             self.tabs.set(t("gui.tab.results"))
@@ -2016,8 +2034,10 @@ class App(ctk.CTk):
         # Allow finalize when everything is resolved/fixed/skipped/fix_failed
         if all_done:
             self.finalize_btn.configure(state="normal")
+            self.save_session_btn.configure(state="normal")
         else:
             self.finalize_btn.configure(state="disabled")
+            self.save_session_btn.configure(state="normal")
 
         # AI Fix mode button — enabled when there are pending issues
         # In testing mode, allow AI Fix mode even without a live review client
@@ -2740,6 +2760,7 @@ class App(ctk.CTk):
         self._set_action_buttons_state("disabled")
         self.review_changes_btn.configure(state="disabled")
         self.finalize_btn.configure(state="disabled")
+        self.save_session_btn.configure(state="disabled")
         self.ai_fix_mode_btn.configure(state="disabled")
         self.cancel_btn.configure(state="normal")
         self.status_var.set(t("gui.results.reviewing"))
@@ -2803,6 +2824,84 @@ class App(ctk.CTk):
         self._do_finalize()
         self._show_toast(t("gui.results.all_fixed"))
 
+    # ── Session save / load ─────────────────────────────────────────────
+
+    @property
+    def _session_path(self) -> Path:
+        """Return the path to the autosave session file."""
+        base = (config.config_path.parent
+                if config.config_path else Path.cwd())
+        return base / "session.json"
+
+    def _save_session(self):
+        """Serialise current issues to session.json."""
+        if not self._issues:
+            return
+
+        def _default(obj):
+            if isinstance(obj, datetime.datetime):
+                return obj.isoformat()
+            raise TypeError(repr(obj))
+
+        data = {
+            "saved_at": datetime.datetime.now().isoformat(),
+            "issues": [dataclasses.asdict(iss) for iss in self._issues],
+        }
+        try:
+            self._session_path.write_text(
+                json.dumps(data, default=_default, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            self._show_toast(t("gui.results.session_saved",
+                               path=str(self._session_path)))
+        except Exception as exc:
+            messagebox.showerror(t("common.error"), str(exc))
+
+    def _load_session(self):
+        """Load issues from a session JSON file chosen via file dialog."""
+        initial_dir = str(self._session_path.parent)
+        initial_file = (str(self._session_path)
+                        if self._session_path.exists() else "")
+        path_str = filedialog.askopenfilename(
+            title=t("gui.results.load_session"),
+            initialdir=initial_dir,
+            initialfile=initial_file if initial_file else None,
+            filetypes=[("JSON session", "*.json"), ("All files", "*.*")],
+        )
+        if not path_str:
+            return
+
+        # Confirm overwrite if results already loaded
+        if self._issues:
+            if not messagebox.askyesno(
+                t("gui.results.load_session"),
+                t("gui.results.session_overwrite"),
+            ):
+                return
+
+        try:
+            raw = json.loads(Path(path_str).read_text(encoding="utf-8"))
+            issues: List[ReviewIssue] = []
+            for d in raw.get("issues", []):
+                # Convert ISO datetime strings back to datetime objects
+                if d.get("resolved_at"):
+                    try:
+                        d["resolved_at"] = datetime.datetime.fromisoformat(
+                            d["resolved_at"])
+                    except (ValueError, TypeError):
+                        d["resolved_at"] = None
+                issues.append(ReviewIssue(**d))
+        except Exception as exc:
+            messagebox.showerror(
+                t("common.error"),
+                t("gui.results.session_load_fail", err=str(exc)),
+            )
+            return
+
+        self._issues = issues
+        self._show_issues(issues)
+        self._show_toast(t("gui.results.session_loaded", count=len(issues)))
+
     # ── Finalize ───────────────────────────────────────────────────────────
 
     def _finalize_report(self):
@@ -2830,6 +2929,7 @@ class App(ctk.CTk):
         self.results_summary.configure(text=t("gui.results.no_results"))
         self.review_changes_btn.configure(state="disabled")
         self.finalize_btn.configure(state="disabled")
+        self.save_session_btn.configure(state="disabled")
 
         # In testing mode, reload sample data so the tester can continue
         if self._testing_mode:
