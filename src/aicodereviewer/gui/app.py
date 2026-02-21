@@ -20,6 +20,7 @@ import logging
 import re
 import subprocess
 import sys
+import time
 import threading
 import queue
 import webbrowser
@@ -448,6 +449,8 @@ class App(ctk.CTk):
         self._health_check_backend = None  # Track which backend is being checked
         self._health_check_timer = None    # Timeout timer for health checks
         self._model_refresh_in_progress: set[str] = set()  # Track background refreshes
+        self._elapsed_start: Optional[float] = None   # monotonic start time while running
+        self._elapsed_after_id: Optional[str] = None  # pending after() id for ticker
 
         # Forward declarations for dynamically-set attributes
         self._settings_backend_var: Any = None
@@ -754,8 +757,15 @@ class App(ctk.CTk):
         self.health_btn.grid(row=0, column=2, padx=6)
 
         self.progress = ctk.CTkProgressBar(tab, width=400)
-        self.progress.grid(row=row + 1, column=0, sticky="ew", padx=6, pady=3)
+        self.progress.grid(row=row + 1, column=0, sticky="ew", padx=6, pady=(3, 0))
         self.progress.set(0)
+
+        self._elapsed_lbl = ctk.CTkLabel(
+            tab, text="",
+            font=ctk.CTkFont(size=11),
+            text_color=("gray40", "gray60"),
+            anchor="e")
+        self._elapsed_lbl.grid(row=row + 2, column=0, sticky="e", padx=(0, 10), pady=(0, 4))
 
     # ══════════════════════════════════════════════════════════════════════
     #  RESULTS TAB  – full-page issue cards
@@ -1474,6 +1484,34 @@ class App(ctk.CTk):
 
         self.cancel_btn.configure(state="disabled")
 
+    # ── Elapsed-time ticker ────────────────────────────────────────────────
+
+    def _start_elapsed_timer(self) -> None:
+        """Start the elapsed-time ticker, resetting any previous state."""
+        if self._elapsed_after_id is not None:
+            self.after_cancel(self._elapsed_after_id)
+            self._elapsed_after_id = None
+        self._elapsed_start = time.monotonic()
+        self._elapsed_lbl.configure(text="0:00")
+        self._tick_elapsed()
+
+    def _tick_elapsed(self) -> None:
+        """Update the elapsed label every second while a review is running."""
+        if not self._running or self._elapsed_start is None:
+            return
+        elapsed = int(time.monotonic() - self._elapsed_start)
+        m, s = divmod(elapsed, 60)
+        self._elapsed_lbl.configure(text=f"{m}:{s:02d}")
+        self._elapsed_after_id = self.after(1000, self._tick_elapsed)
+
+    def _stop_elapsed_timer(self) -> None:
+        """Stop the ticker and clear the label."""
+        if self._elapsed_after_id is not None:
+            self.after_cancel(self._elapsed_after_id)
+            self._elapsed_after_id = None
+        self._elapsed_start = None
+        self._elapsed_lbl.configure(text="")
+
     def _run_review(self, params: Dict[str, Any], dry_run: bool):
         """Execute the review in a background thread."""
         self._running = True
@@ -1482,6 +1520,7 @@ class App(ctk.CTk):
         self.cancel_btn.configure(state="normal")
         self.progress.set(0)
         self.status_var.set(t("common.running"))
+        self._start_elapsed_timer()
 
         def _worker() -> None:
             try:
@@ -1613,6 +1652,7 @@ class App(ctk.CTk):
                                                                 str(exc)))
             finally:
                 self._running = False
+                self.after(0, self._stop_elapsed_timer)
                 self.after(0, lambda: self._set_action_buttons_state("normal"))
                 self.after(0, lambda: self.cancel_btn.configure(state="disabled"))
                 self.after(0, lambda: self.progress.set(1.0))
