@@ -1205,7 +1205,7 @@ class ResultsTabMixin:
 
             if fix_text:
                 var = ctk.BooleanVar(value=True)
-                fix_checks[idx] = [var, fix_text]
+                fix_checks[idx] = [var, fix_text, fix_text]  # [var, current, original_ai_fix]
 
                 frame = ctk.CTkFrame(scroll, border_width=1,
                                       border_color="#7c3aed")
@@ -1226,6 +1226,7 @@ class ResultsTabMixin:
                         self._show_diff_preview(
                             fp, fix_checks[ix][1], fn, ix,
                             _on_content_update=lambda c, _ix=ix: fix_checks[_ix].__setitem__(1, c),
+                            _ai_fix_content=fix_checks[ix][2],
                         ),
                 )
                 preview_btn.grid(row=0, column=1, sticky="e", padx=6, pady=(4, 0))
@@ -1303,7 +1304,7 @@ class ResultsTabMixin:
         ctk.CTkButton(btn_frame, text=t("common.cancel"),
                        command=_cancel).grid(row=0, column=1, padx=6)
 
-    def _show_diff_preview(self, file_path: str, new_content: str, filename: str, idx: int = 0, _on_content_update: Any = None):
+    def _show_diff_preview(self, file_path: str, new_content: str, filename: str, idx: int = 0, _on_content_update: Any = None, _ai_fix_content: str | None = None):
         if self._testing_mode:
             original_content = ""
             for rec in self._issue_cards:
@@ -1632,8 +1633,8 @@ class ResultsTabMixin:
         close_btn.grid(row=0, column=1, padx=6)
         close_btn_ref[0] = close_btn
 
-        # Auto-populate third pane if new_content has been user-edited
-        if new_content.rstrip("\n") != original_content.rstrip("\n"):
+        # Auto-populate third pane if new_content has been user-edited beyond the AI fix
+        if _ai_fix_content is not None and new_content.rstrip("\n") != _ai_fix_content.rstrip("\n"):
             # Third pane should show the user-edited version
             user_content_ref[0] = new_content
             utxt = _make_diff_pane("  ✎  ai + user fixed")
