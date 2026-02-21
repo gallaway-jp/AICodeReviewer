@@ -1382,6 +1382,7 @@ class ResultsTabMixin:
 
         vsb = ctk.CTkScrollbar(outer_row, orientation="vertical")
         vsb.pack(side="right", fill="y")
+        _vsb_visible = [True]
 
         paned = tk.PanedWindow(
             outer_row, orient="horizontal",
@@ -1401,6 +1402,14 @@ class ResultsTabMixin:
         vsb.configure(command=_on_vsb)
 
         def _sync_yscroll(source: tk.Text, first: str, last: str) -> None:
+            if float(first) <= 0.0 and float(last) >= 1.0:
+                if _vsb_visible[0]:
+                    vsb.pack_forget()
+                    _vsb_visible[0] = False
+            else:
+                if not _vsb_visible[0]:
+                    vsb.pack(side="right", fill="y")
+                    _vsb_visible[0] = True
             vsb.set(first, last)
             if not _syncing[0]:
                 _syncing[0] = True
@@ -1471,9 +1480,11 @@ class ResultsTabMixin:
         right_text.configure(state="disabled")
 
         # ── user-edit pane state ──────────────────────────────────────────
-        user_text_ref:  list[tk.Text | None]  = [None]
-        user_frame_ref: list[tk.Frame | None] = [None]
-        undo_btn_ref:   list[Any]             = [None]
+        user_text_ref:    list[tk.Text | None]  = [None]
+        user_frame_ref:   list[tk.Frame | None] = [None]
+        undo_btn_ref:     list[Any]             = [None]
+        close_btn_ref:    list[Any]             = [None]
+        user_content_ref: list[str]             = [""]
 
         def _populate_user_pane(user_content: str) -> None:
             utxt = user_text_ref[0]
@@ -1500,9 +1511,52 @@ class ResultsTabMixin:
                         utxt.insert("end", "\n", "pad")
             utxt.configure(state="disabled")
 
+        def _undo_user_changes() -> None:
+            if user_frame_ref[0] is not None:
+                if user_text_ref[0] in _all_texts:
+                    _all_texts.remove(user_text_ref[0])
+                paned.remove(user_frame_ref[0])
+                user_frame_ref[0] = None
+                user_text_ref[0]  = None
+            if undo_btn_ref[0] is not None:
+                undo_btn_ref[0].grid_remove()
+                undo_btn_ref[0] = None
+            # Restore Close button
+            if close_btn_ref[0] is not None:
+                close_btn_ref[0].configure(
+                    text=t("common.close"),
+                    fg_color=("#3b3b3b", "#565b5e"),
+                    hover_color=("gray70", "gray30"),
+                    command=win.destroy,
+                )
+
+        def _save_and_close() -> None:
+            content = user_content_ref[0]
+            if not content:
+                win.destroy()
+                return
+            try:
+                out = content if content.endswith("\n") else content + "\n"
+                with open(file_path, "w", encoding="utf-8") as fh:
+                    fh.write(out)
+                if idx < len(self._issue_cards):
+                    self._issue_cards[idx]["issue"].status = "resolved"
+                    self._refresh_status(idx)
+                self._show_toast(t("gui.results.editor_saved"))
+            except Exception as exc:
+                self._show_toast(str(exc), error=True)
+                return
+            win.destroy()
+
         def _on_user_save(user_content: str) -> None:
+            user_content_ref[0] = user_content
+            if user_content.rstrip("\n") == new_content.rstrip("\n"):
+                # Edit matches AI fix: collapse third pane if shown
+                _undo_user_changes()
+                return
+
             if user_text_ref[0] is None:
-                # First save: create third pane
+                # First real-change save: create third pane
                 utxt = _make_diff_pane("  ✎  ai + user fixed")
                 user_text_ref[0]  = utxt
                 user_frame_ref[0] = utxt.master
@@ -1517,18 +1571,15 @@ class ResultsTabMixin:
                 )
                 undo_btn.grid(row=0, column=2, padx=6)
                 undo_btn_ref[0] = undo_btn
+                # Change Close -> Save and Close
+                if close_btn_ref[0] is not None:
+                    close_btn_ref[0].configure(
+                        text="💾  Save and Close",
+                        fg_color="green",
+                        hover_color="#1a7a1a",
+                        command=_save_and_close,
+                    )
             _populate_user_pane(user_content)
-
-        def _undo_user_changes() -> None:
-            if user_frame_ref[0] is not None:
-                if user_text_ref[0] in _all_texts:
-                    _all_texts.remove(user_text_ref[0])
-                paned.remove(user_frame_ref[0])
-                user_frame_ref[0] = None
-                user_text_ref[0]  = None
-            if undo_btn_ref[0] is not None:
-                undo_btn_ref[0].grid_remove()
-                undo_btn_ref[0] = None
 
         def _open_editor() -> None:
             self._open_builtin_editor(
@@ -1543,8 +1594,10 @@ class ResultsTabMixin:
 
         ctk.CTkButton(btn_frame, text="✎  Edit",
                       command=_open_editor).grid(row=0, column=0, padx=6)
-        ctk.CTkButton(btn_frame, text=t("common.close"),
-                      command=win.destroy).grid(row=0, column=1, padx=6)
+        close_btn = ctk.CTkButton(btn_frame, text=t("common.close"),
+                                  command=win.destroy)
+        close_btn.grid(row=0, column=1, padx=6)
+        close_btn_ref[0] = close_btn
 
     # ── View detail ────────────────────────────────────────────────────────
 
