@@ -14,10 +14,12 @@ Provides full feature parity with the CLI:
 - Localised UI (English / Japanese) with theme support
 """
 import configparser
+import ctypes
 import difflib
 import logging
 import re
 import subprocess
+import sys
 import threading
 import queue
 import webbrowser
@@ -54,6 +56,25 @@ logger = logging.getLogger(__name__)
 
 class _CancelledError(Exception):
     """Raised when the user cancels a running operation."""
+
+
+def _fix_titlebar(win: "tk.BaseWidget") -> None:
+    """Force the Windows native title bar to honour the current CTk theme.
+
+    CTkToplevel windows on Windows keep the OS-default (light) title bar even
+    when the rest of the UI is in dark mode.  The DWM API attribute
+    DWMWA_USE_IMMERSIVE_DARK_MODE (id 20) fixes this once the window handle
+    is available.  Safe no-op on non-Windows platforms.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        hwnd = ctypes.windll.user32.GetParent(win.winfo_id())
+        dark = ctypes.c_int(1 if ctk.get_appearance_mode().lower() == "dark" else 0)
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(
+            hwnd, 20, ctypes.byref(dark), ctypes.sizeof(dark))
+    except Exception:  # pragma: no cover
+        pass
 
 
 # ── queue-based log handler for the GUI ────────────────────────────────────
@@ -144,7 +165,8 @@ class FileSelector(ctk.CTkToplevel):
         # Make window modal
         self.transient(parent)
         self.grab_set()
-        
+        self.after(10, lambda: _fix_titlebar(self))
+
         # Build UI
         self._build_ui()
         
@@ -300,6 +322,7 @@ class ConfirmDialog(ctk.CTkToplevel):
         self.title(title)
         self.resizable(False, False)
         self.grab_set()
+        self.after(10, lambda: _fix_titlebar(self))
         self.confirmed: bool = False
 
         self.grid_columnconfigure(0, weight=1)
@@ -531,7 +554,8 @@ class App(ctk.CTk):
         # File selection sub-options (shown when Full Project is selected)
         self.file_select_frame = ctk.CTkFrame(scope_frame)
         self.file_select_frame.grid(row=1, column=0, columnspan=5, sticky="ew", padx=6, pady=3)
-        self.file_select_mode_var = ctk.StringVar(value="all")
+        _saved_file_mode = config.get("gui", "file_select_mode", "all")
+        self.file_select_mode_var = ctk.StringVar(value=_saved_file_mode)
         self.file_select_mode_var.trace_add("write", self._on_file_select_mode_changed)
         ctk.CTkRadioButton(self.file_select_frame, text="All Files",
                             variable=self.file_select_mode_var, value="all").grid(row=0, column=0, padx=6, sticky="w")
@@ -539,9 +563,23 @@ class App(ctk.CTk):
                             variable=self.file_select_mode_var, value="selected")
         file_select_rb.grid(row=0, column=1, padx=6, sticky="w")
         self.select_files_btn = ctk.CTkButton(self.file_select_frame, text="Select Files...", width=120,
-                                              command=self._open_file_selector, state="disabled")
+                                              command=self._open_file_selector,
+                                              state="normal" if _saved_file_mode == "selected" else "disabled")
         self.select_files_btn.grid(row=0, column=2, padx=6, sticky="w")
-        self.selected_files: List[str] = []  # Store selected file paths
+
+        # Restore previously selected files from config
+        _saved_files_raw = config.get("gui", "selected_files", "").strip()
+        self.selected_files: List[str] = [
+            p for p in _saved_files_raw.split("|") if p
+        ]
+        # Count badge — shows how many files are remembered
+        self._file_count_lbl = ctk.CTkLabel(
+            self.file_select_frame, text="",
+            font=ctk.CTkFont(size=11), text_color=("gray40", "gray60"))
+        self._file_count_lbl.grid(row=0, column=3, padx=(0, 6), sticky="w")
+        if self.selected_files:
+            self._file_count_lbl.configure(
+                text=f"{len(self.selected_files)} file(s) selected")
 
         # Optional diff filter (shown when Full Project is selected)
         self.diff_filter_frame = ctk.CTkFrame(scope_frame)
@@ -1175,8 +1213,6 @@ class App(ctk.CTk):
             self.path_entry.insert(0, d)
 
     def _browse_diff(self):
-        if self._testing_mode:
-            return
         f = filedialog.askopenfilename(
             filetypes=[("Diff/Patch", "*.diff *.patch"), ("All", "*.*")])
         if f:
@@ -1209,8 +1245,6 @@ class App(ctk.CTk):
 
     def _browse_diff_filter(self) -> None:
         """Open file dialog for diff filter file."""
-        if self._testing_mode:
-            return
         path = filedialog.askopenfilename(
             filetypes=[("Diff / Patch", "*.diff *.patch"), ("All files", "*.*")])
         if path:
@@ -1227,16 +1261,18 @@ class App(ctk.CTk):
 
     def _open_file_selector(self):
         """Open the custom file selector window."""
-        if self._testing_mode:
-            return
         path = self.path_entry.get().strip()
         if not path:
             self._show_toast(t("gui.val.path_required"), error=True)
             return
-        
+
         if not Path(path).is_dir():
-            self._show_toast("Invalid project path", error=True)
-            return
+            if self._testing_mode:
+                # Fall back to project root so the dialog is usable in test mode
+                path = str(Path(__file__).resolve().parent.parent.parent.parent)
+            else:
+                self._show_toast("Invalid project path", error=True)
+                return
         
         # Open the custom file selector window
         selector = FileSelector(self, path, self.selected_files)
@@ -1245,7 +1281,16 @@ class App(ctk.CTk):
         # Update selected_files after the window closes
         if hasattr(selector, 'result') and selector.result:
             self.selected_files = list(selector.result)
+            self._file_count_lbl.configure(
+                text=f"{len(self.selected_files)} file(s) selected")
             self._show_toast(f"{len(self.selected_files)} file(s) selected")
+            # Persist immediately so the list survives a restart
+            try:
+                config.set_value("gui", "selected_files",
+                                 "|".join(self.selected_files))
+                config.save()
+            except Exception as exc:
+                logger.warning("Could not save selected files: %s", exc)
 
     def _get_selected_types(self) -> List[str]:
         return [k for k, v in self.type_vars.items() if v.get()]
@@ -1268,6 +1313,12 @@ class App(ctk.CTk):
             # Save selected review types
             selected_types = self._get_selected_types()
             config.set_value("gui", "review_types", ",".join(selected_types))
+
+            # Save file selection mode and selected file list
+            config.set_value("gui", "file_select_mode",
+                             self.file_select_mode_var.get())
+            config.set_value("gui", "selected_files",
+                             "|".join(self.selected_files))
             
             config.save()
         except Exception as exc:
@@ -1912,6 +1963,7 @@ class App(ctk.CTk):
         win.title(t("gui.results.editor_title", file=fname))
         win.geometry("850x600")
         win.grab_set()
+        win.after(10, lambda w=win: _fix_titlebar(w))
         win.bind("<Control-w>", lambda e: win.destroy())
 
         # Show AI feedback at top for context
@@ -2229,6 +2281,7 @@ class App(ctk.CTk):
         win.bind("<Control-w>", lambda e: win.destroy())
         win.geometry("950x650")
         win.grab_set()
+        win.after(10, lambda w=win: _fix_titlebar(w))
 
         ctk.CTkLabel(
             win,
@@ -2371,6 +2424,7 @@ class App(ctk.CTk):
         win.title(t("gui.results.diff_preview_title", file=filename))
         win.geometry("1000x700")
         win.grab_set()
+        win.after(10, lambda w=win: _fix_titlebar(w))
         win.bind("<Control-w>", lambda e: win.destroy())
 
         # Header
@@ -2507,6 +2561,7 @@ class App(ctk.CTk):
         win.title(t("gui.results.issue_title", type=issue.issue_type))
         win.geometry("700x500")
         win.grab_set()
+        win.after(10, lambda w=win: _fix_titlebar(w))
         win.bind("<Control-w>", lambda e: win.destroy())
 
         text = ctk.CTkTextbox(win, wrap="word")
@@ -2935,6 +2990,7 @@ class App(ctk.CTk):
         win.title(t("health.dialog_title"))
         win.geometry("600x450")
         win.grab_set()
+        win.after(10, lambda w=win: _fix_titlebar(w))
         win.bind("<Control-w>", lambda e: win.destroy())
 
         # Refresh Copilot model list if health check passed
