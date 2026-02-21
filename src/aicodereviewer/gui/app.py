@@ -451,6 +451,8 @@ class App(ctk.CTk):
         self._model_refresh_in_progress: set[str] = set()  # Track background refreshes
         self._elapsed_start: Optional[float] = None   # monotonic start time while running
         self._elapsed_after_id: Optional[str] = None  # pending after() id for ticker
+        self._health_countdown_end: Optional[float] = None  # monotonic deadline
+        self._health_countdown_after_id: Optional[str] = None  # pending after() id
 
         # Forward declarations for dynamically-set attributes
         self._settings_backend_var: Any = None
@@ -499,6 +501,13 @@ class App(ctk.CTk):
             fg_color="#dc2626", hover_color="#b91c1c",
             state="disabled", command=self._cancel_operation)
         self.cancel_btn.grid(row=0, column=1, padx=(8, 0))
+
+        self._health_countdown_lbl = ctk.CTkLabel(
+            status_frame, text="",
+            font=ctk.CTkFont(size=11),
+            text_color=("gray40", "gray60"),
+            width=56, anchor="e")
+        self._health_countdown_lbl.grid(row=0, column=2, padx=(4, 0))
 
         self._bind_shortcuts()
 
@@ -1479,10 +1488,42 @@ class App(ctk.CTk):
                 self._health_check_timer = None
             self._health_check_backend = None
             self._running = False
+            self._stop_health_countdown()
             self._set_action_buttons_state("normal")
             self.status_var.set(t("gui.val.cancelled"))
 
         self.cancel_btn.configure(state="disabled")
+
+    # ── Health-check countdown ticker ─────────────────────────────────────
+
+    _HEALTH_TIMEOUT_SECS = 60
+
+    def _start_health_countdown(self) -> None:
+        """Start the 60-second countdown shown while a health check runs."""
+        if self._health_countdown_after_id is not None:
+            self.after_cancel(self._health_countdown_after_id)
+            self._health_countdown_after_id = None
+        self._health_countdown_end = time.monotonic() + self._HEALTH_TIMEOUT_SECS
+        self._tick_health_countdown()
+
+    def _tick_health_countdown(self) -> None:
+        """Update the countdown label every second."""
+        if self._health_countdown_end is None:
+            return
+        remaining = max(0, int(self._health_countdown_end - time.monotonic()))
+        self._health_countdown_lbl.configure(text=f"⏱ {remaining}s")
+        if remaining > 0:
+            self._health_countdown_after_id = self.after(1000, self._tick_health_countdown)
+        else:
+            self._health_countdown_after_id = None
+
+    def _stop_health_countdown(self) -> None:
+        """Stop the countdown ticker and clear the label."""
+        if self._health_countdown_after_id is not None:
+            self.after_cancel(self._health_countdown_after_id)
+            self._health_countdown_after_id = None
+        self._health_countdown_end = None
+        self._health_countdown_lbl.configure(text="")
 
     # ── Elapsed-time ticker ────────────────────────────────────────────────
 
@@ -2920,9 +2961,26 @@ class App(ctk.CTk):
     def _check_backend_health(self):
         """Run prerequisite health checks for the selected backend (manual)."""
         if self._testing_mode:
-            self._show_toast(
-                "Check Setup is simulated in testing mode — "
-                "backend connectivity is not tested", error=False)
+            # Simulate a 10-second health check so the countdown is testable
+            if self._health_check_backend:
+                return  # already running
+            self._health_check_backend = "simulated"
+            self._set_action_buttons_state("disabled")
+            self.cancel_btn.configure(state="normal")
+            self.status_var.set("Simulating health check…")
+            self._start_health_countdown()
+
+            def _sim_complete():
+                self._health_check_backend = None
+                self._stop_health_countdown()
+                self._set_action_buttons_state("normal")
+                self.cancel_btn.configure(state="disabled")
+                self.status_var.set(t("common.ready"))
+                self._show_toast(
+                    "Check Setup is simulated in testing mode — "
+                    "backend connectivity is not tested", error=False)
+
+            self.after(10_000, _sim_complete)
             return
         self._run_health_check(self.backend_var.get(), always_show_dialog=True)
 
@@ -2961,6 +3019,7 @@ class App(ctk.CTk):
             if self._health_check_backend == backend_name:
                 self._health_check_backend = None
                 self._health_check_timer = None
+                self.after(0, self._stop_health_countdown)
                 self.after(0, lambda: self._show_health_error(
                     t("health.timeout", backend=backend_name)))
                 self.after(0, lambda: self._set_action_buttons_state("normal"))
@@ -2970,6 +3029,7 @@ class App(ctk.CTk):
         self._health_check_timer = threading.Timer(60, _on_timeout)
         self._health_check_timer.daemon = True
         self._health_check_timer.start()
+        self._start_health_countdown()
 
         def _worker():
             try:
@@ -2984,6 +3044,7 @@ class App(ctk.CTk):
 
                     self._health_check_backend = None
 
+                    self.after(0, self._stop_health_countdown)
                     if always_show_dialog:
                         # Manual check: always show the full results dialog.
                         # Model list refresh is handled inside _show_health_dialog.
@@ -3015,6 +3076,7 @@ class App(ctk.CTk):
                         self._health_check_timer = None
                     self._health_check_backend = None
                     self.after(0, lambda: self._show_health_error(str(exc)))
+                    self.after(0, self._stop_health_countdown)
                     self.after(0, lambda: self._set_action_buttons_state("normal"))
                     self.after(0, lambda: self.cancel_btn.configure(state="disabled"))
                     self.after(0, lambda: self.status_var.set(t("common.ready")))
