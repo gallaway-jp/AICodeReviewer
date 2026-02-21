@@ -489,6 +489,15 @@ _EN: dict[str, str] = {
     "gui.results.editor_discard_msg":   "You have unsaved changes. Discard them?",
     "gui.results.editor_save":        "Save & Close",
 
+    # ── Results filter bar ─────────────────────────────────────────────────
+    "gui.results.filter_severity":    "Severity:",
+    "gui.results.filter_status":      "Status:",
+    "gui.results.filter_type":        "Type:",
+    "gui.results.filter_all":         "All",
+    "gui.results.filter_all_types":   "All Types",
+    "gui.results.filter_clear":       "Clear",
+    "gui.results.filter_count":       "Showing {visible} of {total}",
+
     # ── AI Fix mode ────────────────────────────────────────────────────────
     "gui.results.ai_fix_mode":        "AI Fix",
     "gui.results.start_ai_fix":       "Start AI Fix",
@@ -590,6 +599,15 @@ _JA: dict[str, str] = {
     "gui.results.summary":            "スコア: {score}/100  |  問題: {issues}  |  タイプ: {types}  |  バックエンド: {backend}",
     "gui.results.status":             "ステータス: {status}",
     "gui.results.issue_title":        "問題 – {type}",
+
+    # ── Results filter bar ─────────────────────────────────────────────────
+    "gui.results.filter_severity":    "深刻度:",
+    "gui.results.filter_status":      "状態:",
+    "gui.results.filter_type":        "種類:",
+    "gui.results.filter_all":         "すべて",
+    "gui.results.filter_all_types":   "すべての種類",
+    "gui.results.filter_clear":       "クリア",
+    "gui.results.filter_count":       "{visible}/{total} 件表示",
 
     # ── GUI Settings tab ───────────────────────────────────────────────────
     "gui.settings.backend":           "バックエンド",

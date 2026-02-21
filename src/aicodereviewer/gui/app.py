@@ -708,22 +708,81 @@ class App(ctk.CTk):
     def _build_results_tab(self):
         tab = self.tabs.add(t("gui.tab.results"))
         tab.grid_columnconfigure(0, weight=1)
-        tab.grid_rowconfigure(1, weight=1)
+        tab.grid_rowconfigure(3, weight=1)  # row 0=summary, 1=sev bar, 2=filter bar, 3=cards
 
         self.results_summary = ctk.CTkLabel(tab, text=t("gui.results.no_results"),
                                              anchor="w",
                                              font=ctk.CTkFont(weight="bold"))
         self.results_summary.grid(row=0, column=0, sticky="ew",
-                                   padx=8, pady=(6, 2))
+                                   padx=8, pady=(6, 0))
+
+        # ── Severity breakdown bar (shown once results load) ───────────────
+        self.results_severity_bar = ctk.CTkLabel(
+            tab, text="", anchor="w",
+            font=ctk.CTkFont(size=12))
+        self.results_severity_bar.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 2))
+        self.results_severity_bar.grid_remove()  # hidden until results load
+
+        # ── Filter bar (shown once results load) ──────────────────────────
+        self._filter_bar = ctk.CTkFrame(tab, fg_color="transparent")
+        self._filter_bar.grid(row=2, column=0, sticky="ew", padx=8, pady=(0, 2))
+        self._filter_bar.grid_columnconfigure(7, weight=1)
+
+        ctk.CTkLabel(self._filter_bar,
+                     text=t("gui.results.filter_severity")).grid(
+            row=0, column=0, padx=(0, 2))
+        self._filter_sev_var = ctk.StringVar(value=t("gui.results.filter_all"))
+        self._filter_severity_menu = ctk.CTkOptionMenu(
+            self._filter_bar, variable=self._filter_sev_var, width=110,
+            values=[t("gui.results.filter_all"),
+                    "Critical", "High", "Medium", "Low", "Info"],
+            command=lambda _: self._apply_filters())
+        self._filter_severity_menu.grid(row=0, column=1, padx=(0, 8))
+
+        ctk.CTkLabel(self._filter_bar,
+                     text=t("gui.results.filter_status")).grid(
+            row=0, column=2, padx=(0, 2))
+        self._filter_status_var = ctk.StringVar(value=t("gui.results.filter_all"))
+        self._filter_status_menu = ctk.CTkOptionMenu(
+            self._filter_bar, variable=self._filter_status_var, width=120,
+            values=[t("gui.results.filter_all"),
+                    "Pending", "Resolved", "Ignored",
+                    "Skipped", "Fixed", "AI Fixed", "Fix Failed"],
+            command=lambda _: self._apply_filters())
+        self._filter_status_menu.grid(row=0, column=3, padx=(0, 8))
+
+        ctk.CTkLabel(self._filter_bar,
+                     text=t("gui.results.filter_type")).grid(
+            row=0, column=4, padx=(0, 2))
+        self._filter_type_var = ctk.StringVar(value=t("gui.results.filter_all_types"))
+        self._filter_type_menu = ctk.CTkOptionMenu(
+            self._filter_bar, variable=self._filter_type_var, width=150,
+            values=[t("gui.results.filter_all_types")],
+            command=lambda _: self._apply_filters())
+        self._filter_type_menu.grid(row=0, column=5, padx=(0, 8))
+
+        ctk.CTkButton(
+            self._filter_bar, text=t("gui.results.filter_clear"),
+            width=80, fg_color="gray50", hover_color="gray40",
+            command=self._clear_filters,
+        ).grid(row=0, column=6, padx=(0, 8))
+
+        self._filter_count_lbl = ctk.CTkLabel(
+            self._filter_bar, text="", anchor="e",
+            font=ctk.CTkFont(size=11))
+        self._filter_count_lbl.grid(row=0, column=7, padx=4, sticky="e")
+
+        # Hidden until results load
+        self._filter_bar.grid_remove()
 
         self.results_frame = ctk.CTkScrollableFrame(tab)
-        self.results_frame.grid(row=1, column=0, sticky="nsew",
+        self.results_frame.grid(row=3, column=0, sticky="nsew",
                                  padx=8, pady=(0, 4))
         self.results_frame.grid_columnconfigure(0, weight=1)
 
         # Bottom action buttons
         btn_frame = ctk.CTkFrame(tab, fg_color="transparent")
-        btn_frame.grid(row=2, column=0, sticky="ew", padx=8, pady=(0, 6))
+        btn_frame.grid(row=4, column=0, sticky="ew", padx=8, pady=(0, 6))
 
         # Normal mode buttons
         self.ai_fix_mode_btn = ctk.CTkButton(
@@ -1511,6 +1570,8 @@ class App(ctk.CTk):
             self.results_summary.configure(text=t("gui.results.no_results"))
             self.review_changes_btn.configure(state="disabled")
             self.finalize_btn.configure(state="disabled")
+            self._filter_bar.grid_remove()
+            self.results_severity_bar.grid_remove()
             self.tabs.set(t("gui.tab.results"))
             return
 
@@ -1525,6 +1586,19 @@ class App(ctk.CTk):
                                   else [iss.issue_type])
                    )),
                    backend=self.backend_var.get()))
+
+        # ── Severity breakdown ────────────────────────────────────────────
+        sev_order = [("critical", "🔴"), ("high", "🟠"),
+                     ("medium", "🟡"), ("low", "🔵"), ("info", "⚪")]
+        counts = {sev: sum(1 for iss in issues if iss.severity == sev)
+                  for sev, _ in sev_order}
+        parts = [
+            f"{icon} {sev.capitalize()}: {counts[sev]}"
+            for sev, icon in sev_order
+            if counts[sev] > 0
+        ]
+        self.results_severity_bar.configure(text="  ".join(parts))
+        self.results_severity_bar.grid()
 
         # Issues section header
         self._issues_header = ctk.CTkLabel(
@@ -1542,8 +1616,80 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=13, weight="bold"), anchor="w")
         # Will be shown later: self._fixed_header.grid(...)
 
+        self._populate_filter_bar(issues)
+        self._apply_filters()
         self._update_bottom_buttons()
         self.tabs.set(t("gui.tab.results"))
+
+    def _populate_filter_bar(self, issues: "List[ReviewIssue]") -> None:
+        """Populate the Type dropdown with types from results and reveal the bar."""
+        types = sorted({
+            itype
+            for iss in issues
+            for itype in (
+                iss.issue_type.split("+") if "+" in iss.issue_type else [iss.issue_type]
+            )
+        })
+        all_types_label = t("gui.results.filter_all_types")
+        self._filter_type_menu.configure(values=[all_types_label] + types)
+        self._filter_type_var.set(all_types_label)
+        self._filter_sev_var.set(t("gui.results.filter_all"))
+        self._filter_status_var.set(t("gui.results.filter_all"))
+        self._filter_bar.grid()  # reveal
+
+    def _apply_filters(self) -> None:
+        """Show/hide issue cards based on active filter selections."""
+        all_label = t("gui.results.filter_all")
+        all_types_label = t("gui.results.filter_all_types")
+        sev_sel = self._filter_sev_var.get()
+        status_sel = self._filter_status_var.get()
+        type_sel = self._filter_type_var.get()
+
+        sev_map = {
+            "Critical": "critical", "High": "high", "Medium": "medium",
+            "Low": "low", "Info": "info",
+        }
+        status_map = {
+            "Pending": "pending", "Resolved": "resolved", "Ignored": "ignored",
+            "Skipped": "skipped", "Fixed": "fixed",
+            "AI Fixed": "ai_fixed", "Fix Failed": "fix_failed",
+        }
+
+        filter_sev = sev_map.get(sev_sel) if sev_sel != all_label else None
+        filter_status = status_map.get(status_sel) if status_sel != all_label else None
+        filter_type = type_sel if type_sel != all_types_label else None
+
+        visible = 0
+        total = len(self._issue_cards)
+        for rec in self._issue_cards:
+            issue = rec["issue"]
+            issue_types = (
+                issue.issue_type.split("+") if "+" in issue.issue_type
+                else [issue.issue_type]
+            )
+            match = (
+                (filter_sev is None or issue.severity == filter_sev)
+                and (filter_status is None or issue.status == filter_status)
+                and (filter_type is None or filter_type in issue_types)
+            )
+            if match:
+                rec["card"].grid()
+                visible += 1
+            else:
+                rec["card"].grid_remove()
+
+        if visible < total:
+            self._filter_count_lbl.configure(
+                text=t("gui.results.filter_count", visible=visible, total=total))
+        else:
+            self._filter_count_lbl.configure(text="")
+
+    def _clear_filters(self) -> None:
+        """Reset all filters to show all issues."""
+        self._filter_sev_var.set(t("gui.results.filter_all"))
+        self._filter_status_var.set(t("gui.results.filter_all"))
+        self._filter_type_var.set(t("gui.results.filter_all_types"))
+        self._apply_filters()
 
     # ── Issue card ─────────────────────────────────────────────────────────
 
@@ -1649,6 +1795,7 @@ class App(ctk.CTk):
         s_key, s_color = self._status_display(rec["issue"], rec["color"])
         rec["status_lbl"].configure(text=t(s_key), text_color=s_color)
         self._update_bottom_buttons()
+        self._apply_filters()  # re-evaluate visibility and count
 
     def _update_bottom_buttons(self):
         """Enable/disable Review Changes and Finalize based on issue states."""
