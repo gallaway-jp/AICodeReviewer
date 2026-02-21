@@ -1225,7 +1225,10 @@ class ResultsTabMixin:
                     command=lambda fp=issue.file_path, fn=fname, ix=idx:
                         self._show_diff_preview(
                             fp, fix_checks[ix][1], fn, ix,
-                            _on_content_update=lambda c, _ix=ix: fix_checks[_ix].__setitem__(1, c),
+                            _on_content_update=lambda c, _ix=ix: (
+                                fix_checks[_ix].__setitem__(1, c),
+                                fix_checks[_ix].__setitem__(2, c),
+                            ),
                             _ai_fix_content=fix_checks[ix][2],
                         ),
                 )
@@ -1255,7 +1258,7 @@ class ResultsTabMixin:
 
         def _apply_selected():
             applied = 0
-            for idx, (var, fix_text) in fix_checks.items():
+            for idx, (var, fix_text, *_) in fix_checks.items():
                 if not var.get():
                     continue
                 rec = self._issue_cards[idx]
@@ -1425,18 +1428,19 @@ class ResultsTabMixin:
                         tw.yview("moveto", first)
                 _syncing[0] = False
 
-        def _make_diff_pane(header: str) -> tk.Text:
+        def _make_diff_pane(header: str) -> tuple[tk.Text, tk.Label]:
             frame = tk.Frame(paned, bg=bg_color)
             frame.rowconfigure(1, weight=1)
             frame.columnconfigure(0, weight=1)
             paned.add(frame, stretch="always", minsize=150)
 
-            tk.Label(
+            lbl = tk.Label(
                 frame, text=header,
                 bg=hdr_bg, fg=hdr_fg,
                 font=("Consolas", 10, "bold"),
                 anchor="w", padx=8, pady=3,
-            ).grid(row=0, column=0, sticky="ew")
+            )
+            lbl.grid(row=0, column=0, sticky="ew")
 
             txt = tk.Text(
                 frame, wrap="none",
@@ -1465,10 +1469,10 @@ class ResultsTabMixin:
 
             txt.configure(xscrollcommand=_xscroll)
             _all_texts.append(txt)
-            return txt
+            return txt, lbl
 
-        left_text  = _make_diff_pane("  ─  original")
-        right_text = _make_diff_pane("  +  ai fixed")
+        left_text, _          = _make_diff_pane("  ─  original")
+        right_text, right_label = _make_diff_pane("  +  fixed")
 
         left_text.configure(
             yscrollcommand=lambda f, l: _sync_yscroll(left_text, f, l))
@@ -1544,7 +1548,8 @@ class ResultsTabMixin:
             if undo_btn_ref[0] is not None:
                 undo_btn_ref[0].grid_remove()
                 undo_btn_ref[0] = None
-            # Restore Close button
+            # Restore right pane title and Close button
+            right_label.configure(text="  +  fixed")
             if close_btn_ref[0] is not None:
                 close_btn_ref[0].configure(
                     text=t("common.close"),
@@ -1591,11 +1596,12 @@ class ResultsTabMixin:
 
             if user_text_ref[0] is None:
                 # First real-change save: create third pane
-                utxt = _make_diff_pane("  ✎  ai + user fixed")
+                utxt, _ = _make_diff_pane("  ✎  ai + user fixed")
                 user_text_ref[0]  = utxt
                 user_frame_ref[0] = utxt.master
                 utxt.configure(
                     yscrollcommand=lambda f, l: _sync_yscroll(utxt, f, l))
+                right_label.configure(text="  +  ai fixed")
                 # Reveal Undo button
                 undo_btn = ctk.CTkButton(
                     btn_frame, text="↩  Undo User Changes",
@@ -1637,11 +1643,12 @@ class ResultsTabMixin:
         if _ai_fix_content is not None and new_content.rstrip("\n") != _ai_fix_content.rstrip("\n"):
             # Third pane should show the user-edited version
             user_content_ref[0] = new_content
-            utxt = _make_diff_pane("  ✎  ai + user fixed")
+            utxt, _ = _make_diff_pane("  ✎  ai + user fixed")
             user_text_ref[0]  = utxt
             user_frame_ref[0] = utxt.master
             utxt.configure(
                 yscrollcommand=lambda f, l: _sync_yscroll(utxt, f, l))
+            right_label.configure(text="  +  ai fixed")
             # Populate with the user content
             _populate_user_pane(new_content)
             # Reveal Undo button
