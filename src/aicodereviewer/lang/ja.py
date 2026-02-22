@@ -408,6 +408,7 @@ STRINGS: dict[str, str] = {
     "gui.results.action_resolve":     "解決",
     "gui.results.action_ignore":      "無視",
     "gui.results.action_view":        "表示",
+    "gui.results.action_undo":        "元に戻す",
     "gui.results.applying_fix":       "AI修正を生成中…",
     "gui.results.fix_ready":          "修正準備完了 – 下のdiffを確認してください：",
     "gui.results.no_fix":             "修正を生成できませんでした。",

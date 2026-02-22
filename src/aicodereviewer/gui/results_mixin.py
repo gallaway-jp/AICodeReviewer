@@ -44,6 +44,7 @@ class IssueCard(TypedDict):
     view_btn: Any
     resolve_btn: Any
     skip_btn: Any
+    undo_btn: Any
     fix_checkbox: Any
     fix_check_var: Any
     skip_frame: Any
@@ -301,6 +302,10 @@ class ResultsTabMixin:
         total = len(self._issue_cards)
         for rec in self._issue_cards:
             issue = rec["issue"]
+            # In AI fix selection mode only pending items are shown
+            if getattr(self, "_ai_fix_mode", False) and issue.status != "pending":
+                rec["card"].grid_remove()
+                continue
             issue_types = (
                 issue.issue_type.split("+") if "+" in issue.issue_type
                 else [issue.issue_type]
@@ -411,7 +416,6 @@ class ResultsTabMixin:
             command=lambda idx=len(self._issue_cards):
                 self._resolve_issue(idx),
         )
-        resolve_btn.grid(row=2, column=4, padx=2, pady=(0, 4))
 
         skip_btn = ctk.CTkButton(
             card, text=t("gui.results.action_skip"), **btn_kw,  # type: ignore[reportArgumentType]
@@ -419,13 +423,29 @@ class ResultsTabMixin:
             command=lambda idx=len(self._issue_cards):
                 self._toggle_skip(idx),
         )
-        skip_btn.grid(row=2, column=5, padx=2, pady=(0, 4))
+
+        undo_btn = ctk.CTkButton(
+            card, text=t("gui.results.action_undo"), **btn_kw,  # type: ignore[reportArgumentType]
+            fg_color=("gray70", "gray35"),
+            hover_color=("gray60", "gray45"),
+            command=lambda idx=len(self._issue_cards):
+                self._undo_issue(idx),
+        )
+
+        # Show the correct buttons for the initial status
+        if issue.status == "pending":
+            resolve_btn.grid(row=2, column=4, padx=2, pady=(0, 4))
+            skip_btn.grid(row=2, column=5, padx=2, pady=(0, 4))
+        else:
+            undo_btn.grid(row=2, column=3, padx=2, pady=(0, 4))
 
         skip_frame = ctk.CTkFrame(card, fg_color="transparent")
         skip_entry = ctk.CTkEntry(skip_frame, width=500,
                                    placeholder_text=t("gui.results.skip_reason_ph"))
         skip_entry.grid(row=0, column=0, sticky="ew", padx=(20, 6), pady=4)
         skip_frame.grid_columnconfigure(0, weight=1)
+        if issue.status == "skipped":
+            skip_frame.grid(row=3, column=0, columnspan=6, sticky="ew")
 
         self._issue_cards.append(IssueCard(
             issue=issue,
@@ -436,6 +456,7 @@ class ResultsTabMixin:
             view_btn=view_btn,
             resolve_btn=resolve_btn,
             skip_btn=skip_btn,
+            undo_btn=undo_btn,
             fix_checkbox=fix_checkbox,
             fix_check_var=fix_check_var,
             skip_frame=skip_frame,
@@ -457,8 +478,17 @@ class ResultsTabMixin:
 
     def _refresh_status(self, idx: int):
         rec = self._issue_cards[idx]
-        s_key, s_color = self._status_display(rec["issue"], rec["color"])
+        issue = rec["issue"]
+        s_key, s_color = self._status_display(issue, rec["color"])
         rec["status_lbl"].configure(text=t(s_key), text_color=s_color)
+        if issue.status == "pending":
+            rec["undo_btn"].grid_remove()
+            rec["resolve_btn"].grid(row=2, column=4, padx=2, pady=(0, 4))
+            rec["skip_btn"].grid(row=2, column=5, padx=2, pady=(0, 4))
+        else:
+            rec["resolve_btn"].grid_remove()
+            rec["skip_btn"].grid_remove()
+            rec["undo_btn"].grid(row=2, column=3, padx=2, pady=(0, 4))
         self._update_bottom_buttons()
         self._apply_filters()
 
@@ -981,17 +1011,23 @@ class ResultsTabMixin:
         rec = self._issue_cards[idx]
         issue = rec["issue"]
 
-        if issue.status == "skipped":
-            issue.status = "pending"
-            issue.resolution_reason = None
-            rec["skip_frame"].grid_remove()
-        else:
-            issue.status = "skipped"
-            rec["skip_frame"].grid(row=3, column=0, columnspan=6, sticky="ew")
-            def _on_reason_change(*_a, _entry=rec["skip_entry"], _iss=issue):
-                _iss.resolution_reason = _entry.get().strip() or None
-            rec["skip_entry"].bind("<KeyRelease>", _on_reason_change)
+        issue.status = "skipped"
+        rec["skip_frame"].grid(row=3, column=0, columnspan=6, sticky="ew")
+        def _on_reason_change(*_a, _entry=rec["skip_entry"], _iss=issue):
+            _iss.resolution_reason = _entry.get().strip() or None
+        rec["skip_entry"].bind("<KeyRelease>", _on_reason_change)
 
+        self._refresh_status(idx)
+
+    # ── Undo ───────────────────────────────────────────────────────────────
+
+    def _undo_issue(self, idx: int):
+        """Revert the issue status back to pending and hide the Undo button."""
+        rec = self._issue_cards[idx]
+        issue = rec["issue"]
+        issue.status = "pending"
+        issue.resolution_reason = None
+        rec["skip_frame"].grid_remove()
         self._refresh_status(idx)
 
     # ── AI Fix Mode ──────────────────────────────────────────────────────
@@ -1010,13 +1046,17 @@ class ResultsTabMixin:
         self._set_action_buttons_state("disabled")
 
         for rec in self._issue_cards:
+            # Hide all action buttons on every card regardless of status
+            rec["view_btn"].grid_remove()
+            rec["resolve_btn"].grid_remove()
+            rec["skip_btn"].grid_remove()
+            rec["undo_btn"].grid_remove()
             if rec["issue"].status == "pending":
-                rec["view_btn"].grid_remove()
-                rec["resolve_btn"].grid_remove()
-                rec["skip_btn"].grid_remove()
                 rec["fix_check_var"].set(True)
                 rec["fix_checkbox"].grid(row=2, column=2, columnspan=3,
                                           padx=4, pady=(0, 4), sticky="w")
+
+        self._apply_filters()
 
     def _exit_ai_fix_mode(self):
         if self._ai_fix_running:
@@ -1044,13 +1084,16 @@ class ResultsTabMixin:
             rec["status_lbl"].configure(text=t(s_key), text_color=s_color)
             rec["view_btn"].grid(row=2, column=2, padx=2, pady=(0, 4))
             if rec["issue"].status == "pending":
+                rec["undo_btn"].grid_remove()
                 rec["resolve_btn"].grid(row=2, column=4, padx=2, pady=(0, 4))
                 rec["skip_btn"].grid(row=2, column=5, padx=2, pady=(0, 4))
             else:
                 rec["resolve_btn"].grid_remove()
                 rec["skip_btn"].grid_remove()
+                rec["undo_btn"].grid(row=2, column=3, padx=2, pady=(0, 4))
 
         self._update_bottom_buttons()
+        self._apply_filters()
 
     def _start_batch_ai_fix(self):
         selected = [

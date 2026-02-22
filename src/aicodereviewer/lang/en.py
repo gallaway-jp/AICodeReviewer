@@ -394,6 +394,7 @@ STRINGS: dict[str, str] = {
     "gui.results.action_resolve":     "Resolve",
     "gui.results.action_ignore":      "Ignore",
     "gui.results.action_view":        "View",
+    "gui.results.action_undo":        "Undo",
     "gui.results.applying_fix":       "Generating AI fix…",
     "gui.results.fix_ready":          "Fix ready – review the diff below:",
     "gui.results.no_fix":             "Could not generate a fix.",
