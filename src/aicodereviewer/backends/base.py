@@ -45,6 +45,109 @@ Rules:
 """
 
 
+# ── Framework-specific prompt supplements ──────────────────────────────────
+# Keyed by framework name as returned by context_collector.detect_frameworks().
+# Each supplement is appended to the system prompt when the framework is
+# detected, giving the AI model domain-specific review guidance.
+
+FRAMEWORK_PROMPT_SUPPLEMENTS: Dict[str, str] = {
+    # ── Python ──────────────────────────────────────────────────────────────
+    "django": (
+        "This is a Django project. Pay special attention to:\n"
+        "- ORM N+1 query patterns (use select_related/prefetch_related)\n"
+        "- CSRF middleware and token handling\n"
+        "- QuerySet lazy evaluation and caching\n"
+        "- Template injection and XSS vulnerabilities\n"
+        "- Middleware execution order\n"
+        "- Proper use of Django settings and SECRET_KEY protection"
+    ),
+    "flask": (
+        "This is a Flask project. Pay special attention to:\n"
+        "- Request context and application context management\n"
+        "- Blueprint structure and route registration\n"
+        "- Secret key management and session security\n"
+        "- SQL injection via raw queries (use SQLAlchemy properly)\n"
+        "- Debug mode must be disabled in production"
+    ),
+    "fastapi": (
+        "This is a FastAPI project. Pay special attention to:\n"
+        "- Pydantic model validation and coercion\n"
+        "- Async/await correctness (no blocking calls in async routes)\n"
+        "- Dependency injection resolution and lifecycle\n"
+        "- Request/response serialization\n"
+        "- Background task execution and error handling"
+    ),
+    # ── JavaScript / TypeScript ─────────────────────────────────────────────
+    "react": (
+        "This is a React project. Pay special attention to:\n"
+        "- React Hook rules (dependencies array completeness)\n"
+        "- Memory leaks from uncleared intervals/listeners\n"
+        "- Unnecessary re-renders and useCallback/useMemo usage\n"
+        "- Stale closures in event handlers\n"
+        "- Prop drilling that should use Context or state management\n"
+        "- Key prop usage in lists"
+    ),
+    "next.js": (
+        "This is a Next.js project. Pay special attention to:\n"
+        "- Server vs. client component boundaries (use client directive)\n"
+        "- Data fetching patterns (getServerSideProps vs. getStaticProps vs. App Router)\n"
+        "- Image optimisation via next/image\n"
+        "- Environment variable exposure (NEXT_PUBLIC_ prefix)\n"
+        "- API route security and input validation"
+    ),
+    "vue": (
+        "This is a Vue project. Pay special attention to:\n"
+        "- Reactivity system (ref vs. reactive, toRefs)\n"
+        "- Composition API lifecycle hooks\n"
+        "- V-model binding correctness\n"
+        "- Computed property side effects\n"
+        "- Vuex/Pinia store mutation patterns"
+    ),
+    "angular": (
+        "This is an Angular project. Pay special attention to:\n"
+        "- Observable subscription leaks (use async pipe or takeUntilDestroyed)\n"
+        "- Change detection strategy (OnPush vs. Default)\n"
+        "- Dependency injection tree scope\n"
+        "- Template expression complexity\n"
+        "- Lazy-loaded module boundaries"
+    ),
+    "express": (
+        "This is an Express.js project. Pay special attention to:\n"
+        "- Middleware ordering (error handler must be last)\n"
+        "- Input validation and sanitisation\n"
+        "- Async error handling (express-async-errors or wrapper)\n"
+        "- CORS and helmet security headers\n"
+        "- Route parameter injection"
+    ),
+    # ── Java ────────────────────────────────────────────────────────────────
+    "spring_boot": (
+        "This is a Spring Boot project. Pay special attention to:\n"
+        "- Bean lifecycle and scope (singleton vs. prototype)\n"
+        "- @Transactional propagation and rollback rules\n"
+        "- N+1 JPA/Hibernate queries (use @EntityGraph or JOIN FETCH)\n"
+        "- Security filter chain configuration\n"
+        "- Property injection vs. constructor injection"
+    ),
+    # ── Ruby ────────────────────────────────────────────────────────────────
+    "rails": (
+        "This is a Ruby on Rails project. Pay special attention to:\n"
+        "- ActiveRecord N+1 queries (use includes/eager_load)\n"
+        "- Mass assignment protection (strong parameters)\n"
+        "- CSRF and session security\n"
+        "- Callback chain complexity\n"
+        "- Raw SQL injection via string interpolation"
+    ),
+    # ── Testing ─────────────────────────────────────────────────────────────
+    "pytest": (
+        "This project uses pytest. In testing-related reviews:\n"
+        "- Check fixture scope and teardown safety\n"
+        "- Verify parametrize coverage of edge cases\n"
+        "- Flag monkeypatch leaks across tests\n"
+        "- Ensure conftest.py fixtures are not overly broad"
+    ),
+}
+
+
 # ── Central prompt registry ────────────────────────────────────────────────
 REVIEW_PROMPTS = {
     "security": (
@@ -210,9 +313,18 @@ class AIBackend(ABC):
     # orchestrator).  Backends read this when building the system prompt.
     _project_context: Optional[str] = None
 
+    # Detected frameworks (e.g. ["django", "pytest"]).  Set once per
+    # review session by the orchestrator so that framework-specific
+    # prompt supplements are automatically appended.
+    _detected_frameworks: Optional[List[str]] = None
+
     def set_project_context(self, context: Optional[str]) -> None:
         """Store project context for injection into system prompts."""
         self._project_context = context
+
+    def set_detected_frameworks(self, frameworks: Optional[List[str]]) -> None:
+        """Store detected frameworks for prompt supplement injection."""
+        self._detected_frameworks = frameworks
 
     # ── public API ─────────────────────────────────────────────────────────
 
@@ -278,6 +390,7 @@ class AIBackend(ABC):
         review_type: str,
         lang: str,
         project_context: Optional[str] = None,
+        detected_frameworks: Optional[List[str]] = None,
     ) -> str:
         """Combine the review persona prompt with a language instruction.
 
@@ -287,11 +400,17 @@ class AIBackend(ABC):
         The prompt now also includes a JSON output schema so models return
         structured findings that can be reliably parsed.
 
+        When *detected_frameworks* is supplied, matching entries from
+        :data:`FRAMEWORK_PROMPT_SUPPLEMENTS` are appended to give the
+        model framework-specific review guidance.
+
         Args:
-            review_type:     Review type key(s), ``'+'``-delimited for multi.
-            lang:            ``'en'`` or ``'ja'``.
-            project_context: Optional compact project summary string
-                             produced by :mod:`context_collector`.
+            review_type:          Review type key(s), ``'+'``-delimited for multi.
+            lang:                 ``'en'`` or ``'ja'``.
+            project_context:      Optional compact project summary string
+                                  produced by :mod:`context_collector`.
+            detected_frameworks:  Optional list of framework names from
+                                  :func:`context_collector.detect_frameworks`.
         """
         if "+" in review_type:
             parts = review_type.split("+")
@@ -317,6 +436,19 @@ class AIBackend(ABC):
         # Prepend project context if available
         if project_context:
             base = f"{project_context}\n\n{base}"
+
+        # Append framework-specific guidance
+        if detected_frameworks:
+            supplements = [
+                FRAMEWORK_PROMPT_SUPPLEMENTS[fw]
+                for fw in detected_frameworks
+                if fw in FRAMEWORK_PROMPT_SUPPLEMENTS
+            ]
+            if supplements:
+                base += (
+                    "\n\nFRAMEWORK-SPECIFIC GUIDANCE:\n"
+                    + "\n\n".join(supplements)
+                )
 
         if lang == "ja":
             lang_inst = "IMPORTANT: Provide your entire response in Japanese (日本語で回答してください)."

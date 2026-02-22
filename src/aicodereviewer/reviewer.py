@@ -365,12 +365,26 @@ def collect_review_issues(
             ctx = collect_project_context(project_root, scanned_paths)
             max_tokens = config.get("processing", "context_max_tokens", 500)
             client.set_project_context(ctx.to_prompt_string(max_tokens))
-            logger.info("Project context attached (%d chars)", len(client._project_context or ""))
+
+            # Store detected frameworks for prompt supplement injection
+            override = config.get("processing", "detected_frameworks", "")
+            if override:
+                frameworks = [f.strip() for f in override.split(",") if f.strip()]
+            else:
+                frameworks = ctx.frameworks
+            client.set_detected_frameworks(frameworks or None)
+            logger.info(
+                "Project context attached (%d chars, frameworks=%s)",
+                len(client._project_context or ""),
+                frameworks,
+            )
         except Exception as exc:
             logger.warning("Failed to build project context: %s", exc)
             client.set_project_context(None)
+            client.set_detected_frameworks(None)
     else:
         client.set_project_context(None)
+        client.set_detected_frameworks(None)
 
     # Always one pass over files — multiple review types are merged into one prompt
     combined_type = "+".join(review_types) if len(review_types) > 1 else review_types[0]

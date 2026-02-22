@@ -65,7 +65,9 @@ class KiroBackend(AIBackend):
         lang: str = "en",
         spec_content: Optional[str] = None,
     ) -> str:
-        system_prompt = self._build_system_prompt(review_type, lang, self._project_context)
+        system_prompt = self._build_system_prompt(
+            review_type, lang, self._project_context, self._detected_frameworks,
+        )
         user_message = self._build_user_message(code_content, review_type, spec_content)
         full_prompt = f"{system_prompt}\n\n{user_message}"
         return self._run_kiro_prompt(full_prompt)
@@ -161,7 +163,9 @@ class KiroBackend(AIBackend):
             else:
                 wsl_path = file_path
 
-            system_prompt = self._build_system_prompt(review_type, lang, self._project_context)
+            system_prompt = self._build_system_prompt(
+                review_type, lang, self._project_context, self._detected_frameworks,
+            )
             prompt = f"{system_prompt}\n\nReview the file at: {wsl_path}"
 
             if os.name == "nt":

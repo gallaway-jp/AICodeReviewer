@@ -145,7 +145,9 @@ class LocalLLMBackend(AIBackend):
                 f"({len(code_content)} > {max_content} characters)"
             )
 
-        system_prompt = self._build_system_prompt(review_type, lang, self._project_context)
+        system_prompt = self._build_system_prompt(
+            review_type, lang, self._project_context, self._detected_frameworks,
+        )
         user_message = self._build_user_message(code_content, review_type, spec_content)
         return self._invoke(system_prompt, user_message)
 
