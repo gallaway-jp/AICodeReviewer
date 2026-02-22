@@ -32,6 +32,7 @@ __all__ = [
     "collect_review_issues",
     "verify_issue_resolved",
     "analyze_interactions",
+    "architectural_review",
 ]
 
 # Type aliases
@@ -427,6 +428,128 @@ def analyze_interactions(
     )
     return issues, overall_summary or None
 
+
+# ── cross-file architectural review ──────────────────────────────────────────
+
+def _build_project_structure_summary(files: Sequence[FileInfo]) -> str:
+    """Build a concise project directory / file-type summary.
+
+    The output is designed to be compact enough to fit inside an AI prompt
+    while conveying the overall shape of the project.
+    """
+    file_types: Dict[str, int] = {}
+    dirs: Dict[str, List[str]] = {}
+
+    for file_info in files:
+        if isinstance(file_info, dict):
+            fname = file_info.get("filename", file_info.get("path", "unknown"))
+        else:
+            fname = str(file_info)
+
+        ext = Path(fname).suffix or "(no ext)"
+        file_types[ext] = file_types.get(ext, 0) + 1
+
+        dir_path = str(Path(fname).parent)
+        dirs.setdefault(dir_path, []).append(Path(fname).name)
+
+    parts: List[str] = ["Project Structure:\n"]
+    for dir_path in sorted(dirs.keys())[:15]:
+        parts.append(f"\n{dir_path}/")
+        for name in sorted(dirs[dir_path])[:8]:
+            parts.append(f"  - {name}")
+        remaining = len(dirs[dir_path]) - 8
+        if remaining > 0:
+            parts.append(f"  … and {remaining} more files")
+
+    parts.append(f"\nFile types: {dict(sorted(file_types.items()))}")
+    parts.append(f"Total files: {len(files)}")
+    return "\n".join(parts)
+
+
+def architectural_review(
+    files: Sequence[FileInfo],
+    all_issues: List[ReviewIssue],
+    client: AIBackend,
+    lang: str = "en",
+) -> tuple[List[ReviewIssue], Optional[str]]:
+    """Perform a project-level architectural review.
+
+    Sends a project structure summary and existing findings summary to the
+    AI, which returns cross-cutting architectural issues that cannot be
+    seen when reviewing individual files.
+
+    Args:
+        files:      All scanned files from the review session.
+        all_issues: Issues collected during the main review.
+        client:     An :class:`AIBackend` instance.
+        lang:       Response language (``'en'`` or ``'ja'``).
+
+    Returns:
+        A tuple of *(new_arch_issues, architecture_summary_text)*.
+        ``architecture_summary_text`` is ``None`` when the review was
+        skipped or failed.
+    """
+    MIN_FILES = 3
+    if not files or len(files) < MIN_FILES:
+        logger.debug(
+            "Skipping architectural review (fewer than %d files)", MIN_FILES,
+        )
+        return [], None
+
+    structure_summary = _build_project_structure_summary(files)
+
+    # Condense existing findings (cap at 50)
+    findings_lines: List[str] = []
+    for iss in all_issues[:50]:
+        findings_lines.append(
+            f"- {iss.file_path}:{iss.line_number or 'n/a'} "
+            f"({iss.severity}) {iss.issue_type}: {iss.description}"
+        )
+    findings_summary = "\n".join(findings_lines) if findings_lines else "(none)"
+
+    user_message = (
+        f"{structure_summary}\n\n"
+        f"Existing review findings ({len(all_issues)} total):\n"
+        f"{findings_summary}\n\n"
+        "Analyse the project at an architectural level.  Focus on cross-cutting "
+        "structural issues that are invisible when reviewing single files.\n"
+        "Respond with the JSON schema described in your instructions."
+    )
+
+    logger.info(
+        "Running architectural review over %d files (%d existing findings)…",
+        len(files), len(all_issues),
+    )
+
+    try:
+        response = client.get_review(
+            user_message,
+            review_type="architectural_review",
+            lang=lang,
+        )
+    except Exception as exc:
+        logger.warning("Architectural review AI call failed: %s", exc)
+        return [], None
+
+    if not response or response.startswith("Error:"):
+        logger.warning("Architectural review returned no useful data")
+        return [], None
+
+    # Parse into ReviewIssue objects using the standard parser
+    arch_issues = parse_review_response(
+        response,
+        [{"name": "PROJECT", "path": "PROJECT", "content": ""}],
+        "architecture",
+    )
+
+    summary_text = (
+        f"Architectural review identified {len(arch_issues)} issue(s) "
+        f"across {len(files)} files."
+    )
+    logger.info(summary_text)
+    return arch_issues, summary_text
+
+
 # ── main collection entry ──────────────────────────────────────────────────
 
 def collect_review_issues(
@@ -605,6 +728,23 @@ def collect_review_issues(
                 total_work, total_work, f"[{type_label}] interaction analysis…",
             )
         issues, _interaction_summary = analyze_interactions(issues, client, lang)
+        session.record_call()
+
+    # ── Optional cross-file architectural review (third AI pass) ─────────
+    enable_arch = config.get(
+        "processing", "enable_architectural_review", False,
+    )
+    if isinstance(enable_arch, str):
+        enable_arch = enable_arch.lower() in ("true", "1", "yes")
+    if enable_arch and len(target_files) >= 3 and session.has_budget():
+        if progress_callback:
+            progress_callback(
+                total_work, total_work, f"[{type_label}] architectural review\u2026",
+            )
+        arch_issues, _arch_summary = architectural_review(
+            target_files, issues, client, lang,
+        )
+        issues.extend(arch_issues)
         session.record_call()
 
     return issues

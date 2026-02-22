@@ -51,6 +51,7 @@ STRINGS: dict[str, str] = {
     "gui.review.lang_ja":             "Japanese (日本語)",
     "gui.review.spec_file":           "Spec File:",
     "gui.review.spec_placeholder":    "(for specification type)",
+    "gui.review.arch_analysis":       "Include Architectural Analysis (cross-file)",
     "gui.review.start":               "▶  Start Review",
     "gui.review.dry_run":             "Dry Run",
     "gui.review.test_connection":     "🔌 Test Connection",
@@ -387,6 +388,7 @@ STRINGS: dict[str, str] = {
     "gui.tip.reviewers":              "Names of the people performing the review.",
     "gui.tip.language":               "Language for the AI review output.",
     "gui.tip.spec_file":              "Specification document to compare against (for specification review type).",
+    "gui.tip.arch_analysis":          "Run an extra AI pass to detect cross-file architectural issues (requires 3+ files).",
 
     # ── Inline results panel ───────────────────────────────────────────────
     "gui.results.panel_title":        "Review Results",

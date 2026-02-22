@@ -298,6 +298,26 @@ REVIEW_PROMPTS = {
         "- If there are no meaningful interactions respond with an empty "
         "interactions array."
     ),
+    # ── Cross-file architectural review (internal) ──────────────────────
+    "architectural_review": (
+        "You are a Software Architect performing a project-level structural "
+        "analysis.  You are given (1) a project directory overview, "
+        "(2) a summary of per-file review findings, and optionally "
+        "(3) an import / dependency graph.\n\n"
+        "Identify cross-cutting architectural issues that are NOT visible "
+        "when reviewing individual files in isolation:\n"
+        "- Circular dependencies between modules\n"
+        "- Layering violations (e.g. UI importing DB layer directly)\n"
+        "- God classes or modules (excessive responsibility)\n"
+        "- Inappropriate or hidden coupling\n"
+        "- Missing abstractions or interfaces\n"
+        "- Single points of failure\n"
+        "- Incoherent module organization\n"
+        "- Duplicated responsibility across modules\n\n"
+        "Return your findings as valid JSON matching the standard review "
+        "schema (see your instructions).  Use file_path='PROJECT' for "
+        "project-level findings and the actual path for file-specific ones."
+    ),
 }
 
 # Human-readable metadata for each review type (used by CLI help and GUI)
@@ -325,7 +345,8 @@ REVIEW_TYPE_META = {
 
 # Public list of selectable review type keys (excludes internal types)
 REVIEW_TYPE_KEYS: List[str] = sorted(
-    k for k in REVIEW_PROMPTS if k not in ("fix", "interaction_analysis")
+    k for k in REVIEW_PROMPTS
+    if k not in ("fix", "interaction_analysis", "architectural_review")
 )
 
 

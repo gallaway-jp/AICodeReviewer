@@ -73,6 +73,7 @@ class ReviewReport:
         reviewers: People who performed the review.
         backend: AI backend used (bedrock / kiro / copilot).
         interaction_analysis: Summary of cross-issue interactions.
+        architecture_summary: Summary of cross-file architectural analysis.
     """
     project_path: str
     review_type: str  # kept for backward compat – comma-joined
@@ -88,6 +89,7 @@ class ReviewReport:
     reviewers: list[str] = field(default_factory=list)
     backend: str = "bedrock"
     interaction_analysis: str | None = None
+    architecture_summary: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise to a JSON-safe dictionary."""
@@ -110,6 +112,7 @@ class ReviewReport:
         data.setdefault("review_types", [])
         data.setdefault("backend", "bedrock")
         data.setdefault("interaction_analysis", None)
+        data.setdefault("architecture_summary", None)
         return cls(**data)
 
 

@@ -261,6 +261,19 @@ class ReviewTabMixin:
         self.spec_entry.grid(row=1, column=5, sticky="ew", padx=4, pady=(3, 0))
         row += 1
 
+        # ── Optional architectural analysis toggle ────────────────────────
+        arch_frame = ctk.CTkFrame(tab, fg_color="transparent")
+        arch_frame.grid(row=row, column=0, sticky="w", padx=6, pady=(2, 2))
+        saved_arch = config.get("processing", "enable_architectural_review", "false")
+        self.arch_analysis_var = ctk.BooleanVar(
+            value=str(saved_arch).lower() in ("true", "1", "yes"))
+        InfoTooltip.add(arch_frame, t("gui.tip.arch_analysis"), row=0, column=0)
+        ctk.CTkCheckBox(
+            arch_frame, text=t("gui.review.arch_analysis"),
+            variable=self.arch_analysis_var,
+        ).grid(row=0, column=1, padx=4)
+        row += 1
+
         # ── Action buttons ────────────────────────────────────────────────
         btn_frame = ctk.CTkFrame(tab, fg_color="transparent")
         btn_frame.grid(row=row, column=0, sticky="ew", pady=(6, 2))
@@ -382,6 +395,8 @@ class ReviewTabMixin:
                              self.file_select_mode_var.get())
             config.set_value("gui", "selected_files",
                              "|".join(self.selected_files))
+            config.set_value("processing", "enable_architectural_review",
+                             str(self.arch_analysis_var.get()).lower())
             config.save()
         except Exception as exc:
             logger.warning("Failed to save form values: %s", exc)
