@@ -271,6 +271,33 @@ REVIEW_PROMPTS = {
         "You are an expert code fixer. Fix the code issues identified. "
         "Return ONLY the complete corrected code, no explanations or markdown."
     ),
+    # ── Cross-issue interaction analysis (internal) ───────────────────────
+    "interaction_analysis": (
+        "You are a Senior Code Review Analyst specialising in cross-issue "
+        "dependency and conflict detection.  Given a list of code review "
+        "findings, identify interactions between them: conflicts if both "
+        "fixes are applied, cascading effects, issues that should be "
+        "prioritised together, and duplicate / overlapping findings.\n\n"
+        "Respond with valid JSON matching this schema:\n"
+        '{\n'
+        '  "interactions": [\n'
+        '    {\n'
+        '      "issue_indices": [<int>, <int>],\n'
+        '      "relationship": "conflict|cascade|group|duplicate",\n'
+        '      "summary": "<brief explanation>"\n'
+        '    }\n'
+        '  ],\n'
+        '  "priority_order": [<int>, ...],\n'
+        '  "overall_summary": "<1-2 sentence overview>"\n'
+        '}\n\n'
+        "Rules:\n"
+        "- issue_indices are 0-based positions from the provided list.\n"
+        "- relationship MUST be one of: conflict, cascade, group, duplicate.\n"
+        "- priority_order lists issue indices in recommended fix order.\n"
+        "- Return ONLY the JSON object. No markdown, no fences, no extra text.\n"
+        "- If there are no meaningful interactions respond with an empty "
+        "interactions array."
+    ),
 }
 
 # Human-readable metadata for each review type (used by CLI help and GUI)
@@ -296,9 +323,9 @@ REVIEW_TYPE_META = {
     "data_validation": {"label": "Data Validation",        "group": "Quality"},
 }
 
-# Public list of selectable review type keys (excludes "fix")
+# Public list of selectable review type keys (excludes internal types)
 REVIEW_TYPE_KEYS: List[str] = sorted(
-    k for k in REVIEW_PROMPTS if k != "fix"
+    k for k in REVIEW_PROMPTS if k not in ("fix", "interaction_analysis")
 )
 
 
@@ -675,4 +702,39 @@ class AIBackend(ABC):
             f"FEEDBACK: {issue_feedback}\n\n"
             f"CODE TO FIX:\n{code_content}\n\n"
             "Return ONLY the complete corrected code, no explanations or markdown."
+        )
+
+    @staticmethod
+    def _build_interaction_user_message(
+        issues: List[Any],
+        lang: str = "en",
+    ) -> str:
+        """Build the user message for cross-issue interaction analysis.
+
+        Each issue is summarised as a one-line entry with its index so the
+        AI can reference findings by position.
+
+        Args:
+            issues: List of :class:`ReviewIssue` instances.
+            lang:   Response language (``'en'`` or ``'ja'``).
+        """
+        lines: List[str] = []
+        for idx, issue in enumerate(issues):
+            fp = issue.file_path or "unknown"
+            ln = issue.line_number or "n/a"
+            lines.append(
+                f"[{idx}] {fp}:{ln} ({issue.severity}) "
+                f"{issue.issue_type}: {issue.description}"
+            )
+
+        lang_note = (
+            "Respond in Japanese (日本語で回答してください)." if lang == "ja"
+            else "Respond in English."
+        )
+
+        return (
+            "Below are the code review findings from this session.  "
+            "Analyse the interactions between them.\n\n"
+            + "\n".join(lines)
+            + f"\n\n{lang_note}"
         )

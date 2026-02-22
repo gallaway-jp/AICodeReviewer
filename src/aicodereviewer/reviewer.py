@@ -6,6 +6,7 @@ Handles file reading, AI-powered analysis across one or more review types,
 and structured issue parsing.
 """
 import os
+import json
 import logging
 import re
 import threading
@@ -30,6 +31,7 @@ __all__ = [
     "invalidate_file_cache",
     "collect_review_issues",
     "verify_issue_resolved",
+    "analyze_interactions",
 ]
 
 # Type aliases
@@ -301,6 +303,129 @@ class _ReviewSession:
         self.total_tokens_sent += tokens_sent
         self.estimated_tokens_received += tokens_received
 
+# ── cross-issue interaction analysis ─────────────────────────────────────────
+
+_INTERACTION_RELATIONSHIP_TYPES = frozenset(
+    {"conflict", "cascade", "group", "duplicate"}
+)
+
+
+def _parse_interaction_response(raw: str) -> Optional[Dict[str, Any]]:
+    """Attempt to parse the AI interaction-analysis response as JSON.
+
+    Tolerates markdown fences and light preamble text.
+    Returns the parsed dict on success, ``None`` on failure.
+    """
+    if not raw:
+        return None
+    # Strip markdown fences
+    stripped = re.sub(r"```(?:json)?\s*", "", raw).strip()
+    stripped = re.sub(r"```\s*$", "", stripped).strip()
+    # Try to find the JSON object
+    start = stripped.find("{")
+    end = stripped.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return None
+    try:
+        data = json.loads(stripped[start : end + 1])
+        if isinstance(data, dict) and "interactions" in data:
+            return data
+    except (json.JSONDecodeError, ValueError):
+        pass
+    return None
+
+
+def analyze_interactions(
+    issues: List[ReviewIssue],
+    client: AIBackend,
+    lang: str = "en",
+) -> tuple[List[ReviewIssue], Optional[str]]:
+    """Run a second-pass AI analysis to detect cross-issue interactions.
+
+    Sends a compact summary of all findings to the AI and asks it to
+    identify conflicts, cascading effects, groupings, and duplicates.
+    The results are written back onto each :class:`ReviewIssue`'s
+    ``related_issues`` and ``interaction_summary`` fields.
+
+    Args:
+        issues: The issues collected from the main review pass.
+        client: An :class:`AIBackend` instance.
+        lang:   Response language (``'en'`` or ``'ja'``).
+
+    Returns:
+        A tuple of *(updated_issues, overall_summary)*.  The summary is
+        ``None`` when analysis was skipped or failed.
+    """
+    if not issues or len(issues) < 2:
+        logger.debug("Interaction analysis skipped (fewer than 2 issues)")
+        return issues, None
+
+    # Build the interaction prompt
+    system_prompt = client._build_system_prompt(  # noqa: SLF001
+        "interaction_analysis", lang,
+    )
+    user_message = AIBackend._build_interaction_user_message(issues, lang)  # noqa: SLF001
+
+    logger.info(
+        "Running cross-issue interaction analysis on %d findings…",
+        len(issues),
+    )
+
+    try:
+        response = client.get_review(
+            user_message,
+            review_type="interaction_analysis",
+            lang=lang,
+        )
+    except Exception as exc:
+        logger.warning("Interaction analysis AI call failed: %s", exc)
+        return issues, None
+
+    if not response or response.startswith("Error:"):
+        logger.warning("Interaction analysis returned no useful data")
+        return issues, None
+
+    parsed = _parse_interaction_response(response)
+    if parsed is None:
+        logger.warning("Failed to parse interaction analysis response")
+        return issues, None
+
+    # Apply interactions back onto issues
+    overall_summary = parsed.get("overall_summary", "")
+    interactions = parsed.get("interactions", [])
+    n = len(issues)
+
+    for entry in interactions:
+        indices = entry.get("issue_indices", [])
+        relationship = entry.get("relationship", "")
+        summary = entry.get("summary", "")
+
+        # Validate
+        if relationship not in _INTERACTION_RELATIONSHIP_TYPES:
+            continue
+        valid_indices = [i for i in indices if isinstance(i, int) and 0 <= i < n]
+        if len(valid_indices) < 2:
+            continue
+
+        # Cross-link each pair of issues
+        for i in valid_indices:
+            for j in valid_indices:
+                if i != j and j not in issues[i].related_issues:
+                    issues[i].related_issues.append(j)
+            # Append relationship info to the interaction_summary
+            existing = issues[i].interaction_summary or ""
+            tag = f"[{relationship}] {summary}"
+            if existing:
+                issues[i].interaction_summary = f"{existing}; {tag}"
+            else:
+                issues[i].interaction_summary = tag
+
+    logger.info(
+        "Interaction analysis complete: %d interaction(s), summary=%s",
+        len(interactions),
+        overall_summary[:80] if overall_summary else "(none)",
+    )
+    return issues, overall_summary or None
 
 # ── main collection entry ──────────────────────────────────────────────────
 
@@ -467,6 +592,21 @@ def collect_review_issues(
         session.failed_batches,
         len(issues),
     )
+
+    # ── Optional cross-issue interaction analysis (second AI pass) ─────────
+    enable_interaction = config.get(
+        "processing", "enable_interaction_analysis", False,
+    )
+    if isinstance(enable_interaction, str):
+        enable_interaction = enable_interaction.lower() in ("true", "1", "yes")
+    if enable_interaction and len(issues) >= 2 and session.has_budget():
+        if progress_callback:
+            progress_callback(
+                total_work, total_work, f"[{type_label}] interaction analysis…",
+            )
+        issues, _interaction_summary = analyze_interactions(issues, client, lang)
+        session.record_call()
+
     return issues
 
 

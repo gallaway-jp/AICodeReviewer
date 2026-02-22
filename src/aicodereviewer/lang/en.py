@@ -111,6 +111,7 @@ STRINGS: dict[str, str] = {
     "gui.detail.severity":            "Severity : {severity}",
     "gui.detail.status":              "Status   : {status}",
     "gui.detail.reason":              "Reason   : {reason}",
+    "gui.detail.related":              "--- Related Issues ({count}) ---",
     "gui.detail.ai_feedback":         "--- AI Feedback ---",
     "gui.detail.code_snippet":        "--- Code Snippet ---",
 

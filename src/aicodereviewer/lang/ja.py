@@ -127,6 +127,7 @@ STRINGS: dict[str, str] = {
     "gui.detail.severity":            "重大度   : {severity}",
     "gui.detail.status":              "ステータス: {status}",
     "gui.detail.reason":              "理由     : {reason}",
+    "gui.detail.related":              "--- 関連する問題 ({count}) ---",
     "gui.detail.ai_feedback":         "--- AI フィードバック ---",
     "gui.detail.code_snippet":        "--- コードスニペット ---",
 

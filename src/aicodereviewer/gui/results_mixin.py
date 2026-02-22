@@ -349,9 +349,36 @@ class ResultsTabMixin:
 
         header_text = (f"[{issue.severity.upper()}] [{issue.issue_type}] "
                        f"{Path(issue.file_path).name}")
-        ctk.CTkLabel(card, text=header_text, text_color=color,
-                      font=ctk.CTkFont(weight="bold")).grid(
-            row=0, column=0, columnspan=6, sticky="w", padx=6, pady=(4, 0))
+        header_lbl = ctk.CTkLabel(card, text=header_text, text_color=color,
+                      font=ctk.CTkFont(weight="bold"))
+        header_lbl.grid(
+            row=0, column=0, columnspan=5, sticky="w", padx=6, pady=(4, 0))
+
+        # Show a "Related" badge when cross-issue interactions were detected
+        related = getattr(issue, "related_issues", None) or []
+        if related:
+            _tip = getattr(issue, "interaction_summary", "") or ""
+            badge = ctk.CTkLabel(
+                card,
+                text=f"\U0001F517 Related ({len(related)})",
+                text_color="#7c3aed",
+                font=ctk.CTkFont(size=10, weight="bold"),
+                cursor="hand2",
+            )
+            badge.grid(row=0, column=5, sticky="e", padx=(0, 6), pady=(4, 0))
+            if _tip:
+                badge.bind(
+                    "<Enter>",
+                    lambda e, w=badge, txt=_tip: w.configure(
+                        text=f"\U0001F517 {txt[:60]}" + ("\u2026" if len(txt) > 60 else "")
+                    ),
+                )
+                badge.bind(
+                    "<Leave>",
+                    lambda e, w=badge, n=len(related): w.configure(
+                        text=f"\U0001F517 Related ({n})"
+                    ),
+                )
 
         _TRUNC = 120
         full_desc = issue.description
@@ -1730,6 +1757,17 @@ class ResultsTabMixin:
             f"{t('gui.detail.severity', severity=issue.severity)}\n"
             f"{t('gui.detail.status', status=issue.status)}\n"
             f"{t('gui.detail.reason', reason=issue.resolution_reason) + chr(10) if issue.resolution_reason else ''}"
+        )
+
+        # Cross-issue interaction info
+        _related = getattr(issue, "related_issues", None) or []
+        _interaction = getattr(issue, "interaction_summary", None) or ""
+        if _related or _interaction:
+            content += f"\n{t('gui.detail.related', count=len(_related))}\n"
+            if _interaction:
+                content += f"{_interaction}\n"
+
+        content += (
             f"\n{t('gui.detail.ai_feedback')}\n{issue.ai_feedback}\n"
             f"\n{t('gui.detail.code_snippet')}\n{issue.code_snippet}\n"
         )

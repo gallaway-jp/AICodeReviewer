@@ -32,6 +32,8 @@ class ReviewIssue:
         resolution_reason: User-provided reason when ignoring.
         resolved_at: Timestamp when the issue was resolved.
         ai_fix_applied: Code content of the applied fix.
+        related_issues: Indices of related issues from interaction analysis.
+        interaction_summary: Brief description of how this issue relates.
     """
     file_path: str
     line_number: int | None = None
@@ -44,6 +46,8 @@ class ReviewIssue:
     resolution_reason: str | None = None
     resolved_at: datetime | None = None
     ai_fix_applied: str | None = None
+    related_issues: list[int] = field(default_factory=list)
+    interaction_summary: str | None = None
 
 
 @dataclass
@@ -68,6 +72,7 @@ class ReviewReport:
         programmers: People who wrote the code.
         reviewers: People who performed the review.
         backend: AI backend used (bedrock / kiro / copilot).
+        interaction_analysis: Summary of cross-issue interactions.
     """
     project_path: str
     review_type: str  # kept for backward compat – comma-joined
@@ -82,6 +87,7 @@ class ReviewReport:
     programmers: list[str] = field(default_factory=list)
     reviewers: list[str] = field(default_factory=list)
     backend: str = "bedrock"
+    interaction_analysis: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise to a JSON-safe dictionary."""
@@ -103,6 +109,7 @@ class ReviewReport:
         # Handle old reports that lack new fields
         data.setdefault("review_types", [])
         data.setdefault("backend", "bedrock")
+        data.setdefault("interaction_analysis", None)
         return cls(**data)
 
 
