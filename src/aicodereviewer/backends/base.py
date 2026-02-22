@@ -380,6 +380,161 @@ class AIBackend(ABC):
         return "\n".join(parts)
 
     @staticmethod
+    def _build_diff_user_message(
+        file_entry: Dict[str, Any],
+        review_type: str,
+        spec_content: Optional[str] = None,
+    ) -> str:
+        """Build a user-role message optimised for diff-scope reviews.
+
+        When the file entry carries ``hunks`` (produced by
+        :func:`scanner.parse_diff_file_enhanced`), the prompt presents
+        each hunk with:
+
+        * The function/class context extracted from the ``@@`` header.
+        * Removed (``-``) and added (``+``) lines with line numbers.
+        * Surrounding unchanged context so the model understands intent.
+
+        A ``COMMIT MESSAGE`` section is prepended when available.
+
+        Args:
+            file_entry: Dict with keys ``filename``, ``content``, and
+                        optionally ``hunks``, ``commit_messages``.
+            review_type: Review type key(s).
+            spec_content: Specification content (for ``specification``
+                          review type).
+        """
+        parts: list[str] = []
+
+        # Spec preamble (if applicable)
+        if review_type == "specification" and spec_content:
+            parts.append(f"SPECIFICATION DOCUMENT:\n{spec_content}\n\n---\n")
+
+        # Commit messages
+        commit_msgs = file_entry.get("commit_messages")
+        if commit_msgs:
+            parts.append(f"COMMIT MESSAGE:\n{commit_msgs}\n\n---\n")
+
+        filename = file_entry.get("filename", file_entry.get("name", "unknown"))
+        hunks = file_entry.get("hunks")
+
+        if not hunks:
+            # Fallback — no hunk data; treat as plain content review
+            parts.append(f"CHANGED FILE: {filename}\n")
+            parts.append(f"{file_entry.get('content', '')}\n")
+            parts.append(
+                "Respond with the JSON format described in your instructions."
+            )
+            return "\n".join(parts)
+
+        parts.append(f"CHANGED FILE: {filename}\n")
+
+        for idx, hunk in enumerate(hunks, 1):
+            parts.append(f"--- Hunk {idx} ---")
+            if hunk.function_name:
+                line_hint = hunk.new_start
+                parts.append(
+                    f"FUNCTION/CLASS CONTEXT: {hunk.function_name} [line {line_hint}]"
+                )
+
+            # Context before
+            if hunk.context_before:
+                parts.append("\nSURROUNDING CONTEXT (before change):")
+                for ctx_line in hunk.context_before:
+                    parts.append(f"  {ctx_line}")
+
+            # Changed lines
+            if hunk.removed or hunk.added:
+                parts.append("\nDIFF (changed lines):")
+                for lineno, text in hunk.removed:
+                    parts.append(f"- L{lineno}: {text}")
+                for lineno, text in hunk.added:
+                    parts.append(f"+ L{lineno}: {text}")
+
+            # Context after
+            if hunk.context_after:
+                parts.append("\nSURROUNDING CONTEXT (after change):")
+                for ctx_line in hunk.context_after:
+                    parts.append(f"  {ctx_line}")
+
+            parts.append("")  # blank separator
+
+        parts.append(
+            "FOCUS YOUR REVIEW ON THE CHANGED LINES.\n"
+            "Use surrounding context only to understand intent and impact.\n"
+            "Respond with the JSON format described in your instructions."
+        )
+        return "\n".join(parts)
+
+    @staticmethod
+    def _build_multi_file_diff_user_message(
+        file_entries: list[Dict[str, Any]],
+        review_type: str,
+        spec_content: Optional[str] = None,
+    ) -> str:
+        """Combine multiple diff-aware file entries into a single prompt.
+
+        Each file is formatted via :meth:`_build_diff_user_message` and
+        separated by ``=== FILE: <name> ===`` delimiters for fallback
+        parsing compatibility.
+        """
+        parts: list[str] = []
+
+        if review_type == "specification" and spec_content:
+            parts.append(f"SPECIFICATION DOCUMENT:\n{spec_content}\n\n---\n")
+
+        # Commit messages (same across all files in a commit-based diff)
+        commit_msgs = None
+        for entry in file_entries:
+            commit_msgs = entry.get("commit_messages")
+            if commit_msgs:
+                break
+        if commit_msgs:
+            parts.append(f"COMMIT MESSAGE:\n{commit_msgs}\n\n---\n")
+
+        parts.append(
+            "Review each of the following changed files. "
+            "FOCUS YOUR REVIEW ON THE CHANGED LINES. "
+            "Use surrounding context only to understand intent and impact.\n"
+            "Respond with JSON following the schema in your instructions. "
+            "Include a separate entry in the \"files\" array for each file.\n"
+        )
+
+        for entry in file_entries:
+            fname = entry.get("filename", entry.get("name", "unknown"))
+            parts.append(f"=== FILE: {fname} ===")
+            hunks = entry.get("hunks")
+            if hunks:
+                for idx, hunk in enumerate(hunks, 1):
+                    parts.append(f"--- Hunk {idx} ---")
+                    if hunk.function_name:
+                        parts.append(
+                            f"FUNCTION/CLASS CONTEXT: {hunk.function_name} "
+                            f"[line {hunk.new_start}]"
+                        )
+                    if hunk.context_before:
+                        parts.append("CONTEXT (before):")
+                        for ctx_line in hunk.context_before:
+                            parts.append(f"  {ctx_line}")
+                    if hunk.removed or hunk.added:
+                        parts.append("DIFF:")
+                        for lineno, text in hunk.removed:
+                            parts.append(f"- L{lineno}: {text}")
+                        for lineno, text in hunk.added:
+                            parts.append(f"+ L{lineno}: {text}")
+                    if hunk.context_after:
+                        parts.append("CONTEXT (after):")
+                        for ctx_line in hunk.context_after:
+                            parts.append(f"  {ctx_line}")
+                    parts.append("")
+            else:
+                # No hunks — include raw content
+                parts.append(entry.get("content", ""))
+            parts.append("")
+
+        return "\n".join(parts)
+
+    @staticmethod
     def _build_fix_message(code_content: str, issue_feedback: str, review_type: str) -> str:
         """Build the user-role message for a fix request."""
         return (

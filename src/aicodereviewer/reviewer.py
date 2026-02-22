@@ -483,6 +483,11 @@ def _process_file_batch(
     return _process_files_individually(target_files, review_type, client, lang, spec_content, cancel_check)
 
 
+def _is_diff_entry(file_info: FileInfo) -> bool:
+    """Return True if *file_info* is a diff-scope dict with hunk data."""
+    return isinstance(file_info, dict) and file_info.get("is_diff", False)
+
+
 def _process_files_individually(
     target_files: Sequence[FileInfo],
     review_type: str,
@@ -491,7 +496,11 @@ def _process_files_individually(
     spec_content: Optional[str] = None,
     cancel_check: Optional[CancelCheck] = None,
 ) -> List[ReviewIssue]:
-    """Original one-file-per-request approach, now using the structured parser."""
+    """Original one-file-per-request approach, now using the structured parser.
+
+    When a file entry has ``is_diff=True`` the diff-aware prompt builder
+    is used so that the AI focuses on changed lines.
+    """
     batch_issues: List[ReviewIssue] = []
 
     for file_info in target_files:
@@ -514,9 +523,18 @@ def _process_files_individually(
         logger.info("Analysing %s [%s] …", display_name, review_type)
 
         try:
-            feedback = client.get_review(
-                code, review_type=review_type, lang=lang, spec_content=spec_content
-            )
+            # Use diff-aware prompt when the entry carries hunk data
+            if _is_diff_entry(file_info):
+                diff_msg = AIBackend._build_diff_user_message(  # noqa: SLF001
+                    file_info, review_type, spec_content
+                )
+                feedback = client.get_review(
+                    diff_msg, review_type=review_type, lang=lang, spec_content=spec_content
+                )
+            else:
+                feedback = client.get_review(
+                    code, review_type=review_type, lang=lang, spec_content=spec_content
+                )
             if feedback and not feedback.startswith("Error:"):
                 parsed = parse_single_file_response(
                     feedback, str(file_path), display_name, code, review_type
@@ -552,7 +570,15 @@ def _process_combined_batch(
     spec_content: Optional[str] = None,
     cancel_check: Optional[CancelCheck] = None,
 ) -> List[ReviewIssue]:
-    """Combine multiple files into a single AI prompt and parse results."""
+    """Combine multiple files into a single AI prompt and parse results.
+
+    When the batch contains diff-scope entries (``is_diff=True``), the
+    diff-aware multi-file prompt builder is used so the AI focuses on
+    changed lines rather than full file content.
+    """
+    # Determine if this is a diff-mode batch
+    use_diff_mode = any(_is_diff_entry(fi) for fi in target_files)
+
     # Prepare file info list
     file_entries: List[Dict[str, Any]] = []
     for file_info in target_files:
@@ -560,17 +586,28 @@ def _process_combined_batch(
             file_path = file_info["path"]
             code = file_info["content"]
             display_name = file_info["filename"]
+            entry: Dict[str, Any] = {
+                "path": str(file_path),
+                "name": display_name,
+                "content": code,
+            }
+            # Carry diff metadata through
+            if _is_diff_entry(file_info):
+                entry["is_diff"] = True
+                entry["hunks"] = file_info.get("hunks", [])
+                entry["commit_messages"] = file_info.get("commit_messages")
         else:
             file_path = file_info
             code = _read_file_content(file_path)
             display_name = str(file_path)
             if not code:
                 continue
-        file_entries.append({
-            "path": str(file_path),
-            "name": display_name,
-            "content": code,
-        })
+            entry = {
+                "path": str(file_path),
+                "name": display_name,
+                "content": code,
+            }
+        file_entries.append(entry)
 
     if not file_entries:
         return []
@@ -583,10 +620,15 @@ def _process_combined_batch(
     logger.info("Combined review of %d files [%s]: %s",
                 len(file_entries), review_type, ", ".join(names))
 
-    # Build combined user message via the backend helper
-    combined_code = AIBackend._build_multi_file_user_message(  # noqa: SLF001
-        file_entries, review_type, spec_content
-    )  # type: ignore[reportPrivateUsage]
+    # Build combined user message — diff-aware or standard
+    if use_diff_mode:
+        combined_code = AIBackend._build_multi_file_diff_user_message(  # noqa: SLF001
+            file_entries, review_type, spec_content
+        )
+    else:
+        combined_code = AIBackend._build_multi_file_user_message(  # noqa: SLF001
+            file_entries, review_type, spec_content
+        )  # type: ignore[reportPrivateUsage]
 
     try:
         feedback = client.get_review(

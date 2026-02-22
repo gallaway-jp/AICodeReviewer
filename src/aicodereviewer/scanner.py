@@ -15,8 +15,9 @@ Functions:
 import os
 import re
 import subprocess
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -25,8 +26,10 @@ from .config import config
 __all__ = [
     "scan_project",
     "parse_diff_file",
+    "parse_diff_file_enhanced",
     "detect_vcs_type",
     "get_diff_from_commits",
+    "get_commit_messages",
     "scan_project_with_scope",
 ]
 
@@ -111,6 +114,81 @@ def _scan_directory_batch(root: str, filenames: List[str], valid_extensions: fro
     return batch_files
 
 
+# ── Diff hunk data structures ──────────────────────────────────────────────
+
+@dataclass
+class DiffHunk:
+    """A single hunk within a file diff.
+
+    Attributes:
+        header:          Raw ``@@`` header string.
+        function_name:   Function/class name extracted from the hunk header
+                         (e.g. ``def authenticate_user()``), or ``None``.
+        old_start:       Start line in the original file.
+        new_start:       Start line in the new file.
+        added:           List of ``(line_no, text)`` for ``+``-marked lines.
+        removed:         List of ``(line_no, text)`` for ``-``-marked lines.
+        context_before:  Unchanged lines *above* the first change in this hunk.
+        context_after:   Unchanged lines *below* the last change in this hunk.
+    """
+
+    header: str = ""
+    function_name: Optional[str] = None
+    old_start: int = 0
+    new_start: int = 0
+    added: List[Tuple[int, str]] = field(default_factory=list)
+    removed: List[Tuple[int, str]] = field(default_factory=list)
+    context_before: List[str] = field(default_factory=list)
+    context_after: List[str] = field(default_factory=list)
+
+
+@dataclass
+class EnhancedDiffFile:
+    """Enhanced diff result for a single file.
+
+    Carries the same ``filename`` / ``content`` fields that the legacy
+    :func:`parse_diff_file` returns **plus** rich per-hunk data.
+    """
+
+    filename: str
+    content: str  # merged added+context lines (backward-compatible)
+    hunks: List[DiffHunk] = field(default_factory=list)
+
+
+# ── Hunk header regex ──────────────────────────────────────────────────────
+_HUNK_RE = re.compile(
+    r"^@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@\s*(.*)"
+)
+
+
+def _extract_function_from_hunk_ctx(header_ctx: str) -> Optional[str]:
+    """Extract a function/class name from the optional hunk-header context.
+
+    Git often appends the nearest enclosing function/class after the
+    ``@@`` range, e.g. ``@@ -42,10 +42,15 @@ def authenticate_user():``
+    """
+    if not header_ctx:
+        return None
+    header_ctx = header_ctx.strip()
+    # Python: def foo(…) / class Foo
+    m = re.match(r"((?:def|class|async\s+def)\s+\w+[^:]*)", header_ctx)
+    if m:
+        return m.group(1).strip()
+    # JS/TS: function foo / const foo = / export function
+    m = re.match(r"((?:export\s+)?(?:async\s+)?(?:function\*?|const|let|var)\s+\w+[^{]*)", header_ctx)
+    if m:
+        return m.group(1).strip()
+    # Java/C#: access modifier + type + name
+    m = re.match(r"((?:public|private|protected|static|final|virtual|override|abstract)\s+.*\w+\s*\([^)]*\))", header_ctx)
+    if m:
+        return m.group(1).strip()
+    # Anything else with parens looks like a function signature
+    m = re.match(r"(\w[\w\s<>]*\w\s*\([^)]*\))", header_ctx)
+    if m:
+        return m.group(1).strip()
+    return header_ctx if len(header_ctx) > 2 else None
+
+
 def parse_diff_file(diff_content: str) -> List[Dict[str, str]]:
     """
     Parse unified diff content and extract changed files with their content.
@@ -164,6 +242,158 @@ def parse_diff_file(diff_content: str) -> List[Dict[str, str]]:
     return files
 
 
+def parse_diff_file_enhanced(
+    diff_content: str,
+    context_lines: int = 20,
+) -> List[EnhancedDiffFile]:
+    """Parse unified diff preserving rich per-hunk metadata.
+
+    Unlike :func:`parse_diff_file`, this function keeps:
+
+    * **Added / removed lines** with their line numbers.
+    * **Function/class context** extracted from the ``@@`` hunk header.
+    * **Surrounding unchanged context** (up to *context_lines* before
+      and after the changed region within each hunk).
+
+    The returned :class:`EnhancedDiffFile` objects also carry a
+    ``content`` field identical to what :func:`parse_diff_file` produces
+    so callers that don't need hunk-level detail remain compatible.
+
+    Args:
+        diff_content: Raw unified-diff text.
+        context_lines: Maximum unchanged lines to keep before/after
+                       the first/last change in each hunk (default 20).
+
+    Returns:
+        List of :class:`EnhancedDiffFile` — one per file in the diff.
+    """
+    results_map: Dict[str, EnhancedDiffFile] = {}  # filename → result
+    lines = diff_content.splitlines()
+    current_file: Optional[str] = None
+    current_hunk: Optional[DiffHunk] = None
+    # For backward-compatible content field
+    content_accumulator: Dict[str, List[str]] = {}
+
+    # Track line numbers while walking the diff
+    old_lineno = 0
+    new_lineno = 0
+    # Buffer of context lines seen *before* any change in the current hunk
+    pre_change_buf: List[str] = []
+    # Buffer of context lines seen *after* the last change
+    post_change_buf: List[str] = []
+    seen_change_in_hunk = False
+
+    def _flush_post_context() -> None:
+        """Attach accumulated post-change context to the current hunk."""
+        nonlocal post_change_buf
+        if current_hunk is not None and post_change_buf:
+            current_hunk.context_after = post_change_buf[:context_lines]
+        post_change_buf = []
+
+    def _flush_pre_context() -> None:
+        """Attach accumulated pre-change context to the current hunk."""
+        nonlocal pre_change_buf
+        if current_hunk is not None and pre_change_buf:
+            current_hunk.context_before = pre_change_buf[-context_lines:]
+        pre_change_buf = []
+
+    for line in lines:
+        # ── File header ────────────────────────────────────────────────
+        if line.startswith('+++ '):
+            _flush_post_context()
+            m = re.match(r'\+\+\+ [ab]/(.+)', line)
+            current_file = m.group(1) if m else None
+            if current_file and current_file not in results_map:
+                results_map[current_file] = EnhancedDiffFile(
+                    filename=current_file, content=""
+                )
+                content_accumulator[current_file] = []
+            current_hunk = None
+            seen_change_in_hunk = False
+            pre_change_buf = []
+            post_change_buf = []
+            continue
+
+        if line.startswith('--- '):
+            continue
+
+        # ── Hunk header ────────────────────────────────────────────────
+        m_hunk = _HUNK_RE.match(line) if line.startswith('@@') else None
+        if m_hunk:
+            # Flush context from previous hunk
+            _flush_post_context()
+            if current_hunk is not None and not seen_change_in_hunk:
+                _flush_pre_context()
+
+            old_lineno = int(m_hunk.group(1))
+            new_lineno = int(m_hunk.group(2))
+            func_ctx = m_hunk.group(3).strip() if m_hunk.group(3) else ""
+            func_name = _extract_function_from_hunk_ctx(func_ctx)
+
+            current_hunk = DiffHunk(
+                header=line,
+                function_name=func_name,
+                old_start=old_lineno,
+                new_start=new_lineno,
+            )
+            if current_file and current_file in results_map:
+                results_map[current_file].hunks.append(current_hunk)
+            seen_change_in_hunk = False
+            pre_change_buf = []
+            post_change_buf = []
+            continue
+
+        # ── Diff body lines ────────────────────────────────────────────
+        if current_file is None or current_hunk is None:
+            continue
+
+        if line.startswith('+'):
+            if not seen_change_in_hunk:
+                _flush_pre_context()
+                seen_change_in_hunk = True
+            elif post_change_buf:
+                # More changes after some context → those context lines
+                # are really *between* changes, keep them as post of the
+                # prior change *and* pre of this change.
+                _flush_post_context()
+            text = line[1:]
+            current_hunk.added.append((new_lineno, text))
+            new_lineno += 1
+            content_accumulator.setdefault(current_file, []).append(text)
+
+        elif line.startswith('-'):
+            if not seen_change_in_hunk:
+                _flush_pre_context()
+                seen_change_in_hunk = True
+            elif post_change_buf:
+                _flush_post_context()
+            text = line[1:]
+            current_hunk.removed.append((old_lineno, text))
+            old_lineno += 1
+
+        elif line.startswith(' '):
+            text = line[1:]
+            if not seen_change_in_hunk:
+                pre_change_buf.append(text)
+            else:
+                post_change_buf.append(text)
+            old_lineno += 1
+            new_lineno += 1
+            content_accumulator.setdefault(current_file, []).append(text)
+
+    # Flush trailing context for the very last hunk
+    _flush_post_context()
+
+    # Build backward-compatible content field
+    result: List[EnhancedDiffFile] = []
+    for fname, edf in results_map.items():
+        parts = content_accumulator.get(fname, [])
+        edf.content = '\n'.join(parts) if parts else ''
+        if edf.content or edf.hunks:
+            result.append(edf)
+    return result
+
+
 def detect_vcs_type(project_path: str) -> Optional[str]:
     """
     Detect the version control system used in the project.
@@ -210,6 +440,48 @@ def _normalize_commit_range(vcs_type: str, commit_range: str) -> str:
     if vcs_type == 'svn':
         return commit_range if ':' in commit_range else commit_range.replace('..', ':')
     return commit_range
+
+
+def get_commit_messages(
+    project_path: str,
+    commit_range: str,
+) -> Optional[str]:
+    """Retrieve commit messages for a Git/SVN revision range.
+
+    Args:
+        project_path: Path to the repository directory.
+        commit_range: Commit/revision range (Git or SVN format).
+
+    Returns:
+        Concatenated commit messages, or *None* on failure/unsupported VCS.
+    """
+    vcs_type = detect_vcs_type(project_path)
+    if vcs_type is None:
+        return None
+
+    try:
+        repo_root = _find_vcs_root(project_path, vcs_type)
+        cwd = project_path if repo_root is None else str(repo_root)
+
+        if vcs_type == 'git':
+            normalized = _normalize_commit_range(vcs_type, commit_range)
+            cmd = ['git', 'log', '--format=%B', normalized]
+            result = subprocess.run(
+                cmd, cwd=cwd, capture_output=True, text=True, check=True,
+                encoding='utf-8', errors='replace',
+            )
+            return result.stdout.strip() or None
+        elif vcs_type == 'svn':
+            rev_range = _normalize_commit_range(vcs_type, commit_range)
+            cmd = ['svn', 'log', '-r', rev_range]
+            result = subprocess.run(
+                cmd, cwd=cwd, capture_output=True, text=True, check=True,
+                encoding='utf-8', errors='replace',
+            )
+            return result.stdout.strip() or None
+    except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+        logger.debug("Could not retrieve commit messages: %s", exc)
+    return None
 
 
 def get_diff_from_commits(project_path: str, commit_range: str) -> Optional[str]:
@@ -320,24 +592,37 @@ def scan_project_with_scope(directory: Optional[str], scope: str = 'project', di
         else:
             return []
 
-        # Parse diff and get changed files
-        diff_files = parse_diff_file(diff_content)
+        # Parse diff using enhanced parser to get hunk-level detail
+        diff_context_lines = config.get('processing', 'diff_context_lines', 20)
+        enhanced_files = parse_diff_file_enhanced(diff_content, context_lines=diff_context_lines)
 
-        # Convert to file paths relative to project
-        for diff_file_info in diff_files:
+        # Retrieve commit messages when available
+        commit_messages: Optional[str] = None
+        include_msgs = config.get('processing', 'include_commit_messages', True)
+        if include_msgs and commits and directory:
+            commit_messages = get_commit_messages(directory, commits)
+            if commit_messages:
+                logger.info("Retrieved commit messages for diff context")
+
+        # Convert to file info dicts (backward-compatible + enhanced)
+        for edf in enhanced_files:
             if directory:
-                file_path = Path(directory) / diff_file_info['filename']
+                file_path = Path(directory) / edf.filename
             else:
-                file_path = Path(diff_file_info['filename'])  # relative path
+                file_path = Path(edf.filename)  # relative path
 
-            # Always use diff content so only changed code is reviewed
-            content = diff_file_info['content']
-
-            changed_files.append({
+            entry: Dict[str, Any] = {
                 'path': file_path,
-                'content': content,
-                'filename': diff_file_info['filename']
-            })
+                'content': edf.content,
+                'filename': edf.filename,
+                # ── Diff-aware fields ──────────────────────────────────
+                'is_diff': True,
+                'hunks': edf.hunks,
+            }
+            if commit_messages:
+                entry['commit_messages'] = commit_messages
+
+            changed_files.append(entry)
 
         return changed_files
 
