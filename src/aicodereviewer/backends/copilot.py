@@ -57,7 +57,7 @@ class CopilotBackend(AIBackend):
         lang: str = "en",
         spec_content: Optional[str] = None,
     ) -> str:
-        system_prompt = self._build_system_prompt(review_type, lang)
+        system_prompt = self._build_system_prompt(review_type, lang, self._project_context)
         user_message = self._build_user_message(code_content, review_type, spec_content)
         full_prompt = f"{system_prompt}\n\n{user_message}"
         return self._run_copilot(full_prompt)

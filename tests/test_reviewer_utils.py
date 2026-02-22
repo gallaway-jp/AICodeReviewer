@@ -19,12 +19,16 @@ def test_read_file_content_caches_small_files():
         first_read = reviewer._read_file_content(file_path)
         assert first_read.startswith("print('hello')")
 
-        # Remove the file to ensure the second read comes from cache
-        os.remove(file_path)
-
+        # While the file still exists on disk, a second read should use the cache.
         second_read = reviewer._read_file_content(file_path)
         assert second_read == first_read
         assert str(file_path) in reviewer._file_content_cache
+
+        # After deleting the file, the mtime-aware cache correctly
+        # invalidates the stale entry and returns None → empty re-read.
+        os.remove(file_path)
+        third_read = reviewer._read_file_content(file_path)
+        assert third_read == ""  # file no longer on disk
 
 
 def test_read_file_content_skips_large_files():
@@ -38,7 +42,7 @@ def test_read_file_content_skips_large_files():
             content = reviewer._read_file_content(file_path)
 
         assert content == ""
-        assert reviewer._file_content_cache == {}
+        assert len(reviewer._file_content_cache) == 0
 
 
 def test_parse_severity_keywords():

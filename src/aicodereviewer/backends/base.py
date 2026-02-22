@@ -8,6 +8,42 @@ so the rest of the application can remain backend-agnostic.
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, List
 
+# ── JSON output schema (injected into system prompt) ───────────────────────
+
+_JSON_SCHEMA_INSTRUCTION = """\
+
+IMPORTANT — OUTPUT FORMAT:
+You MUST respond with valid JSON matching this schema.  Do NOT include
+markdown code fences, preamble, or any text outside the JSON object.
+
+{
+  "review_type": "<type>",
+  "language": "<en|ja>",
+  "files": [
+    {
+      "filename": "<path>",
+      "findings": [
+        {
+          "severity": "critical|high|medium|low|info",
+          "line": <int or null>,
+          "category": "<review category>",
+          "title": "<short title>",
+          "description": "<detailed description>",
+          "code_context": "<relevant code snippet>",
+          "suggestion": "<how to fix>"
+        }
+      ]
+    }
+  ]
+}
+
+Rules:
+- Return ONLY the JSON object.  No markdown, no fences, no extra text.
+- "severity" MUST be one of: critical, high, medium, low, info.
+- "line" is the 1-based line number (null if file-level).
+- Include ALL findings you discover — do not merge multiple issues.
+"""
+
 
 # ── Central prompt registry ────────────────────────────────────────────────
 REVIEW_PROMPTS = {
@@ -170,6 +206,14 @@ class AIBackend(ABC):
     Subclasses must implement :meth:`get_review` and :meth:`get_fix`.
     """
 
+    # Project-level context string (set once per review session by the
+    # orchestrator).  Backends read this when building the system prompt.
+    _project_context: Optional[str] = None
+
+    def set_project_context(self, context: Optional[str]) -> None:
+        """Store project context for injection into system prompts."""
+        self._project_context = context
+
     # ── public API ─────────────────────────────────────────────────────────
 
     @abstractmethod
@@ -230,11 +274,24 @@ class AIBackend(ABC):
     # ── helpers available to all subclasses ─────────────────────────────────
 
     @staticmethod
-    def _build_system_prompt(review_type: str, lang: str) -> str:
+    def _build_system_prompt(
+        review_type: str,
+        lang: str,
+        project_context: Optional[str] = None,
+    ) -> str:
         """Combine the review persona prompt with a language instruction.
 
         When *review_type* contains ``'+'`` (e.g. ``'security+performance'``),
         the personas for all included types are merged into a single prompt.
+
+        The prompt now also includes a JSON output schema so models return
+        structured findings that can be reliably parsed.
+
+        Args:
+            review_type:     Review type key(s), ``'+'``-delimited for multi.
+            lang:            ``'en'`` or ``'ja'``.
+            project_context: Optional compact project summary string
+                             produced by :mod:`context_collector`.
         """
         if "+" in review_type:
             parts = review_type.split("+")
@@ -256,11 +313,16 @@ class AIBackend(ABC):
             )
         else:
             base = REVIEW_PROMPTS.get(review_type, REVIEW_PROMPTS["best_practices"])
+
+        # Prepend project context if available
+        if project_context:
+            base = f"{project_context}\n\n{base}"
+
         if lang == "ja":
             lang_inst = "IMPORTANT: Provide your entire response in Japanese (日本語で回答してください)."
         else:
             lang_inst = "IMPORTANT: Provide your entire response in English."
-        return f"{base} {lang_inst}"
+        return f"{base} {lang_inst}{_JSON_SCHEMA_INSTRUCTION}"
 
     @staticmethod
     def _build_user_message(
@@ -268,7 +330,10 @@ class AIBackend(ABC):
         review_type: str,
         spec_content: Optional[str] = None,
     ) -> str:
-        """Build the user-role message for the AI."""
+        """Build the user-role message for the AI.
+
+        The message now reminds the model to respond with JSON.
+        """
         has_spec = ("specification" in review_type) and spec_content
         if has_spec:
             return (
@@ -276,9 +341,13 @@ class AIBackend(ABC):
                 f"CODE TO REVIEW:\n{code_content}\n\n---\n\n"
                 "Compare the code against the specification and identify "
                 "deviations, missing implementations, or areas that don't "
-                "meet the requirements."
+                "meet the requirements.\n\n"
+                "Respond with the JSON format described in your instructions."
             )
-        return f"Review this code:\n\n{code_content}"
+        return (
+            f"Review this code:\n\n{code_content}\n\n"
+            "Respond with the JSON format described in your instructions."
+        )
 
     @staticmethod
     def _build_multi_file_user_message(
@@ -289,9 +358,10 @@ class AIBackend(ABC):
         """Build a user-role message that combines multiple files.
 
         Each entry in *files* is ``{"name": "...", "content": "..."}``.
-        The response must use ``=== FILE: <name> ===`` delimiters and
-        ``--- FINDING [severity] ---`` sub-delimiters so the caller can
-        split feedback into per-file, per-finding issues.
+        The model is instructed to respond with JSON (schema is in the
+        system prompt).  Legacy ``=== FILE:`` delimiters are kept as
+        a hint so the fallback parser still works if the model ignores
+        the JSON instruction.
         """
         parts: List[str] = []
         if review_type == "specification" and spec_content:
@@ -299,14 +369,9 @@ class AIBackend(ABC):
 
         parts.append(
             "Review each of the following files. "
-            "For EACH file, begin your feedback with a line exactly like:\n"
-            "=== FILE: <filename> ===\n\n"
-            "Within each file section, separate EACH distinct finding with "
-            "a line exactly like:\n"
-            "--- FINDING [severity] ---\n"
-            "where severity is one of: critical, high, medium, low, info.\n"
-            "Then provide a concise description of that single finding.\n"
-            "Report ALL issues you find — do not merge multiple issues.\n"
+            "Respond with JSON following the schema in your instructions. "
+            "Include a separate entry in the \"files\" array for each file, "
+            "and a separate object in \"findings\" for each distinct issue.\n"
         )
         for f in files:
             parts.append(f"=== FILE: {f['name']} ===")

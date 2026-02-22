@@ -8,7 +8,10 @@ and structured issue parsing.
 import os
 import logging
 import re
+import threading
+import time
 from collections import OrderedDict
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Union
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -16,12 +19,15 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from .models import ReviewIssue
 from .config import config
 from .backends.base import AIBackend
+from .response_parser import parse_review_response, parse_single_file_response
+from .context_collector import collect_project_context
 
 __all__ = [
     "ProgressCallback",
     "CancelCheck",
     "FileInfo",
     "clear_file_cache",
+    "invalidate_file_cache",
     "collect_review_issues",
     "verify_issue_resolved",
 ]
@@ -36,43 +42,95 @@ logger = logging.getLogger(__name__)
 
 # ── file content cache ─────────────────────────────────────────────────────
 
-class _BoundedCache:
-    """Simple bounded LRU cache for file contents.
+# Cache entry: (content, mtime, file_size)
+_CacheEntry = tuple  # (str, float, int)
 
-    Evicts the oldest entry when *maxsize* is reached, preventing
-    unbounded memory growth during large project reviews.
+
+class _BoundedCache:
+    """Thread-safe bounded LRU cache with mtime-based staleness detection.
+
+    Each entry records the file's modification time and size at the point
+    of caching.  On :meth:`get`, the current mtime/size are compared —
+    if they differ the entry is evicted so callers always see fresh
+    content.
+
+    A :class:`threading.Lock` protects all mutations so the cache is
+    safe for use from :class:`concurrent.futures.ThreadPoolExecutor`.
     """
 
     def __init__(self, maxsize: int = 100):
-        self._data: OrderedDict[str, str] = OrderedDict()
+        self._data: OrderedDict[str, _CacheEntry] = OrderedDict()
         self.maxsize = maxsize
+        self._lock = threading.Lock()
+
+    # ── read ───────────────────────────────────────────────────────────────
 
     def get(self, key: str) -> Optional[str]:
-        if key in self._data:
+        with self._lock:
+            if key not in self._data:
+                return None
+
+            content, cached_mtime, cached_size = self._data[key]
+
+            # Check if the file has changed on disk
+            try:
+                actual_mtime = os.path.getmtime(key)
+                actual_size = os.path.getsize(key)
+                if actual_mtime != cached_mtime or actual_size != cached_size:
+                    logger.debug("Cache stale for %s — invalidating", key)
+                    del self._data[key]
+                    return None
+            except (OSError, FileNotFoundError):
+                # File deleted / inaccessible → remove stale entry
+                del self._data[key]
+                return None
+
             self._data.move_to_end(key)
-            return self._data[key]
-        return None
+            return content
+
+    # ── write ──────────────────────────────────────────────────────────────
 
     def put(self, key: str, value: str) -> None:
-        if key in self._data:
-            self._data.move_to_end(key)
-        else:
-            if len(self._data) >= self.maxsize:
-                self._data.popitem(last=False)
-        self._data[key] = value
+        with self._lock:
+            try:
+                mtime = os.path.getmtime(key)
+                size = os.path.getsize(key)
+            except (OSError, FileNotFoundError):
+                mtime = time.time()
+                size = len(value)
+
+            if key in self._data:
+                self._data.move_to_end(key)
+            else:
+                if len(self._data) >= self.maxsize:
+                    self._data.popitem(last=False)
+            self._data[key] = (value, mtime, size)
+
+    # ── invalidation ───────────────────────────────────────────────────────
+
+    def invalidate_path(self, path: str) -> None:
+        """Remove a specific *path* from the cache."""
+        with self._lock:
+            self._data.pop(path, None)
 
     def clear(self) -> None:
-        self._data.clear()
+        """Drop all cached entries."""
+        with self._lock:
+            self._data.clear()
+
+    # ── dunder helpers ─────────────────────────────────────────────────────
 
     def __len__(self) -> int:
-        return len(self._data)
+        with self._lock:
+            return len(self._data)
 
     def __contains__(self, key: object) -> bool:
-        return key in self._data
+        with self._lock:
+            return key in self._data
 
     def __eq__(self, other: object) -> bool:
         if isinstance(other, dict):
-            return dict(self._data) == other
+            return {k: v[0] for k, v in self._data.items()} == other
         if isinstance(other, _BoundedCache):
             return self._data == other._data
         return NotImplemented
@@ -84,6 +142,15 @@ _file_content_cache = _BoundedCache()
 def clear_file_cache() -> None:
     """Clear the file-content cache (useful between review sessions)."""
     _file_content_cache.clear()
+
+
+def invalidate_file_cache(path: str) -> None:
+    """Invalidate a single file path in the content cache.
+
+    Call this after editing/saving a file so the next review sees
+    up-to-date content.
+    """
+    _file_content_cache.invalidate_path(str(path))
 
 
 # ── severity parsing ───────────────────────────────────────────────────────
@@ -122,6 +189,67 @@ def _extract_description(feedback: str, filename: str) -> str:
 
 # ── file I/O ───────────────────────────────────────────────────────────────
 
+def _estimate_token_count(content: str) -> int:
+    """Rough token estimate: ~4 chars per token (GPT-family heuristic)."""
+    return max(1, len(content) // 4)
+
+
+def _get_file_content(file_info: FileInfo) -> str:
+    """Return the text content for *file_info* (Path or diff dict)."""
+    if isinstance(file_info, dict):
+        return file_info.get("content", "")
+    return _read_file_content(file_info)
+
+
+def _build_adaptive_batches(
+    target_files: Sequence[FileInfo],
+    max_tokens_per_batch: int = 80_000,
+    max_files_per_batch: int = 10,
+) -> List[List[FileInfo]]:
+    """Group files into batches respecting a token budget and file-count cap.
+
+    Large files that alone exceed the token budget are placed in their own
+    single-file batch.  Remaining files are packed greedily.
+    """
+    # Build list of (file_info, estimated_tokens)
+    scored: List[tuple[FileInfo, int]] = []
+    for fi in target_files:
+        content = _get_file_content(fi)
+        scored.append((fi, _estimate_token_count(content)))
+
+    # Sort largest first so oversized files get their own batch early
+    scored.sort(key=lambda x: x[1], reverse=True)
+
+    batches: List[List[FileInfo]] = []
+    current_batch: List[FileInfo] = []
+    current_tokens = 0
+
+    for fi, tokens in scored:
+        # Oversized file → own batch
+        if tokens > max_tokens_per_batch:
+            if current_batch:
+                batches.append(current_batch)
+                current_batch = []
+                current_tokens = 0
+            batches.append([fi])
+            continue
+
+        # Would adding this file exceed the budget or file count?
+        if (current_tokens + tokens > max_tokens_per_batch
+                or len(current_batch) >= max_files_per_batch):
+            if current_batch:
+                batches.append(current_batch)
+            current_batch = [fi]
+            current_tokens = tokens
+        else:
+            current_batch.append(fi)
+            current_tokens += tokens
+
+    if current_batch:
+        batches.append(current_batch)
+
+    return batches
+
 def _read_file_content(file_path: Path) -> str:
     """Read file with caching and size limits."""
     cache_key = str(file_path)
@@ -147,6 +275,31 @@ def _read_file_content(file_path: Path) -> str:
     except (OSError, UnicodeDecodeError) as exc:
         logger.error("Error reading %s: %s", file_path, exc)
         return ""
+
+
+# ── session / budget tracking ──────────────────────────────────────────────
+
+@dataclass
+class _ReviewSession:
+    """Track API usage and budget across a single review session."""
+
+    total_api_calls: int = 0
+    total_tokens_sent: int = 0
+    estimated_tokens_received: int = 0
+    failed_batches: int = 0
+    successful_batches: int = 0
+    budget_limit: int = 0  # 0 = unlimited
+
+    def has_budget(self) -> bool:
+        """Return True if further API calls are allowed."""
+        if self.budget_limit == 0:
+            return True
+        return self.total_api_calls < self.budget_limit
+
+    def record_call(self, tokens_sent: int = 0, tokens_received: int = 0) -> None:
+        self.total_api_calls += 1
+        self.total_tokens_sent += tokens_sent
+        self.estimated_tokens_received += tokens_received
 
 
 # ── main collection entry ──────────────────────────────────────────────────
@@ -179,19 +332,74 @@ def collect_review_issues(
         Flat list of :class:`ReviewIssue` instances.
     """
     issues: List[ReviewIssue] = []
+
+    # ── Build project context (once per session) ───────────────────────────
+    enable_context = config.get("processing", "enable_project_context", True)
+    if enable_context:
+        try:
+            # Determine project root from target_files
+            if target_files:
+                sample = target_files[0]
+                if isinstance(sample, dict):
+                    project_root = str(Path(sample.get("path", ".")).parent)
+                else:
+                    project_root = str(Path(str(sample)).parent)
+            else:
+                project_root = "."
+            # Walk up to find a likely project root (has pyproject.toml, package.json, etc.)
+            root_candidate = Path(project_root)
+            for _ in range(5):
+                if any((root_candidate / m).exists() for m in
+                       ("pyproject.toml", "package.json", "Cargo.toml", "go.mod", "pom.xml", ".git")):
+                    project_root = str(root_candidate)
+                    break
+                parent = root_candidate.parent
+                if parent == root_candidate:
+                    break
+                root_candidate = parent
+
+            scanned_paths = [
+                str(f) if not isinstance(f, dict) else f.get("path", "")
+                for f in target_files
+            ]
+            ctx = collect_project_context(project_root, scanned_paths)
+            max_tokens = config.get("processing", "context_max_tokens", 500)
+            client.set_project_context(ctx.to_prompt_string(max_tokens))
+            logger.info("Project context attached (%d chars)", len(client._project_context or ""))
+        except Exception as exc:
+            logger.warning("Failed to build project context: %s", exc)
+            client.set_project_context(None)
+    else:
+        client.set_project_context(None)
+
     # Always one pass over files — multiple review types are merged into one prompt
     combined_type = "+".join(review_types) if len(review_types) > 1 else review_types[0]
     total_work = len(target_files)
     done = 0
 
-    batch_size = config.get("processing", "batch_size", 5)
     enable_parallel = config.get("processing", "enable_parallel_processing", False)
+    enable_adaptive = config.get("processing", "enable_adaptive_batching", True)
 
     type_label = ", ".join(review_types)
-    batches = [
-        target_files[i : i + batch_size]
-        for i in range(0, len(target_files), batch_size)
-    ]
+
+    if enable_adaptive:
+        max_batch_tokens = config.get("processing", "max_batch_token_budget", 80_000)
+        max_batch_files = config.get("processing", "batch_size", 10)
+        batches = _build_adaptive_batches(target_files, max_batch_tokens, max_batch_files)
+        logger.info(
+            "Adaptive batching: %d file(s) → %d batch(es)",
+            len(target_files), len(batches),
+        )
+    else:
+        batch_size = config.get("processing", "batch_size", 5)
+        batches = [
+            target_files[i : i + batch_size]
+            for i in range(0, len(target_files), batch_size)
+        ]
+
+    # ── Budget / session tracking ────────────────────────────────────────────
+    budget_limit = config.get("performance", "max_api_calls_per_session", 0)
+    session = _ReviewSession(budget_limit=budget_limit)
 
     if enable_parallel and len(batches) > 1:
         with ThreadPoolExecutor(max_workers=2) as pool:
@@ -204,20 +412,47 @@ def collect_review_issues(
             for future in as_completed(futures):
                 batch_issues = future.result()
                 issues.extend(batch_issues)
+                session.record_call()
+                session.successful_batches += 1
                 done += len(futures[future])
                 if progress_callback:
                     progress_callback(done, total_work, f"[{type_label}]")
     else:
         for batch in batches:
-            batch_issues = _process_file_batch(
-                batch, combined_type, client, lang, spec_content, cancel_check
-            )
-            issues.extend(batch_issues)
+            if not session.has_budget():
+                logger.warning(
+                    "Budget limit reached (%d/%d calls); skipping remaining batches",
+                    session.total_api_calls, session.budget_limit,
+                )
+                break
+            try:
+                batch_issues = _process_file_batch(
+                    batch, combined_type, client, lang, spec_content, cancel_check
+                )
+                issues.extend(batch_issues)
+                session.record_call()
+                session.successful_batches += 1
+            except Exception as exc:
+                session.failed_batches += 1
+                session.record_call()
+                logger.error("Batch failed: %s — retrying individually", exc)
+                if session.has_budget():
+                    fallback = _process_files_individually(
+                        batch, combined_type, client, lang, spec_content, cancel_check,
+                    )
+                    issues.extend(fallback)
+                    session.record_call()
             done += len(batch)
             if progress_callback:
                 progress_callback(done, total_work, f"[{type_label}]")
 
-    logger.debug("Collected %d issues across %d review type(s).", len(issues), len(review_types))
+    logger.info(
+        "Review session: %d API call(s), %d succeeded, %d failed, %d issue(s)",
+        session.total_api_calls,
+        session.successful_batches,
+        session.failed_batches,
+        len(issues),
+    )
     return issues
 
 
@@ -256,7 +491,7 @@ def _process_files_individually(
     spec_content: Optional[str] = None,
     cancel_check: Optional[CancelCheck] = None,
 ) -> List[ReviewIssue]:
-    """Original one-file-per-request approach."""
+    """Original one-file-per-request approach, now using the structured parser."""
     batch_issues: List[ReviewIssue] = []
 
     for file_info in target_files:
@@ -283,16 +518,23 @@ def _process_files_individually(
                 code, review_type=review_type, lang=lang, spec_content=spec_content
             )
             if feedback and not feedback.startswith("Error:"):
-                issue = ReviewIssue(
-                    file_path=str(file_path),
-                    line_number=None,
-                    issue_type=review_type,
-                    severity=_parse_severity(feedback),
-                    description=f"Review feedback for {display_name}",
-                    code_snippet=code[:200] + ("…" if len(code) > 200 else ""),
-                    ai_feedback=feedback,
+                parsed = parse_single_file_response(
+                    feedback, str(file_path), display_name, code, review_type
                 )
-                batch_issues.append(issue)
+                if parsed:
+                    batch_issues.extend(parsed)
+                else:
+                    # Fallback: create one generic issue
+                    issue = ReviewIssue(
+                        file_path=str(file_path),
+                        line_number=None,
+                        issue_type=review_type,
+                        severity=_parse_severity(feedback),
+                        description=f"Review feedback for {display_name}",
+                        code_snippet=code[:200] + ("…" if len(code) > 200 else ""),
+                        ai_feedback=feedback,
+                    )
+                    batch_issues.append(issue)
             elif feedback and feedback.startswith("Error:"):
                 logger.warning("Backend returned error for %s: %s", display_name, feedback[:120])
 
@@ -366,8 +608,8 @@ def _process_combined_batch(
         logger.warning("Combined review returned error, falling back to individual")
         return _process_files_individually(target_files, review_type, client, lang, spec_content, cancel_check)
 
-    # Parse combined feedback into per-file sections
-    return _split_combined_feedback(feedback, file_entries, review_type)
+    # Parse combined feedback using the multi-strategy response parser
+    return parse_review_response(feedback, file_entries, review_type)
 
 
 def _split_combined_feedback(
@@ -376,6 +618,11 @@ def _split_combined_feedback(
     review_type: str,
 ) -> List[ReviewIssue]:
     """Split a combined multi-file AI response into per-file, per-finding issues.
+
+    .. deprecated::
+        Use :func:`response_parser.parse_review_response` instead.
+        This function is kept for backward compatibility and is still used
+        internally as Strategy 3 (delimiter parsing) inside the new parser.
 
     Looks for ``=== FILE: <name> ===`` delimiters per file, then
     ``--- FINDING [severity] ---`` sub-delimiters per finding.
