@@ -266,6 +266,15 @@ REVIEW_PROMPTS = {
         "injection vectors through unvalidated input, and schema validation gaps. "
         "Suggest validation strategies and libraries."
     ),
+    "regression": (
+        "You are a Regression Testing Specialist and Quality Assurance Expert. "
+        "Analyze code changes for: unintended side effects, breaking changes that "
+        "impact pre-existing features, degradation in performance (slower execution, "
+        "higher memory usage, increased latency), breaks in backward compatibility, "
+        "disabled features, and behavioral changes that contradict original intent. "
+        "Focus on identifying what could break for existing users and suggest "
+        "preventative measures like additional tests or gradual migration strategies."
+    ),
     # ── Fix prompt (internal) ─────────────────────────────────────────────
     "fix": (
         "You are an expert code fixer. Fix the code issues identified. "
@@ -341,6 +350,7 @@ REVIEW_TYPE_META = {
     "concurrency":     {"label": "Concurrency Safety",     "group": "Quality"},
     "api_design":      {"label": "API Design",             "group": "Architecture"},
     "data_validation": {"label": "Data Validation",        "group": "Quality"},
+    "regression":      {"label": "Regression Analysis",    "group": "Quality"},
 }
 
 # Public list of selectable review type keys (excludes internal types)

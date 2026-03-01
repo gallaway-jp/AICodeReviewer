@@ -218,6 +218,28 @@ STRINGS: dict[str, str] = {
     "report.snippet":                 "スニペット",
     "report.feedback":                "フィードバック",
 
+    # ── Review Type Labels ─────────────────────────────────────────────────
+    "review_type.security":           "セキュリティ監査",
+    "review_type.performance":        "パフォーマンス",
+    "review_type.best_practices":     "ベストプラクティス",
+    "review_type.maintainability":    "保守性",
+    "review_type.documentation":      "ドキュメント",
+    "review_type.testing":            "テスト",
+    "review_type.error_handling":     "エラーハンドリング",
+    "review_type.complexity":         "複雑性分析",
+    "review_type.accessibility":      "アクセシビリティ",
+    "review_type.scalability":        "スケーラビリティ",
+    "review_type.compatibility":      "互換性",
+    "review_type.architecture":       "アーキテクチャ",
+    "review_type.license":            "ライセンス準拠",
+    "review_type.localization":       "ローカライゼーション / i18n",
+    "review_type.specification":      "仕様書マッチング",
+    "review_type.dependency":         "依存関係分析",
+    "review_type.concurrency":        "並行処理の安全性",
+    "review_type.api_design":         "API設計",
+    "review_type.data_validation":    "データ検証",
+    "review_type.regression":         "リグレッション分析",
+
     # ── CLI (main.py) ─────────────────────────────────────────────────────
     "cli.desc":                       "AICodeReviewer – 多言語対応AIコードレビュー",
     "cli.epilog_types":               "利用可能なレビュータイプ（カンマ区切りで複数指定可）：",

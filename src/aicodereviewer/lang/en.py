@@ -202,6 +202,28 @@ STRINGS: dict[str, str] = {
     "report.snippet":                 "Snippet",
     "report.feedback":                "Feedback",
 
+    # ── Review Type Labels ─────────────────────────────────────────────────
+    "review_type.security":           "Security Audit",
+    "review_type.performance":        "Performance",
+    "review_type.best_practices":     "Best Practices",
+    "review_type.maintainability":    "Maintainability",
+    "review_type.documentation":      "Documentation",
+    "review_type.testing":            "Testing",
+    "review_type.error_handling":     "Error Handling",
+    "review_type.complexity":         "Complexity Analysis",
+    "review_type.accessibility":      "Accessibility",
+    "review_type.scalability":        "Scalability",
+    "review_type.compatibility":      "Compatibility",
+    "review_type.architecture":       "Architecture",
+    "review_type.license":            "License Compliance",
+    "review_type.localization":       "Localization / i18n",
+    "review_type.specification":      "Specification Match",
+    "review_type.dependency":         "Dependency Analysis",
+    "review_type.concurrency":        "Concurrency Safety",
+    "review_type.api_design":         "API Design",
+    "review_type.data_validation":    "Data Validation",
+    "review_type.regression":         "Regression Analysis",
+
     # ── CLI (main.py) ─────────────────────────────────────────────────────
     "cli.desc":                       "AICodeReviewer – Multi-language AI Code Review",
     "cli.epilog_types":               "Available review types (use comma-separated for multiple):",

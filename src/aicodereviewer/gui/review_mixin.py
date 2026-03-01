@@ -170,8 +170,12 @@ class ReviewTabMixin:
         col = 0
         r = 0
         for i, key in enumerate(REVIEW_TYPE_KEYS):
-            meta = REVIEW_TYPE_META.get(key, {})
-            label = meta.get("label", key)
+            # Use translated label if available, otherwise fall back to meta label
+            label = t(f"review_type.{key}")
+            # If translation key wasn't found, fall back to REVIEW_TYPE_META label
+            if label == f"review_type.{key}":
+                meta = REVIEW_TYPE_META.get(key, {})
+                label = meta.get("label", key)
             var = ctk.BooleanVar(value=(key in selected_types))
             cb = ctk.CTkCheckBox(types_frame, text=label, variable=var, width=200)
             cb.grid(row=r, column=col, sticky="w", padx=4, pady=2)

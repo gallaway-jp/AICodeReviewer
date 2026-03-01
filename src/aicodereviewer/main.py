@@ -33,7 +33,10 @@ def _build_epilog() -> str:
     ]
     for key in REVIEW_TYPE_KEYS:
         meta = REVIEW_TYPE_META.get(key, {})
-        label = meta.get("label", key)
+        # Use translated label if available, otherwise fall back to meta label
+        label = t(f"review_type.{key}")
+        if label == f"review_type.{key}":
+            label = meta.get("label", key)
         group = meta.get("group", "")
         lines.append(f"  {key:20s}  {label}  [{group}]")
 
