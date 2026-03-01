@@ -29,11 +29,12 @@ def test_config_type_conversions_and_fallback():
 
 def test_config_new_sections():
     """v2.0 new sections should have defaults."""
-    config = Config()
-
-    assert config.get('backend', 'type') == 'bedrock'
-    assert config.get('kiro', 'cli_command') == 'kiro'
-    assert config.get('copilot', 'copilot_path') == 'copilot'
+    # Reset config to defaults by clearing any loaded config
+    with patch('configparser.ConfigParser.read'):
+        config = Config()
+        assert config.get('backend', 'type') == 'bedrock'
+        assert config.get('kiro', 'cli_command') == 'kiro'
+        assert config.get('copilot', 'copilot_path') == 'copilot'
 
 
 def test_config_set_value():
@@ -45,14 +46,16 @@ def test_config_set_value():
 # ── Auth / Language ────────────────────────────────────────────────────────
 
 def test_get_system_language_prefers_japanese():
-    with patch('aicodereviewer.auth.locale.setlocale') as _setloc, \
+    with patch('aicodereviewer.auth.os.name', 'posix'), \
+         patch('aicodereviewer.auth.locale.setlocale') as _setloc, \
          patch('aicodereviewer.auth.locale.getlocale', return_value=('ja_JP', 'UTF-8')), \
          patch.dict('aicodereviewer.auth.os.environ', {'LANG': 'ja_JP'}, clear=False):
         assert get_system_language() == 'ja'
 
 
 def test_get_system_language_defaults_to_english():
-    with patch('aicodereviewer.auth.locale.setlocale') as _setloc, \
+    with patch('aicodereviewer.auth.os.name', 'posix'), \
+         patch('aicodereviewer.auth.locale.setlocale') as _setloc, \
          patch('aicodereviewer.auth.locale.getlocale', return_value=('en_US', 'UTF-8')), \
          patch.dict('aicodereviewer.auth.os.environ', {'LANG': 'en_US'}, clear=False):
         assert get_system_language() == 'en'
