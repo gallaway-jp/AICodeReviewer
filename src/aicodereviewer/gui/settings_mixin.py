@@ -98,7 +98,8 @@ class SettingsTabMixin:
         def _add_combobox(label: str, section: str, key: str, default: str,
                           values: List[str], tooltip_key: str = "",
                           widget_store_name: str = "",
-                          refresh_command=None):
+                          refresh_command=None, refresh_button_tooltip: str = "",
+                          refresh_button_store_name: str = ""):
             InfoTooltip.add(scroll, t(tooltip_key) if tooltip_key else label,
                             row=row[0], column=0)
             ctk.CTkLabel(scroll, text=label + ":").grid(
@@ -111,7 +112,9 @@ class SettingsTabMixin:
                                     command=refresh_command,
                                     fg_color="gray40", hover_color="gray30")
                 btn.grid(row=row[0], column=3, padx=(0, 6), pady=3)
-                _Tooltip(btn, "Refresh list")
+                _Tooltip(btn, refresh_button_tooltip or "Refresh list")
+                if refresh_button_store_name:
+                    setattr(self, refresh_button_store_name, btn)
             self._setting_entries[(section, key)] = combo
             if widget_store_name:
                 setattr(self, widget_store_name, combo)
@@ -174,12 +177,23 @@ class SettingsTabMixin:
 
         # ── AWS Bedrock section ────────────────────────────────────────────
         _section_header(t("gui.settings.section_bedrock"), backend_key="bedrock")
+        def _refresh_bedrock_with_spinner():
+            """Refresh Bedrock models with spinner feedback."""
+            if hasattr(self, "_bedrock_refresh_btn"):
+                btn = self._bedrock_refresh_btn
+                btn.configure(state="disabled", text="…")
+                # Schedule re-enable after 1 second (to account for API call time)
+                self.after(1000, lambda: btn.configure(state="normal", text="↻"))
+            self._refresh_bedrock_model_list_async()
+        
         _add_combobox(t("gui.settings.model_id"), "model", "model_id",
                       config.get("model", "model_id", ""),
                       [],
                       tooltip_key="gui.tip.model_id",
                       widget_store_name="_bedrock_model_combo",
-                      refresh_command=self._refresh_bedrock_model_list_async)
+                      refresh_command=_refresh_bedrock_with_spinner,
+                      refresh_button_tooltip="Refresh Bedrock models",
+                      refresh_button_store_name="_bedrock_refresh_btn")
         _add_entry(t("gui.settings.aws_region"), "aws", "region",
                    config.get("aws", "region", "us-east-1"),
                    tooltip_key="gui.tip.aws_region")
@@ -193,8 +207,12 @@ class SettingsTabMixin:
         # ── Kiro CLI section ───────────────────────────────────────────────
         _section_header(t("gui.settings.section_kiro"), backend_key="kiro")
 
-        def _refresh_wsl_distros():
-            """Asyncly refresh the WSL distro combobox values."""
+        def _refresh_wsl_distros_with_spinner():
+            """Refresh WSL distros with spinner feedback."""
+            if hasattr(self, "_wsl_refresh_btn"):
+                btn = self._wsl_refresh_btn
+                btn.configure(state="disabled", text="…")
+            
             def _worker():
                 distros = get_wsl_distros()
                 values = distros if distros else ["(none available)"]
@@ -204,16 +222,22 @@ class SettingsTabMixin:
                         self._kiro_distro_combo.configure(values=values)
                         if current and current in values:
                             self._kiro_distro_combo.set(current)
+                    # Re-enable button after update
+                    if hasattr(self, "_wsl_refresh_btn"):
+                        self._wsl_refresh_btn.configure(state="normal", text="↻")
                 self.after(0, _apply)
             threading.Thread(target=_worker, daemon=True).start()
 
         _kiro_distros = get_wsl_distros()
+        
         _add_combobox(t("gui.settings.kiro_distro"), "kiro", "wsl_distro",
                       config.get("kiro", "wsl_distro", ""),
                       _kiro_distros,
                       tooltip_key="gui.tip.kiro_distro",
                       widget_store_name="_kiro_distro_combo",
-                      refresh_command=_refresh_wsl_distros)
+                      refresh_command=_refresh_wsl_distros_with_spinner,
+                      refresh_button_tooltip="Re-scan installed WSL distributions",
+                      refresh_button_store_name="_wsl_refresh_btn")
         _add_entry(t("gui.settings.kiro_command"), "kiro", "cli_command",
                    config.get("kiro", "cli_command", "kiro"),
                    tooltip_key="gui.tip.kiro_command")
@@ -229,12 +253,23 @@ class SettingsTabMixin:
         _add_entry(t("gui.settings.copilot_timeout"), "copilot", "timeout",
                    config.get("copilot", "timeout", "300"),
                    tooltip_key="gui.tip.copilot_timeout")
+        def _refresh_copilot_with_spinner():
+            """Refresh Copilot models with spinner feedback."""
+            if hasattr(self, "_copilot_refresh_btn"):
+                btn = self._copilot_refresh_btn
+                btn.configure(state="disabled", text="…")
+                # Schedule re-enable after 1 second (to account for API call time)
+                self.after(1000, lambda: btn.configure(state="normal", text="↻"))
+            self._refresh_copilot_model_list_async()
+        
         _add_combobox(t("gui.settings.copilot_model"), "copilot", "model",
                       config.get("copilot", "model", "auto"),
                       ["auto"],
                       tooltip_key="gui.tip.copilot_model",
                       widget_store_name="_copilot_model_combo",
-                      refresh_command=self._refresh_copilot_model_list_async)
+                      refresh_command=_refresh_copilot_with_spinner,
+                      refresh_button_tooltip="Refresh Copilot models",
+                      refresh_button_store_name="_copilot_refresh_btn")
 
         # ── Local LLM section ─────────────────────────────────────────────
         _section_header(t("gui.settings.section_local"), backend_key="local")
@@ -353,6 +388,25 @@ class SettingsTabMixin:
                                                   self._sync_menu_to_review)
             self._update_backend_section_indicators()
             self._sync_review_to_menu()
+            
+            # ── Auto-populate Copilot and Bedrock models on first open ────
+            # Capture button references for spinner control
+            for child in scroll.winfo_children():
+                if isinstance(child, ctk.CTkButton):
+                    # Identify buttons by their parent grid location
+                    grid_info = child.grid_info()
+                    if grid_info:
+                        # Store references based on model context
+                        # This will be set when buttons are created above
+                        pass
+            
+            # Schedule auto-population after GUI renders
+            self.after(500, self._auto_populate_models)
+
+    def _auto_populate_models(self):
+        """Auto-populate Copilot and Bedrock models when Settings tab opens."""
+        self._refresh_copilot_model_list_async()
+        self._refresh_bedrock_model_list_async()
 
     # ══════════════════════════════════════════════════════════════════════
     #  SETTINGS save / reset
