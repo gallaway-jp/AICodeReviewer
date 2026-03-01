@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import configparser
 import logging
+import threading
 from typing import Any, List
 
 import customtkinter as ctk  # type: ignore[import-untyped]
@@ -12,6 +13,7 @@ from tkinter import messagebox
 
 from aicodereviewer.config import config
 from aicodereviewer.i18n import t
+from aicodereviewer.path_utils import get_wsl_distros
 
 from .widgets import InfoTooltip, _Tooltip
 from .results_mixin import _NUMERIC_SETTINGS
@@ -95,7 +97,8 @@ class SettingsTabMixin:
 
         def _add_combobox(label: str, section: str, key: str, default: str,
                           values: List[str], tooltip_key: str = "",
-                          widget_store_name: str = ""):
+                          widget_store_name: str = "",
+                          refresh_command=None):
             InfoTooltip.add(scroll, t(tooltip_key) if tooltip_key else label,
                             row=row[0], column=0)
             ctk.CTkLabel(scroll, text=label + ":").grid(
@@ -103,9 +106,25 @@ class SettingsTabMixin:
             combo = ctk.CTkComboBox(scroll, values=values, width=200)
             combo.set(default)
             combo.grid(row=row[0], column=2, sticky="ew", padx=6, pady=3)
+            if refresh_command:
+                btn = ctk.CTkButton(scroll, text="↻", width=34, height=28,
+                                    command=refresh_command,
+                                    fg_color="gray40", hover_color="gray30")
+                btn.grid(row=row[0], column=3, padx=(0, 6), pady=3)
+                _Tooltip(btn, "Refresh list")
             self._setting_entries[(section, key)] = combo
             if widget_store_name:
                 setattr(self, widget_store_name, combo)
+            row[0] += 1
+
+        def _add_checkbox(label: str, section: str, key: str, default: bool,
+                          tooltip_key: str = ""):
+            InfoTooltip.add(scroll, t(tooltip_key) if tooltip_key else label,
+                            row=row[0], column=0)
+            var = ctk.BooleanVar(value=default)
+            cb = ctk.CTkCheckBox(scroll, text=label, variable=var)
+            cb.grid(row=row[0], column=1, columnspan=2, sticky="w", padx=(0, 4), pady=3)
+            self._setting_entries[(section, key)] = var
             row[0] += 1
 
         # ── General section ────────────────────────────────────────────────
@@ -159,7 +178,8 @@ class SettingsTabMixin:
                       config.get("model", "model_id", ""),
                       [],
                       tooltip_key="gui.tip.model_id",
-                      widget_store_name="_bedrock_model_combo")
+                      widget_store_name="_bedrock_model_combo",
+                      refresh_command=self._refresh_bedrock_model_list_async)
         _add_entry(t("gui.settings.aws_region"), "aws", "region",
                    config.get("aws", "region", "us-east-1"),
                    tooltip_key="gui.tip.aws_region")
@@ -172,9 +192,28 @@ class SettingsTabMixin:
 
         # ── Kiro CLI section ───────────────────────────────────────────────
         _section_header(t("gui.settings.section_kiro"), backend_key="kiro")
-        _add_entry(t("gui.settings.kiro_distro"), "kiro", "wsl_distro",
-                   config.get("kiro", "wsl_distro", ""),
-                   tooltip_key="gui.tip.kiro_distro")
+
+        def _refresh_wsl_distros():
+            """Asyncly refresh the WSL distro combobox values."""
+            def _worker():
+                distros = get_wsl_distros()
+                values = distros if distros else ["(none available)"]
+                def _apply():
+                    if hasattr(self, "_kiro_distro_combo"):
+                        current = self._kiro_distro_combo.get()
+                        self._kiro_distro_combo.configure(values=values)
+                        if current and current in values:
+                            self._kiro_distro_combo.set(current)
+                self.after(0, _apply)
+            threading.Thread(target=_worker, daemon=True).start()
+
+        _kiro_distros = get_wsl_distros()
+        _add_combobox(t("gui.settings.kiro_distro"), "kiro", "wsl_distro",
+                      config.get("kiro", "wsl_distro", ""),
+                      _kiro_distros,
+                      tooltip_key="gui.tip.kiro_distro",
+                      widget_store_name="_kiro_distro_combo",
+                      refresh_command=_refresh_wsl_distros)
         _add_entry(t("gui.settings.kiro_command"), "kiro", "cli_command",
                    config.get("kiro", "cli_command", "kiro"),
                    tooltip_key="gui.tip.kiro_command")
@@ -194,7 +233,8 @@ class SettingsTabMixin:
                       config.get("copilot", "model", "auto"),
                       ["auto"],
                       tooltip_key="gui.tip.copilot_model",
-                      widget_store_name="_copilot_model_combo")
+                      widget_store_name="_copilot_model_combo",
+                      refresh_command=self._refresh_copilot_model_list_async)
 
         # ── Local LLM section ─────────────────────────────────────────────
         _section_header(t("gui.settings.section_local"), backend_key="local")
@@ -240,10 +280,9 @@ class SettingsTabMixin:
         _add_entry(t("gui.settings.batch_size"), "processing", "batch_size",
                    str(config.get("processing", "batch_size", 5)),
                    tooltip_key="gui.tip.batch_size")
-        combine_val = str(config.get("processing", "combine_files", "true")).lower()
-        _add_dropdown(t("gui.settings.combine_files"), "processing",
-                      "combine_files", combine_val,
-                      ["true", "false"],
+        combine_val = str(config.get("processing", "combine_files", "true")).lower() in ("true", "1", "yes")
+        _add_checkbox(t("gui.settings.combine_files"), "processing", "combine_files",
+                      combine_val,
                       tooltip_key="gui.tip.combine_files")
 
         # ── Editor section ────────────────────────────────────────────────
@@ -360,6 +399,8 @@ class SettingsTabMixin:
                 elif section == "backend" and key == "type":
                     raw = getattr(self, "_backend_reverse_map", {}).get(raw, "bedrock")
                 config.set_value(section, key, raw)
+            elif isinstance(widget, ctk.BooleanVar):
+                config.set_value(section, key, "true" if widget.get() else "false")
             else:
                 config.set_value(section, key, widget.get().strip())
 
