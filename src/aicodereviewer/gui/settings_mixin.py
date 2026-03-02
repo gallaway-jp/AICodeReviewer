@@ -245,6 +245,24 @@ class SettingsTabMixin:
                    config.get("kiro", "timeout", "300"),
                    tooltip_key="gui.tip.kiro_timeout")
 
+        def _refresh_kiro_with_spinner():
+            """Refresh Kiro models with spinner feedback."""
+            if hasattr(self, "_kiro_refresh_btn"):
+                btn = self._kiro_refresh_btn
+                btn.configure(state="disabled", text="…")
+                self.after(3000, lambda: btn.configure(state="normal", text="↻"))
+            self._refresh_kiro_model_list_async()
+        
+        # Start with empty list; async populate will fill it after GUI renders
+        _add_combobox(t("gui.settings.kiro_model"), "kiro", "model",
+                      config.get("kiro", "model", ""),
+                      [],
+                      tooltip_key="gui.tip.kiro_model",
+                      widget_store_name="_kiro_model_combo",
+                      refresh_command=_refresh_kiro_with_spinner,
+                      refresh_button_tooltip="Refresh Kiro models",
+                      refresh_button_store_name="_kiro_refresh_btn")
+
         # ── GitHub Copilot section ─────────────────────────────────────────
         _section_header(t("gui.settings.section_copilot"), backend_key="copilot")
         _add_entry(t("gui.settings.copilot_path"), "copilot", "copilot_path",
@@ -406,6 +424,7 @@ class SettingsTabMixin:
     def _auto_populate_models(self):
         """Auto-populate Copilot and Bedrock models when Settings tab opens."""
         self._refresh_copilot_model_list_async()
+        self._refresh_kiro_model_list_async()
         self._refresh_bedrock_model_list_async()
 
     # ══════════════════════════════════════════════════════════════════════

@@ -266,8 +266,8 @@ def apply_test_config() -> None:
                      "anthropic.claude-3-5-sonnet-20240620-v1:0")
 
     # ── Kiro ───────────────────────────────────────────────────────────────
-    config.set_value("kiro", "wsl_distro", "Ubuntu-22.04")
-    config.set_value("kiro", "cli_command", "kiro")
+    config.set_value("kiro", "wsl_distro", "Ubuntu")
+    config.set_value("kiro", "cli_command", "kiro-cli")
     config.set_value("kiro", "timeout", "120")
 
     # ── Copilot ────────────────────────────────────────────────────────────

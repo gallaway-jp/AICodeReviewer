@@ -12,6 +12,7 @@ import customtkinter as ctk  # type: ignore[import-untyped]
 from aicodereviewer.backends.health import (
     check_backend,
     get_copilot_models,
+    get_kiro_models,
     get_bedrock_models,
     get_local_models,
 )
@@ -275,6 +276,33 @@ class HealthMixin:
             current = self._copilot_model_combo.get()
             self._copilot_model_combo.configure(values=["auto"] + models)
             self._copilot_model_combo.set(current)
+
+    # ── Kiro CLI ────────────────────────────────────────────────────────────
+
+    def _refresh_kiro_model_list_async(self):
+        if "kiro" in self._model_refresh_in_progress:
+            return
+        self._model_refresh_in_progress.add("kiro")
+
+        def _worker():
+            try:
+                import aicodereviewer.backends.models as _m
+                kiro_path = config.get("kiro", "cli_command", "kiro-cli")
+                wsl_distro = config.get("kiro", "wsl_distro", "")
+                _m._kiro_models_cache = []  # force fresh discovery
+                models = get_kiro_models(kiro_path, wsl_distro)
+                self.after(0, lambda: self._apply_kiro_models(models))
+            finally:
+                self._model_refresh_in_progress.discard("kiro")
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _apply_kiro_models(self, models: list):
+        if hasattr(self, "_kiro_model_combo"):
+            current = self._kiro_model_combo.get()
+            self._kiro_model_combo.configure(values=models)
+            if current and current in models:
+                self._kiro_model_combo.set(current)
 
     # ── Bedrock ────────────────────────────────────────────────────────────
 

@@ -75,12 +75,15 @@ def _discover_copilot_models(copilot_path: str = "copilot") -> List[str]:
     combined = (stdout or "") + "\n" + (stderr or "")
 
     models: List[str] = []
-    # The help text shows: --model  ... {model1,model2,...}
-    # Look for a brace-enclosed, comma-separated list near "--model"
-    m = re.search(r"--model\b[^{]*\{([^}]+)\}", combined)
+    # The help text shows: --model <model>  ... (choices: "model1", "model2", ...)
+    # Look for quoted model names after "choices:" until closing paren
+    m = re.search(r"--model\b[^(]*\(choices:\s*([^)]+)\)", combined, re.DOTALL)
     if m:
-        raw = m.group(1)
-        models = [s.strip() for s in raw.split(",") if s.strip()]
+        choices_text = m.group(1)
+        # Extract all quoted strings, removing quotes and handling line breaks
+        quoted_models = re.findall(r'"([^"]+)"', choices_text)
+        # Join and split to handle models split across lines
+        models = [s.strip() for s in quoted_models if s.strip()]
 
     if models:
         _copilot_models_cache = sorted(models)
@@ -90,6 +93,97 @@ def _discover_copilot_models(copilot_path: str = "copilot") -> List[str]:
         logger.debug("Could not parse model list from copilot --help")
 
     return list(_copilot_models_cache)
+
+
+# ── Kiro CLI model discovery ───────────────────────────────────────────────
+
+_kiro_models_cache: List[str] = []
+
+
+def get_kiro_models(kiro_path: str = "", wsl_distro: str = "") -> List[str]:
+    """Return cached list of Kiro models, discovering them lazily if needed.
+
+    Args:
+        kiro_path: Path to the kiro executable. If empty, uses config.
+        wsl_distro: WSL distribution to use. If empty, uses config.
+    """
+    global _kiro_models_cache
+    if not _kiro_models_cache:
+        # Lazy discovery if cache is empty
+        if not kiro_path:
+            kiro_path = config.get("kiro", "cli_command", "kiro-cli")
+        if not wsl_distro:
+            wsl_distro = config.get("kiro", "wsl_distro", "")
+        _discover_kiro_models(kiro_path, wsl_distro)
+    return list(_kiro_models_cache)
+
+
+def _discover_kiro_models(kiro_path: str = "kiro-cli", wsl_distro: str = "") -> List[str]:
+    """Discover available Kiro models from the Kiro CLI.
+
+    Triggers the "invalid model" error which lists all available models.
+    e.g. ``echo '' | kiro-cli chat --model INVALID__ --no-interactive``
+    produces: ``error: Model 'INVALID__' does not exist. Available models: auto, ...``
+
+    On Windows, runs inside WSL via ``bash -lc`` so that ``~/.local/bin``
+    (where kiro-cli lives) is on the PATH.
+    Falls back to a curated Claude model list when the CLI is unavailable.
+
+    Results are cached in ``_kiro_models_cache``.
+    """
+    global _kiro_models_cache
+    import re
+    import os
+
+    models: List[str] = []
+    # Sentinel value guaranteed to be invalid so we always get the error listing
+    _INVALID = "__DISCOVERY_PROBE__"
+
+    # Use stdin_data so --no-interactive is satisfied with non-empty input.
+    # Pass an invalid model to trigger the "Available models:" error message.
+    bash_cmd = f"{kiro_path} chat --model {_INVALID} --no-interactive"
+
+    if os.name == "nt":
+        try:
+            from aicodereviewer.path_utils import run_in_wsl
+            distro_param = wsl_distro.strip() or None
+            # Pass a non-empty, non-whitespace prompt so kiro-cli accepts it in --no-interactive mode.
+            rc, stdout, stderr = run_in_wsl(
+                ["bash", "-lc", bash_cmd],
+                distro=distro_param,
+                timeout=10,
+                stdin_data="Hello\n",
+            )
+            combined = (stdout or "") + "\n" + (stderr or "")
+            logger.debug("kiro-cli probe exit=%d stderr=%s", rc, stderr[:200] if stderr else "")
+        except Exception as e:
+            logger.debug("Failed to run kiro-cli probe in WSL: %s", e)
+            combined = ""
+    else:
+        import subprocess as _sp
+        try:
+            r = _sp.run(["bash", "-lc", bash_cmd],
+                        capture_output=True, text=True, timeout=10,
+                        input="Hello\n", encoding="utf-8", errors="replace")
+            combined = r.stdout + "\n" + r.stderr
+        except Exception as e:
+            logger.debug("Failed to run kiro-cli probe: %s", e)
+            combined = ""
+
+    # Parse: "Available models: auto, claude-sonnet-4.5, ..."
+    m = re.search(r"[Aa]vailable\s+models:\s*([^\n\r]+)", combined)
+    if m:
+        raw = m.group(1)
+        models = [s.strip().rstrip(".,") for s in raw.split(",") if s.strip()]
+        logger.debug("Discovered %d Kiro models: %s", len(models), models)
+
+    if models:
+        _kiro_models_cache = models  # preserve order returned by CLI
+    else:
+        _kiro_models_cache = []
+        logger.debug("kiro-cli unavailable or model list empty. Dropdown will be empty.")
+
+    return list(_kiro_models_cache)
 
 
 # ── AWS Bedrock model discovery ────────────────────────────────────────────

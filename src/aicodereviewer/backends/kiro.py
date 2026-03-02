@@ -40,6 +40,7 @@ class KiroBackend(AIBackend):
         [kiro]
         wsl_distro = Ubuntu
         cli_command = kiro
+        model = claude-3-5-sonnet
         timeout = 300
     """
 
@@ -47,7 +48,8 @@ class KiroBackend(AIBackend):
         self.distro: Optional[str] = (
             config.get("kiro", "wsl_distro", "").strip() or None
         )
-        self.cli_cmd: str = config.get("kiro", "cli_command", "kiro").strip()
+        self.cli_cmd: str = config.get("kiro", "cli_command", "kiro-cli").strip()
+        self.model: str = config.get("kiro", "model", "").strip() or None
         self.timeout: int = int(config.get("kiro", "timeout", "300"))
 
         if os.name == "nt" and not is_wsl_available():
@@ -118,11 +120,14 @@ class KiroBackend(AIBackend):
         Kiro CLI.
         """
         try:
+            # Build the kiro-cli invocation; use bash -lc on both platforms so
+            # that ~/.local/bin (where kiro-cli lives) is always on the PATH.
+            model_flag = f" --model {self.model}" if self.model else ""
+            bash_cmd = f"{self.cli_cmd} chat{model_flag} --no-interactive"
+
             if os.name == "nt":
-                # Write prompt to a temp file so we can pass it via stdin
-                # through WSL boundary cleanly
                 rc, stdout, stderr = run_in_wsl(
-                    [self.cli_cmd, "chat", "--no-interactive"],
+                    ["bash", "-lc", bash_cmd],
                     distro=self.distro,
                     timeout=self.timeout,
                     stdin_data=prompt,
@@ -136,7 +141,7 @@ class KiroBackend(AIBackend):
                 # Native Linux/macOS execution
                 import subprocess
                 result = subprocess.run(
-                    [self.cli_cmd, "chat", "--no-interactive"],
+                    ["bash", "-lc", bash_cmd],
                     input=prompt,
                     capture_output=True,
                     text=True,
@@ -168,9 +173,12 @@ class KiroBackend(AIBackend):
             )
             prompt = f"{system_prompt}\n\nReview the file at: {wsl_path}"
 
+            model_flag = f" --model {self.model}" if self.model else ""
+            bash_cmd = f"{self.cli_cmd} review{model_flag} {wsl_path}"
+
             if os.name == "nt":
                 rc, stdout, stderr = run_in_wsl(
-                    [self.cli_cmd, "review", wsl_path],
+                    ["bash", "-lc", bash_cmd],
                     distro=self.distro,
                     timeout=self.timeout,
                     stdin_data=prompt,
@@ -181,7 +189,7 @@ class KiroBackend(AIBackend):
             else:
                 import subprocess
                 result = subprocess.run(
-                    [self.cli_cmd, "review", wsl_path],
+                    ["bash", "-lc", bash_cmd],
                     input=prompt,
                     capture_output=True,
                     text=True,

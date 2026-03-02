@@ -24,6 +24,8 @@ from aicodereviewer.backends.models import (  # noqa: F401
     _run_quiet,
     get_copilot_models,
     _discover_copilot_models,
+    get_kiro_models,
+    _discover_kiro_models,
     get_bedrock_models,
     _discover_bedrock_models,
     get_local_models,
