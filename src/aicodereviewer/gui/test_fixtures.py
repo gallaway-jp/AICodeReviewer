@@ -273,7 +273,7 @@ def apply_test_config() -> None:
     # ── Copilot ────────────────────────────────────────────────────────────
     config.set_value("copilot", "copilot_path", "copilot")
     config.set_value("copilot", "timeout", "180")
-    config.set_value("copilot", "model", "gpt-4o")
+    config.set_value("copilot", "model", "auto")
 
     # ── Local LLM ──────────────────────────────────────────────────────────
     config.set_value("local_llm", "api_url", "http://localhost:1234")
