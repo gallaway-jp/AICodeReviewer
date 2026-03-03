@@ -384,7 +384,7 @@ class ResultsTabMixin:
         full_desc = issue.description
         truncated = len(full_desc) > _TRUNC
         desc_text = full_desc[:_TRUNC] + "…" if truncated else full_desc
-        desc_lbl = ctk.CTkLabel(card, text=desc_text, anchor="w", wraplength=680)
+        desc_lbl = ctk.CTkLabel(card, text=desc_text, anchor="w", wraplength=680, justify="left")
         desc_lbl.grid(row=1, column=0, columnspan=5, sticky="w", padx=6)
 
         expand_btn: Any = None
@@ -1305,7 +1305,7 @@ class ResultsTabMixin:
                 preview_btn.grid(row=0, column=1, sticky="e", padx=6, pady=(4, 0))
 
                 desc = issue.description or issue.ai_feedback or ""
-                ctk.CTkLabel(frame, text=desc, anchor="w",
+                ctk.CTkLabel(frame, text=desc, anchor="w", justify="left",
                               wraplength=700,
                               text_color=("gray40", "gray60"),
                               font=ctk.CTkFont(size=11)).grid(
