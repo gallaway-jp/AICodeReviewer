@@ -271,7 +271,8 @@ class ResultsTabMixin:
             )
         })
         all_types_label = t("gui.results.filter_all_types")
-        self._filter_type_menu.configure(values=[all_types_label] + types)
+        translated_types = [t(f"review_type.{typ}") for typ in types]
+        self._filter_type_menu.configure(values=[all_types_label] + translated_types)
         self._filter_type_var.set(all_types_label)
         self._filter_sev_var.set(t("gui.results.filter_all"))
         self._filter_status_var.set(t("gui.results.filter_all"))

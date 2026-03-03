@@ -239,6 +239,7 @@ STRINGS: dict[str, str] = {
     "review_type.api_design":         "API設計",
     "review_type.data_validation":    "データ検証",
     "review_type.regression":         "リグレッション分析",
+    "review_type.code_quality":       "コード品質",
 
     # ── CLI (main.py) ─────────────────────────────────────────────────────
     "cli.desc":                       "AICodeReviewer – 多言語対応AIコードレビュー",
