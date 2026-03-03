@@ -944,8 +944,73 @@ def _process_combined_batch(
         logger.warning("Combined review returned error, falling back to individual")
         return _process_files_individually(target_files, review_type, client, lang, spec_content, cancel_check)
 
-    # Parse combined feedback using the multi-strategy response parser
-    return parse_review_response(feedback, file_entries, review_type)
+    # Parse combined feedback; retry any files the model failed to attribute
+    return _merge_combined_with_fallback(
+        feedback, file_entries, review_type, target_files,
+        client, lang, spec_content, cancel_check,
+    )
+
+
+def _merge_combined_with_fallback(
+    feedback: str,
+    file_entries: List[Dict[str, Any]],
+    review_type: str,
+    target_files: Sequence["FileInfo"],
+    client: "AIBackend",
+    lang: str,
+    spec_content: Optional[str],
+    cancel_check: Optional["CancelCheck"],
+) -> List[ReviewIssue]:
+    """Parse a combined AI response and individually retry unrepresented files.
+
+    After the multi-strategy parser runs, any input file that has zero
+    attributed issues **and** where at least one other file *did* receive
+    results is assumed to have been silently dropped by the model.  Those
+    files are re-submitted as individual requests and the results merged.
+
+    The guard (other files must have results) prevents false-positive retries
+    when the entire batch is genuinely clean.
+    """
+    issues = parse_review_response(feedback, file_entries, review_type)
+
+    # Build the set of file paths/names that appear in the parsed results
+    attributed: set[str] = set()
+    for issue in issues:
+        attributed.add(issue.file_path)
+
+    # Identify entries with zero attribution
+    unrepresented: List[Dict[str, Any]] = [
+        fe for fe in file_entries
+        if fe["path"] not in attributed and fe["name"] not in attributed
+    ]
+
+    # Only retry if the combined parse produced results for other files
+    # (avoids needless re-review of genuinely clean batches)
+    if not unrepresented or not issues:
+        return issues
+
+    logger.warning(
+        "Partial combined fallback: %d file(s) unrepresented in combined response – "
+        "retrying individually: %s",
+        len(unrepresented),
+        [fe["name"] for fe in unrepresented],
+    )
+
+    # Build the subset of target_files that correspond to unrepresented entries
+    unrepresented_paths = {fe["path"] for fe in unrepresented}
+    retry_files: List["FileInfo"] = []
+    for tf in target_files:
+        tf_path = tf["path"] if isinstance(tf, dict) else str(tf)
+        if tf_path in unrepresented_paths:
+            retry_files.append(tf)
+
+    if retry_files:
+        extra = _process_files_individually(
+            retry_files, review_type, client, lang, spec_content, cancel_check
+        )
+        issues = issues + extra
+
+    return issues
 
 
 def _split_combined_feedback(
