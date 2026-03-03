@@ -472,7 +472,7 @@ class ResultsTabMixin:
         skip_entry.grid(row=0, column=0, sticky="ew", padx=(20, 6), pady=4)
         skip_frame.grid_columnconfigure(0, weight=1)
         if issue.status == "skipped":
-            skip_frame.grid(row=3, column=0, columnspan=6, sticky="ew")
+            skip_frame.grid(row=3, column=0, columnspan=6, sticky="ew", padx=4, pady=(0, 4))
 
         self._issue_cards.append(IssueCard(
             issue=issue,
@@ -1039,7 +1039,7 @@ class ResultsTabMixin:
         issue = rec["issue"]
 
         issue.status = "skipped"
-        rec["skip_frame"].grid(row=3, column=0, columnspan=6, sticky="ew")
+        rec["skip_frame"].grid(row=3, column=0, columnspan=6, sticky="ew", padx=4, pady=(0, 4))
         def _on_reason_change(*_a, _entry=rec["skip_entry"], _iss=issue):
             _iss.resolution_reason = _entry.get().strip() or None
         rec["skip_entry"].bind("<KeyRelease>", _on_reason_change)
