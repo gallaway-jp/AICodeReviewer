@@ -6,7 +6,7 @@ Every backend must implement :pymethod:`get_review` and :pymethod:`get_fix`
 so the rest of the application can remain backend-agnostic.
 """
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, List
+from typing import Any, Callable, Dict, Optional, List
 
 # ── JSON output schema (injected into system prompt) ───────────────────────
 
@@ -383,6 +383,21 @@ class AIBackend(ABC):
     def set_detected_frameworks(self, frameworks: Optional[List[str]]) -> None:
         """Store detected frameworks for prompt supplement injection."""
         self._detected_frameworks = frameworks
+
+    def set_stream_callback(
+        self, callback: Optional[Callable[[str], None]]
+    ) -> None:
+        """Register a callback that receives incremental response tokens.
+
+        The default implementation is a no-op so Bedrock, Kiro, and any
+        other backends that don't support streaming require no changes.
+        Backends that support streaming (e.g. :class:`CopilotBackend`)
+        override this to store *callback* and invoke it with each token.
+
+        Args:
+            callback: Callable receiving a single :class:`str` token, or
+                      ``None`` to remove a previously registered callback.
+        """
 
     # ── public API ─────────────────────────────────────────────────────────
 

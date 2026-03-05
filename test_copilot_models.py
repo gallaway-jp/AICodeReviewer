@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Quick test to verify Copilot models are discovered correctly."""
+"""Quick smoke-test to verify Copilot models are discovered via the SDK."""
 import sys
 from src.aicodereviewer.backends.models import get_copilot_models, _copilot_models_cache
 
@@ -9,7 +9,7 @@ _copilot_models_cache.clear()
 models = get_copilot_models()
 
 print("\n" + "="*60)
-print("Copilot Model Discovery Test")
+print("Copilot Model Discovery Test (github-copilot-sdk)")
 print("="*60)
 
 if models:
@@ -20,5 +20,6 @@ if models:
     sys.exit(0)
 else:
     print("✗ Failed to discover models")
-    print("  Check that 'copilot --help' is working correctly")
+    print("  Ensure the Copilot CLI is installed, authenticated, and in PATH.")
+    print("  Run 'copilot' then /login, or set GH_TOKEN / GITHUB_TOKEN.")
     sys.exit(1)

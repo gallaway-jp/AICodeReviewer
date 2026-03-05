@@ -8,12 +8,13 @@ version = "2.0.0"
 description = "AI-powered multi-backend code review tool"
 readme = "README.md"
 license = { file = "LICENSE" }
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [
     {name = "AICodeReviewer Team"},
 ]
 dependencies = [
     "boto3",
+    "github-copilot-sdk>=0.1.30",
     "keyring",
     "psutil>=5.9",
 ]

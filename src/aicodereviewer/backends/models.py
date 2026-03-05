@@ -7,8 +7,10 @@ local LLM backends.  Auto-loads the first available model when none are
 already running (LM Studio / Ollama) and cleans up on exit.
 """
 import atexit
+import asyncio
 import logging
 import os
+import shutil
 import subprocess
 from typing import Dict, List, Optional, Tuple
 
@@ -42,6 +44,69 @@ def _run_quiet(cmd: List[str], timeout: int = 10) -> tuple[int, str, str]:
         return -3, "", str(e)
 
 
+# ── CLI path helpers ───────────────────────────────────────────────────────
+
+def _resolve_copilot_exe(cli_path: str) -> str:
+    """Resolve *cli_path* to a real native executable.
+
+    On Windows, ``shutil.which("copilot")`` often returns a ``.bat`` or
+    ``.ps1`` wrapper (e.g. the VS Code extension's stub).  The
+    ``github-copilot-sdk`` performs its own existence check and rejects
+    script wrappers, so we need the actual ``.exe``.
+
+    Resolution order:
+    1. If the path is already an absolute path to a real file → return it.
+    2. Resolve with :func:`shutil.which`.
+    3. On Windows only: if the resolved path ends with ``.bat``, ``.cmd``,
+       or ``.ps1``, try ``where.exe <name>.exe`` to find the native binary.
+    4. Fall back to the original *cli_path* string.
+    """
+    # Already a full path pointing to an existing file → trust it.
+    if os.path.isabs(cli_path) and os.path.isfile(cli_path):
+        return cli_path
+
+    resolved = shutil.which(cli_path)
+    if resolved is None:
+        return cli_path  # let the SDK produce its own error
+
+    # Non-Windows, or already a native binary → done.
+    if os.name != "nt":
+        return resolved
+
+    _script_exts = {".bat", ".cmd", ".ps1"}
+    if os.path.splitext(resolved)[1].lower() not in _script_exts:
+        return resolved
+
+    # Windows: resolved path is a script wrapper → look for the real .exe
+    basename = os.path.splitext(os.path.basename(resolved))[0]  # e.g. "copilot"
+    exe_name = basename + ".exe"
+
+    # Try shutil.which with explicit extension
+    exe_path = shutil.which(exe_name)
+    if exe_path and os.path.isfile(exe_path):
+        logger.debug("Resolved %s wrapper → %s (via shutil.which)", cli_path, exe_path)
+        return exe_path
+
+    # Try Windows where.exe (searches PATH including entries shutil misses)
+    try:
+        rc, stdout, _ = _run_quiet(["where.exe", exe_name], timeout=5)
+        if rc == 0 and stdout.strip():
+            exe_path = stdout.splitlines()[0].strip()
+            if os.path.isfile(exe_path):
+                logger.debug(
+                    "Resolved %s wrapper → %s (via where.exe)", cli_path, exe_path
+                )
+                return exe_path
+    except Exception:
+        pass
+
+    logger.debug(
+        "Could not find native .exe for '%s'; using script path: %s",
+        cli_path, resolved,
+    )
+    return resolved
+
+
 # ── GitHub Copilot model discovery ─────────────────────────────────────────
 
 _copilot_models_cache: List[str] = []
@@ -62,35 +127,77 @@ def get_copilot_models(copilot_path: str = "") -> List[str]:
     return list(_copilot_models_cache)
 
 
-def _discover_copilot_models(copilot_path: str = "copilot") -> List[str]:
-    """Discover available models by parsing ``copilot --help`` output.
+async def _discover_copilot_models_via_sdk(copilot_path: str) -> List[str]:
+    """Start a temporary CopilotClient, call list_models(), then stop it.
 
-    Looks for the ``--model`` option's choices list in the help text.
+    Returns a sorted list of model-name strings.
+    """
+    from copilot import CopilotClient  # github-copilot-sdk
+
+    options: dict = {
+        "cli_path": copilot_path,
+        "auto_restart": False,
+        "log_level": "warning",
+    }
+    github_token = (
+        os.environ.get("COPILOT_GITHUB_TOKEN")
+        or os.environ.get("GH_TOKEN")
+        or os.environ.get("GITHUB_TOKEN")
+    )
+    if github_token:
+        options["github_token"] = github_token
+
+    client = CopilotClient(options)
+    models_raw: list = []
+    try:
+        await client.start()
+        models_raw = await client.list_models() or []
+    finally:
+        try:
+            await client.stop()
+        except Exception:
+            pass
+
+    result: List[str] = []
+    for m in models_raw:
+        if isinstance(m, str):
+            result.append(m)
+        elif hasattr(m, "id"):
+            result.append(str(m.id))
+        elif hasattr(m, "name"):
+            result.append(str(m.name))
+        else:
+            result.append(str(m))
+    return sorted(result)
+
+
+def _discover_copilot_models(copilot_path: str = "copilot") -> List[str]:
+    """Discover available Copilot models using the ``github-copilot-sdk``.
+
+    Replaces the old ``copilot --help`` regex approach with a proper
+    JSON-RPC call via :func:`_discover_copilot_models_via_sdk`.
     Results are cached in ``_copilot_models_cache``.
     """
     global _copilot_models_cache
-    import re
-
-    _, stdout, stderr = _run_quiet([copilot_path, "--help"], timeout=5)
-    combined = (stdout or "") + "\n" + (stderr or "")
-
-    models: List[str] = []
-    # The help text shows: --model <model>  ... (choices: "model1", "model2", ...)
-    # Look for quoted model names after "choices:" until closing paren
-    m = re.search(r"--model\b[^(]*\(choices:\s*([^)]+)\)", combined, re.DOTALL)
-    if m:
-        choices_text = m.group(1)
-        # Extract all quoted strings, removing quotes and handling line breaks
-        quoted_models = re.findall(r'"([^"]+)"', choices_text)
-        # Join and split to handle models split across lines
-        models = [s.strip() for s in quoted_models if s.strip()]
+    # On Windows, shutil.which may return a .bat/.ps1 wrapper which the SDK
+    # rejects.  Resolve to the native .exe before passing to the client.
+    resolved_path = _resolve_copilot_exe(copilot_path)
+    logger.debug("Copilot model discovery using path: %s", resolved_path)
+    try:
+        # asyncio.run() is safe here: discovery is called from the GUI thread
+        # or main thread, neither of which has a running event loop.
+        models = asyncio.run(_discover_copilot_models_via_sdk(resolved_path))
+    except Exception as exc:
+        logger.warning("SDK Copilot model discovery failed: %s", exc)
+        models = []
 
     if models:
-        _copilot_models_cache = sorted(models)
-        logger.debug("Discovered %d Copilot models: %s",
-                     len(models), _copilot_models_cache)
+        _copilot_models_cache = models
+        logger.debug(
+            "Discovered %d Copilot models via SDK: %s", len(models), models
+        )
     else:
-        logger.debug("Could not parse model list from copilot --help")
+        logger.debug("Could not discover Copilot models via SDK.")
 
     return list(_copilot_models_cache)
 

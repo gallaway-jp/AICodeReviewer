@@ -1,5 +1,6 @@
 # Core
 boto3
+github-copilot-sdk>=0.1.30
 keyring
 psutil>=5.9
 requests>=2.28

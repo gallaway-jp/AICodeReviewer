@@ -12,7 +12,7 @@ import threading
 import time
 from pathlib import Path
 from tkinter import filedialog, messagebox
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import customtkinter as ctk  # type: ignore[import-untyped]
 
@@ -594,6 +594,23 @@ class ReviewTabMixin:
         self._elapsed_start = None
         self._elapsed_lbl.configure(text="")
 
+    def _make_stream_handler(self) -> Callable[[str], None]:
+        """Return a thread-safe token callback that shows a live preview.
+
+        Accumulates incremental tokens from a streaming backend and
+        schedules a status-bar update on the Tk main thread via
+        :meth:`after`.  The preview is capped at 120 chars so the status
+        bar never overflows.
+        """
+        buf: list[str] = []
+
+        def _handler(token: str) -> None:
+            buf.append(token)
+            preview = "".join(buf)[-120:].replace("\n", " ")
+            self.after(0, lambda p=preview: self.status_var.set(f"\u23f3 {p}"))
+
+        return _handler
+
     def _run_review(self, params: Dict[str, Any], dry_run: bool):
         """Execute the review in a background thread."""
         self._running = True
@@ -605,6 +622,7 @@ class ReviewTabMixin:
         self._start_elapsed_timer()
 
         def _worker() -> None:
+            client = None  # defined here so the finally block can always reference it
             try:
                 backend_name: str = params.pop("backend")
                 selected_files: Optional[List[str]] = params.pop("selected_files", None)
@@ -613,6 +631,13 @@ class ReviewTabMixin:
 
                 client = None if dry_run else create_backend(backend_name)
                 self._review_client = client
+
+                # Register streaming callback so partial tokens appear in
+                # the status bar while a Copilot (or other streaming) backend
+                # generates a response.  set_stream_callback is a no-op on
+                # non-streaming backends (Bedrock, Kiro, …).
+                if client is not None:
+                    client.set_stream_callback(self._make_stream_handler())
 
                 has_diff_filter = bool(diff_filter_file or diff_filter_commits)
 
@@ -712,6 +737,9 @@ class ReviewTabMixin:
                                                                 str(exc)))
             finally:
                 self._running = False
+                # Remove any streaming callback before the client is released.
+                if client is not None:
+                    client.set_stream_callback(None)
                 self.after(0, self._stop_elapsed_timer)
                 self.after(0, lambda: self._set_action_buttons_state("normal"))
                 self.after(0, lambda: self.cancel_btn.configure(state="disabled"))

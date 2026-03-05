@@ -1,25 +1,37 @@
 # src/aicodereviewer/backends/copilot.py
 """
-GitHub Copilot CLI backend for code review.
+GitHub Copilot backend using the official ``github-copilot-sdk``.
 
-Uses the standalone GitHub Copilot CLI (``copilot``) in **programmatic mode**
-(``copilot -p "…"``) to perform AI-powered code review and fix generation.
+Communicates with the Copilot CLI in **server mode** via JSON-RPC instead
+of shelling out to ``copilot -p "…"``.  This gives structured model listing,
+real-time streaming, and eliminates the old command-line-length workarounds.
 
 Prerequisites:
-    1. GitHub Copilot CLI installed (``winget install GitHub.Copilot`` on Windows,
-       ``brew install copilot-cli`` on macOS/Linux, or ``npm install -g @github/copilot``)
-    2. Authenticated (run ``copilot`` and use ``/login``, or set ``GH_TOKEN``
-       / ``GITHUB_TOKEN`` env-var with a PAT that has *Copilot Requests* permission)
-    3. Active GitHub Copilot Pro / Business / Enterprise subscription
+    1. GitHub Copilot CLI installed and in PATH (e.g.
+       ``winget install GitHub.Copilot`` on Windows).
+    2. Authenticated (run ``copilot`` then ``/login``, or set
+       ``GH_TOKEN`` / ``GITHUB_TOKEN`` / ``COPILOT_GITHUB_TOKEN``).
+    3. Active GitHub Copilot subscription.
+    4. Python >= 3.11 (SDK requirement).
+
+Install the SDK::
+
+    pip install github-copilot-sdk>=0.1.30
+
+.. note::
+    The ``github-copilot-sdk`` is currently in **Technical Preview** and
+    may introduce breaking changes in future releases (pinned to >=0.1.30
+    in requirements).
 """
+import asyncio
 import logging
-import subprocess
 import os
 import shutil
-import tempfile
-from typing import Any, Optional
+import threading
+from typing import Any, Callable, Optional
 
 from .base import AIBackend
+from .models import _resolve_copilot_exe
 from aicodereviewer.config import config
 
 logger = logging.getLogger(__name__)
@@ -27,7 +39,12 @@ logger = logging.getLogger(__name__)
 
 class CopilotBackend(AIBackend):
     """
-    AI backend that delegates to the standalone GitHub Copilot CLI.
+    AI backend that uses the official ``github-copilot-sdk`` to communicate
+    with the Copilot CLI via JSON-RPC.
+
+    A private daemon thread hosts a persistent :class:`asyncio.AbstractEventLoop`
+    so the async SDK can be used behind the synchronous :class:`AIBackend`
+    interface without requiring any callers to be async-aware.
 
     Configuration (``config.ini``):
 
@@ -37,18 +54,56 @@ class CopilotBackend(AIBackend):
         type = copilot
 
         [copilot]
-        copilot_path = copilot
-        timeout = 300
-        model = auto
+        copilot_path = copilot   ; path / name of the copilot CLI executable
+        timeout = 300            ; seconds to wait for a complete response
+        model = auto             ; model name, or "auto" to let the CLI decide
     """
 
     def __init__(self, **kwargs: Any) -> None:
-        self.copilot_path: str = config.get("copilot", "copilot_path", "copilot").strip()
+        _raw_path: str = config.get("copilot", "copilot_path", "copilot").strip()
+        # On Windows, shutil.which("copilot") often resolves to a .bat/.ps1
+        # wrapper that the github-copilot-sdk rejects.  Resolve to the real
+        # native binary (.exe on Windows) before any SDK calls.
+        self.copilot_path: str = _resolve_copilot_exe(_raw_path)
+        if self.copilot_path != _raw_path:
+            logger.debug(
+                "Resolved copilot CLI path: %r → %r", _raw_path, self.copilot_path
+            )
         self.timeout: int = int(config.get("copilot", "timeout", "300"))
         self.model: str = config.get("copilot", "model", "auto").strip()
-        self._current_process = None  # Track subprocess for cancellation
+
+        self._stream_callback: Optional[Callable[[str], None]] = None
+        self._active_session = None      # set while a request is in-flight
+        self._client = None              # lazily created on first use
+        # asyncio.Lock for guarding async client creation; instantiated lazily
+        # on the background loop to avoid cross-loop contamination.
+        self._async_client_lock: Optional[asyncio.Lock] = None
+
+        # Spin up a private daemon event loop so all SDK coroutines run on
+        # a dedicated thread; callers remain fully synchronous.
+        self._loop = asyncio.new_event_loop()
+        self._loop_thread = threading.Thread(
+            target=self._loop.run_forever,
+            name="CopilotSDK-loop",
+            daemon=True,
+        )
+        self._loop_thread.start()
 
     # ── AIBackend interface ────────────────────────────────────────────────
+
+    def set_stream_callback(
+        self, callback: Optional[Callable[[str], None]]
+    ) -> None:
+        """Register a callable that receives incremental response tokens.
+
+        The callback is invoked from the SDK loop thread; it must be
+        thread-safe (e.g. schedule GUI updates via ``widget.after()``).
+
+        Args:
+            callback: Called with each incremental text token, or ``None``
+                      to remove a previously registered callback.
+        """
+        self._stream_callback = callback
 
     def get_review(
         self,
@@ -61,8 +116,7 @@ class CopilotBackend(AIBackend):
             review_type, lang, self._project_context, self._detected_frameworks,
         )
         user_message = self._build_user_message(code_content, review_type, spec_content)
-        full_prompt = f"{system_prompt}\n\n{user_message}"
-        return self._run_copilot(full_prompt)
+        return self._run_sdk(system_prompt, user_message)
 
     def get_fix(
         self,
@@ -73,179 +127,165 @@ class CopilotBackend(AIBackend):
     ) -> Optional[str]:
         system_prompt = self._build_system_prompt("fix", lang)
         user_message = self._build_fix_message(code_content, issue_feedback, review_type)
-        full_prompt = f"{system_prompt}\n\n{user_message}"
-        result = self._run_copilot(full_prompt)
+        result = self._run_sdk(system_prompt, user_message)
         if result and not result.startswith("Error:"):
             return result.strip()
         return None
 
     def validate_connection(self) -> bool:
-        """Check Copilot CLI is installed and authenticated."""
-        # 1. Check copilot CLI exists and is the genuine standalone CLI
+        """Check Copilot CLI is installed, reachable via the SDK, and authenticated."""
         found = shutil.which(self.copilot_path)
         if not found:
             logger.error(
                 "GitHub Copilot CLI ('%s') not found in PATH.", self.copilot_path
             )
             logger.error(
-                "Install from https://docs.github.com/en/copilot/github-copilot-in-the-cli"
+                "Install from "
+                "https://docs.github.com/en/copilot/how-tos/set-up/install-copilot-cli"
             )
             return False
 
-        # Verify it responds to --version (filters out leftover .BAT stubs)
         try:
-            result = subprocess.run(
-                [found, "--version"],
-                capture_output=True, text=True, timeout=15,
-                encoding="utf-8", errors="replace",
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
-            if result.returncode != 0:
-                logger.error(
-                    "Found '%s' but it does not appear to be the standalone "
-                    "GitHub Copilot CLI. Install from "
-                    "https://docs.github.com/en/copilot/github-copilot-in-the-cli",
-                    found,
+            # _ensure_client() is an async method – submit it to our loop.
+            client = self._submit(self._ensure_client())
+            models = self._submit(client.list_models())
+            if models is not None:
+                logger.debug(
+                    "Copilot CLI reachable via SDK. %d model(s) available.",
+                    len(models) if models else 0,
                 )
-                return False
-        except Exception as exc:
-            logger.error("Failed to verify Copilot CLI at '%s': %s", found, exc)
-            return False
-
-        # 2. Check authentication (config dir or env token)
-        home = os.path.expanduser("~")
-        copilot_config_dirs = [
-            os.path.join(home, ".copilot"),
-            os.path.join(home, ".config", "github-copilot"),
-        ]
-        has_config = any(os.path.isdir(d) for d in copilot_config_dirs)
-        has_token = bool(
-            os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
-        )
-        if not has_config and not has_token:
+                return True
+            # list_models returned None – treat as unauthenticated / not ready
             logger.error(
                 "GitHub Copilot CLI is not authenticated. "
                 "Run 'copilot' and use /login, or set GH_TOKEN / GITHUB_TOKEN."
             )
             return False
+        except Exception as exc:
+            logger.error("Failed to connect to Copilot CLI via SDK: %s", exc)
+            return False
 
-        return True
+    def cancel(self) -> None:
+        """Destroy any in-flight session to interrupt a running review."""
+        session = self._active_session
+        if session is not None:
+            try:
+                asyncio.run_coroutine_threadsafe(session.destroy(), self._loop)
+                logger.info("Cancelled active Copilot session.")
+            except Exception as exc:
+                logger.warning("Error cancelling Copilot session: %s", exc)
 
     # ── private helpers ────────────────────────────────────────────────────
 
-    def _run_copilot(self, prompt: str) -> str:
+    def _submit(self, coro: Any) -> Any:
+        """Submit *coro* to the background event loop and block until done.
+
+        Raises the coroutine's exception (if any) in the calling thread.
         """
-        Send a prompt to GitHub Copilot CLI in programmatic mode.
+        future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        return future.result(timeout=self.timeout)
 
-        Uses ``copilot -p "…"`` which runs non-interactively, returning
-        the agent's text response on stdout.
-        
-        For very long prompts (>5000 chars), writes to a temporary file
-        and uses ``copilot -p "$(cat file)"`` approach to avoid Windows
-        command line length limitations (WinError 206).
+    async def _ensure_client(self) -> Any:
+        """Async-safe lazy initializer for :class:`CopilotClient`.
+
+        Always awaited *from within* the background loop, so it can safely
+        ``await client.start()`` without deadlocking against :meth:`_submit`.
         """
-        try:
-            env = os.environ.copy()
-            # Suppress colour codes for clean parsing
-            env["NO_COLOR"] = "1"
+        # asyncio.Lock must be created inside the loop that will use it.
+        if self._async_client_lock is None:
+            self._async_client_lock = asyncio.Lock()
 
-            # Windows has command line length limits (~8191 chars for cmd.exe).
-            # Use a temporary file for long prompts to avoid WinError 206.
-            use_temp_file = len(prompt) > 5000
+        async with self._async_client_lock:
+            if self._client is None:
+                # Late import keeps the SDK optional until first use.
+                from copilot import CopilotClient  # github-copilot-sdk
 
-            if use_temp_file:
-                # Write prompt to a temporary file, then read it back
-                # This avoids command line length limits while still using -p
-                with tempfile.NamedTemporaryFile(
-                    mode='w', suffix='.txt', delete=False,
-                    encoding='utf-8'
-                ) as f:
-                    f.write(prompt)
-                    temp_path = f.name
+                options: dict = {
+                    "cli_path": self.copilot_path,
+                    "auto_restart": True,
+                    "log_level": "warning",
+                }
+                github_token = (
+                    os.environ.get("COPILOT_GITHUB_TOKEN")
+                    or os.environ.get("GH_TOKEN")
+                    or os.environ.get("GITHUB_TOKEN")
+                )
+                if github_token:
+                    options["github_token"] = github_token
 
-                try:
-                    # On Windows, use PowerShell to read file content
-                    # On Unix, use cat
-                    if os.name == 'nt':
-                        # Use PowerShell to read file and pass to copilot
-                        # -NoProfile -NonInteractive for faster startup
-                        ps_cmd = f'$content = Get-Content -Raw -Path "{temp_path}"; & "{self.copilot_path}" -p $content'
-                        if self.model and self.model.lower() != "auto":
-                            ps_cmd = f'$content = Get-Content -Raw -Path "{temp_path}"; & "{self.copilot_path}" -p $content --model "{self.model}"'
-                        
-                        cmd = ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_cmd]
-                    else:
-                        # Unix: use shell substitution
-                        cmd = f'{self.copilot_path} -p "$(cat {temp_path})"'
-                        if self.model and self.model.lower() != "auto":
-                            cmd += f' --model "{self.model}"'
-                        cmd = ["sh", "-c", cmd]
+                self._client = CopilotClient(options)
+                await self._client.start()
+                logger.debug("CopilotClient started (CLI process managed by SDK).")
+        return self._client
 
-                    proc = subprocess.Popen(
-                        cmd,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        text=True,
-                        env=env,
-                        encoding="utf-8", errors="replace",
-                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-                    )
-                    self._current_process = proc
+    async def _run_sdk_async(self, system_prompt: str, user_message: str) -> str:
+        """Create a session, stream the response, and return the full text.
+
+        A fresh session is created and destroyed for every call so the
+        backend remains stateless, mirroring the old subprocess approach.
+        """
+        # _ensure_client() is always awaited – never submitted to self._loop
+        # from another coroutine on that same loop (no deadlock).
+        client = await self._ensure_client()
+
+        session_config: dict = {
+            "streaming": True,
+            "system_message": {"content": system_prompt},
+            # Single-shot requests don't need context compaction.
+            "infinite_sessions": {"enabled": False},
+        }
+        if self.model and self.model.lower() != "auto":
+            session_config["model"] = self.model
+
+        session = await client.create_session(session_config)
+        self._active_session = session
+
+        full_text: list[str] = []
+        idle_event = asyncio.Event()
+
+        def on_event(event: Any) -> None:
+            etype = (
+                event.type.value
+                if hasattr(event.type, "value")
+                else str(event.type)
+            )
+            if etype == "assistant.message_delta":
+                delta = getattr(event.data, "delta_content", None) or ""
+                if delta and self._stream_callback:
                     try:
-                        stdout, stderr = proc.communicate(timeout=self.timeout)
-                        returncode = proc.returncode
-                    except subprocess.TimeoutExpired:
-                        proc.kill()
-                        proc.communicate()  # Clean up
-                        return "Error: GitHub Copilot CLI timed out."
-                    finally:
-                        self._current_process = None
-                finally:
-                    # Clean up temp file
-                    try:
-                        os.unlink(temp_path)
+                        self._stream_callback(delta)
                     except Exception:
+                        # Never let a GUI callback error break the backend.
                         pass
-            else:
-                # Pass prompt as command line argument (original behavior)
-                cmd = [self.copilot_path, "-p", prompt]
-                if self.model and self.model.lower() != "auto":
-                    cmd.extend(["--model", self.model])
+            elif etype == "assistant.message":
+                content = getattr(event.data, "content", None) or ""
+                full_text.append(content)
+            elif etype == "session.idle":
+                idle_event.set()
 
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=self.timeout,
-                    env=env,
-                    encoding="utf-8", errors="replace",
-                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-                )
-                returncode = result.returncode
-                stdout = result.stdout
-                stderr = result.stderr
+        session.on(on_event)
 
-            if returncode != 0:
-                err = (
-                    (stderr or "").strip()
-                    or f"copilot exited with code {returncode}"
-                )
-                return f"Error: GitHub Copilot CLI – {err}"
+        try:
+            await session.send({"prompt": user_message})
+            await asyncio.wait_for(idle_event.wait(), timeout=self.timeout)
+        except asyncio.TimeoutError:
+            return "Error: GitHub Copilot timed out."
+        finally:
+            self._active_session = None
+            try:
+                await session.destroy()
+            except Exception:
+                pass
 
-            output = (stdout or "").strip()
-            return output or "Error: No output from GitHub Copilot CLI."
+        result = "".join(full_text).strip()
+        return result or "Error: No output from GitHub Copilot."
 
-        except subprocess.TimeoutExpired:
-            return "Error: GitHub Copilot CLI timed out."
+    def _run_sdk(self, system_prompt: str, user_message: str) -> str:
+        """Synchronous wrapper around :meth:`_run_sdk_async`."""
+        try:
+            return self._submit(self._run_sdk_async(system_prompt, user_message))
+        except TimeoutError:
+            return "Error: GitHub Copilot timed out."
         except Exception as exc:
             logger.error("Copilot backend error: %s", exc)
             return f"Error: {exc}"
-
-    def cancel(self):
-        """Terminate the currently running subprocess if any."""
-        if self._current_process:
-            try:
-                self._current_process.terminate()
-                logger.info("Cancelled Copilot subprocess")
-            except Exception as exc:
-                logger.warning("Failed to terminate Copilot process: %s", exc)
