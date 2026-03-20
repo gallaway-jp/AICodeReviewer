@@ -21,6 +21,7 @@ import tkinter as tk
 
 import customtkinter as ctk  # type: ignore[import-untyped]
 
+from aicodereviewer.backends import create_backend
 from aicodereviewer.config import config
 from aicodereviewer.i18n import t
 from aicodereviewer.models import ReviewIssue
@@ -273,6 +274,7 @@ class ResultsTabMixin:
         })
         all_types_label = t("gui.results.filter_all_types")
         translated_types = [t(f"review_type.{typ}") for typ in types]
+        self._filter_type_reverse_map = dict(zip(translated_types, types))
         self._filter_type_menu.configure(values=[all_types_label] + translated_types)
         self._filter_type_var.set(all_types_label)
         self._filter_sev_var.set(t("gui.results.filter_all"))
@@ -298,7 +300,9 @@ class ResultsTabMixin:
 
         filter_sev = sev_map.get(sev_sel) if sev_sel != all_label else None
         filter_status = status_map.get(status_sel) if status_sel != all_label else None
-        filter_type = type_sel if type_sel != all_types_label else None
+        filter_type = None
+        if type_sel != all_types_label:
+            filter_type = getattr(self, "_filter_type_reverse_map", {}).get(type_sel, type_sel)
 
         visible = 0
         total = len(self._issue_cards)
@@ -525,6 +529,12 @@ class ResultsTabMixin:
         all_done = all(c["issue"].status != "pending" for c in self._issue_cards)
         any_to_check = any(c["issue"].status in ("resolved",) for c in self._issue_cards)
         any_pending = any(c["issue"].status == "pending" for c in self._issue_cards)
+        runner = getattr(self, "_review_runner", None)
+        has_backend_context = bool(
+            self._review_client
+            or self._testing_mode
+            or getattr(runner, "_pending_report_meta", None)
+        )
 
         if all_done and any_to_check:
             self.review_changes_btn.configure(state="normal")
@@ -538,7 +548,7 @@ class ResultsTabMixin:
             self.finalize_btn.configure(state="disabled")
             self.save_session_btn.configure(state="normal")
 
-        if any_pending and (self._review_client or self._testing_mode):
+        if any_pending and has_backend_context:
             self.ai_fix_mode_btn.configure(state="normal")
         else:
             self.ai_fix_mode_btn.configure(state="disabled")
@@ -1133,26 +1143,27 @@ class ResultsTabMixin:
             self._show_toast(t("gui.results.no_issues_selected"), error=True)
             return
 
-        if not self._review_client:
-            if self._testing_mode:
-                fake_results: dict[int, str | None] = {}
-                for idx, rec in selected:
-                    issue = rec["issue"]
-                    original = issue.code_snippet or (
-                        f"# {Path(issue.file_path).name}\n# (no snippet available)\n"
-                    )
-                    fake_results[idx] = (
-                        f"# Simulated AI fix\n"
-                        f"# Issue: {issue.description[:80]}\n\n"
-                    ) + original
-                self._show_batch_fix_popup(selected, fake_results)
-                return
-            self._show_toast(t("gui.results.no_fix"), error=True)
+        if not self._review_client and self._testing_mode:
+            fake_results: dict[int, str | None] = {}
+            for idx, rec in selected:
+                issue = rec["issue"]
+                original = issue.code_snippet or (
+                    f"# {Path(issue.file_path).name}\n# (no snippet available)\n"
+                )
+                fake_results[idx] = (
+                    f"# Simulated AI fix\n"
+                    f"# Issue: {issue.description[:80]}\n\n"
+                ) + original
+            self._show_batch_fix_popup(selected, fake_results)
             return
 
         self._ai_fix_cancel_event = threading.Event()
         self._ai_fix_running = True
         self.start_ai_fix_btn.configure(state="disabled")
+        runner = getattr(self, "_review_runner", None)
+        review_language = self.lang_var.get()
+        runner_meta = getattr(runner, "_pending_report_meta", None) or {}
+        fix_backend = runner_meta.get("backend") or self.backend_var.get()
 
         logger.info("Starting batch AI Fix for %d issues…", len(selected))
         self.status_var.set(t("gui.results.batch_fix_running",
@@ -1164,6 +1175,15 @@ class ResultsTabMixin:
 
         def _worker():
             try:
+                client = self._review_client
+                if client is None:
+                    logger.info(
+                        "AI Fix: recreating backend client for %s fixes",
+                        fix_backend,
+                    )
+                    client = create_backend(fix_backend)
+                    self._review_client = client
+
                 results = {}
                 cancelled = False
                 for idx, rec in selected:
@@ -1180,13 +1200,11 @@ class ResultsTabMixin:
                         except Exception:
                             pass
                         logger.info("  AI Fix: %s …", issue.file_path)
-                        if self._review_client is None:
-                            continue
-                        fix = self._review_client.get_fix(
+                        fix = client.get_fix(
                             code_content=code,
                             issue_feedback=issue.ai_feedback or issue.description,
                             review_type=issue.issue_type,
-                            lang=self.lang_var.get(),
+                            lang=review_language,
                         )
                         if self._ai_fix_cancel_event.is_set():
                             logger.info("AI Fix cancelled by user")
@@ -1213,6 +1231,7 @@ class ResultsTabMixin:
                         selected, results))
             finally:
                 self._ai_fix_running = False
+                self._release_review_client()
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -1635,13 +1654,16 @@ class ResultsTabMixin:
             if not content:
                 win.destroy()
                 return
+            if _on_content_update is not None:
+                _on_content_update(content)
+                self._show_toast(t("gui.results.preview_staged"))
+                win.destroy()
+                return
             if self._testing_mode:
                 if idx < len(self._issue_cards):
                     self._issue_cards[idx]["issue"].status = "resolved"
                     self._refresh_status(idx)
                 self._show_toast(t("gui.results.editor_saved"))
-                if _on_content_update is not None:
-                    _on_content_update(content)
                 win.destroy()
                 return
             try:
@@ -1655,8 +1677,6 @@ class ResultsTabMixin:
             except Exception as exc:
                 self._show_toast(str(exc), error=True)
                 return
-            if _on_content_update is not None:
-                _on_content_update(content)
             win.destroy()
 
         def _on_user_save(user_content: str) -> None:
@@ -1784,15 +1804,13 @@ class ResultsTabMixin:
     def _review_changes(self):
         if self._running:
             return
-        if not self._review_client:
-            if self._testing_mode:
-                for rec in self._issue_cards:
-                    if rec["issue"].status == "resolved":
-                        rec["issue"].status = "fixed"
-                for i in range(len(self._issue_cards)):
-                    self._refresh_status(i)
-                self._show_toast("Testing mode: resolved issues marked as fixed")
-                return
+        if not self._review_client and self._testing_mode:
+            for rec in self._issue_cards:
+                if rec["issue"].status == "resolved":
+                    rec["issue"].status = "fixed"
+            for i in range(len(self._issue_cards)):
+                self._refresh_status(i)
+            self._show_toast("Testing mode: resolved issues marked as fixed")
             return
         self._running = True
         self._set_action_buttons_state("disabled")
@@ -1807,52 +1825,70 @@ class ResultsTabMixin:
             (i, c) for i, c in enumerate(self._issue_cards)
             if c["issue"].status == "resolved"
         ]
+        runner = getattr(self, "_review_runner", None)
+        review_language = self.lang_var.get()
+        runner_meta = getattr(runner, "_pending_report_meta", None) or {}
+        verification_backend = runner_meta.get("backend") or self.backend_var.get()
         logger.info("Review Changes: verifying %d resolved issues…",
                      len(resolved_cards))
 
         def _worker():
-            for i, rec in resolved_cards:
-                issue = rec["issue"]
-                try:
-                    logger.info("Verifying fix for %s …", issue.file_path)
-                    if self._review_client is None:
-                        continue
-                    ok = verify_issue_resolved(
-                        issue, self._review_client,
-                        issue.issue_type, self.lang_var.get(),
+            try:
+                client = self._review_client
+                if client is None:
+                    logger.info(
+                        "Review Changes: recreating backend client for %s verification",
+                        verification_backend,
                     )
-                    if ok:
-                        issue.status = "fixed"
-                        logger.info("  → verified fixed: %s", issue.file_path)
-                    else:
+                    client = create_backend(verification_backend)
+                    self._review_client = client
+
+                for i, rec in resolved_cards:
+                    issue = rec["issue"]
+                    try:
+                        logger.info("Verifying fix for %s …", issue.file_path)
+                        ok = verify_issue_resolved(
+                            issue, client,
+                            issue.issue_type, review_language,
+                        )
+                        if ok:
+                            issue.status = "fixed"
+                            logger.info("  → verified fixed: %s", issue.file_path)
+                        else:
+                            issue.status = "fix_failed"
+                            logger.info("  → fix NOT verified: %s", issue.file_path)
+                        self.after(0, lambda idx=i: self._refresh_status(idx))
+                    except Exception as exc:
+                        logger.error("Verify failed for %s: %s", issue.file_path, exc)
                         issue.status = "fix_failed"
-                        logger.info("  → fix NOT verified: %s", issue.file_path)
-                    self.after(0, lambda idx=i: self._refresh_status(idx))
-                except Exception as exc:
-                    logger.error("Verify failed for %s: %s", issue.file_path, exc)
-                    issue.status = "fix_failed"
-                    self.after(0, lambda idx=i: self._refresh_status(idx))
+                        self.after(0, lambda idx=i: self._refresh_status(idx))
 
-            fixed_count = sum(1 for c in self._issue_cards
-                              if c["issue"].status == "fixed")
-            failed_count = sum(1 for c in self._issue_cards
-                               if c["issue"].status == "fix_failed")
-            logger.info("Review Changes complete: %d fixed, %d failed.",
-                         fixed_count, failed_count)
+                fixed_count = sum(1 for c in self._issue_cards
+                                  if c["issue"].status == "fixed")
+                failed_count = sum(1 for c in self._issue_cards
+                                   if c["issue"].status == "fix_failed")
+                logger.info("Review Changes complete: %d fixed, %d failed.",
+                             fixed_count, failed_count)
 
-            all_done = all(
-                c["issue"].status in ("fixed", "skipped", "fix_failed")
-                for c in self._issue_cards
-            )
-            if all_done:
-                self.after(0, self._auto_finalize)
-            else:
-                self.after(0, self._update_bottom_buttons)
+                all_done = all(
+                    c["issue"].status in ("fixed", "skipped", "fix_failed")
+                    for c in self._issue_cards
+                )
+                if all_done:
+                    self.after(0, self._auto_finalize)
+                else:
+                    self.after(0, self._update_bottom_buttons)
+                    self.after(0, lambda: self.status_var.set(t("common.ready")))
+            except Exception as exc:
+                logger.error("Review Changes failed: %s", exc)
+                self.after(0, lambda e=str(exc): self._show_toast(e, error=True))
+                self.after(0, lambda: self._update_bottom_buttons())
                 self.after(0, lambda: self.status_var.set(t("common.ready")))
-
-            self._running = False
-            self.after(0, lambda: self._set_action_buttons_state("normal"))
-            self.after(0, lambda: self.cancel_btn.configure(state="disabled"))
+            finally:
+                self._running = False
+                self._release_review_client()
+                self.after(0, lambda: self._set_action_buttons_state("normal"))
+                self.after(0, lambda: self.cancel_btn.configure(state="disabled"))
 
         threading.Thread(target=_worker, daemon=True).start()
 

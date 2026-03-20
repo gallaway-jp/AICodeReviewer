@@ -62,7 +62,7 @@ Capabilities:
 - severity, status, and type filters
 - issue cards with summaries and detail views
 - AI Fix mode for single and batch workflows
-- preview and edit proposed changes before applying them
+- preview and edit proposed changes before applying them; preview edits stay staged until you use Apply Selected Fixes
 - save and load review sessions
 - review changes for resolved items
 - finalize reports

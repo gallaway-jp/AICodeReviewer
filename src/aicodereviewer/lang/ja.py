@@ -486,6 +486,7 @@ STRINGS: dict[str, str] = {
     "gui.results.batch_fix_applied":  "{count}件のAI修正を適用しました。",
     "gui.results.apply_fixes":        "選択した修正を適用",
     "gui.results.preview_changes":    "プレビュー / 編集",
+    "gui.results.preview_staged":     "プレビューの変更を保存しました。ファイルへ反映するには選択した修正を適用してください。",
     "gui.results.diff_preview_title": "変更プレビュー: {file}",
     "gui.results.diff_preview_header": "{file}の変更内容",
     "gui.results.original_code":      "変更前",
