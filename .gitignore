@@ -33,3 +33,13 @@ Thumbs.db
 # Logs
 *.log
 /.kilocode
+agents
+/.continue/mcpServers
+
+# Local artifacts (moved generated review reports here)
+artifacts/
+review_report_*.json
+review_report_*_summary.txt
+
+# Packaging metadata
+*.egg-info/
