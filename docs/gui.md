@@ -16,6 +16,10 @@ The screenshots below are generated from the real test-mode GUI with:
 
 ## Screenshots
 
+### Review Tab
+
+![Review tab screenshot](images/gui-review-tab.png)
+
 ### Results Tab
 
 ![Results tab screenshot](images/gui-results-tab.png)
@@ -23,6 +27,10 @@ The screenshots below are generated from the real test-mode GUI with:
 ### AI Fix Mode
 
 ![AI Fix mode screenshot](images/gui-ai-fix-mode.png)
+
+### Output Log Tab
+
+![Output Log tab screenshot](images/gui-output-log-tab.png)
 
 ## Tabs
 

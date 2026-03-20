@@ -53,6 +53,7 @@ def main() -> None:
     parser.add_argument("--theme", choices=["dark", "light", "system"], default="dark")
     parser.add_argument("--lang", choices=["en", "ja"], default="en")
     parser.add_argument("--hold-ms", type=int, default=30000)
+    parser.add_argument("--hwnd-file", help="Optional path where the prepared GUI window handle is written")
     args = parser.parse_args()
 
     from aicodereviewer.gui.test_fixtures import apply_test_config, create_sample_issues
@@ -96,6 +97,8 @@ def main() -> None:
         app.update()
         app.lift()
         app.focus_force()
+        if args.hwnd_file:
+            Path(args.hwnd_file).write_text(str(app.winfo_id()), encoding="utf-8")
         app.after(600, app.update_idletasks)
         app.after(1200, app.update)
 

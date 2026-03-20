@@ -19,7 +19,8 @@ public static class NativeMethods {
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$python = Join-Path $repoRoot ".venv\Scripts\python.exe"
+$pythonw = Join-Path $repoRoot ".venv\Scripts\pythonw.exe"
+$python = if (Test-Path $pythonw) { $pythonw } else { Join-Path $repoRoot ".venv\Scripts\python.exe" }
 $launcher = Join-Path $repoRoot "tools\gui_screenshot_state.py"
 $outputDir = Join-Path $repoRoot "docs\images"
 
@@ -27,24 +28,14 @@ New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
 
 function Save-WindowScreenshot {
     param(
-        [Parameter(Mandatory = $true)] [System.Diagnostics.Process] $Process,
+        [Parameter(Mandatory = $true)] [IntPtr] $WindowHandle,
         [Parameter(Mandatory = $true)] [string] $OutputPath
     )
-
-    $deadline = (Get-Date).AddSeconds(20)
-    do {
-        Start-Sleep -Milliseconds 300
-        $Process.Refresh()
-    } while ($Process.MainWindowHandle -eq 0 -and (Get-Date) -lt $deadline)
-
-    if ($Process.MainWindowHandle -eq 0) {
-        throw "Timed out waiting for GUI window"
-    }
 
     Start-Sleep -Milliseconds 4500
 
     $rect = New-Object RECT
-    [void][NativeMethods]::GetWindowRect($Process.MainWindowHandle, [ref] $rect)
+    [void][NativeMethods]::GetWindowRect($WindowHandle, [ref] $rect)
     $width = $rect.Right - $rect.Left
     $height = $rect.Bottom - $rect.Top
 
@@ -57,17 +48,34 @@ function Save-WindowScreenshot {
 }
 
 $states = @(
+    @{ State = "review"; File = "gui-review-tab.png" },
     @{ State = "results"; File = "gui-results-tab.png" },
-    @{ State = "ai-fix"; File = "gui-ai-fix-mode.png" }
+    @{ State = "ai-fix"; File = "gui-ai-fix-mode.png" },
+    @{ State = "log"; File = "gui-output-log-tab.png" }
 )
 
 foreach ($entry in $states) {
     Write-Host "Capturing $($entry.State) screenshot..."
-    $process = Start-Process -FilePath $python -ArgumentList @($launcher, "--state", $entry.State, "--theme", "dark", "--lang", "en", "--hold-ms", "30000") -WorkingDirectory $repoRoot -PassThru
+    $hwndFile = Join-Path $env:TEMP ("aicodereviewer-gui-{0}-{1}.txt" -f $entry.State, [guid]::NewGuid().ToString("N"))
+    $process = Start-Process -FilePath $python -ArgumentList @($launcher, "--state", $entry.State, "--theme", "dark", "--lang", "en", "--hold-ms", "30000", "--hwnd-file", $hwndFile) -WorkingDirectory $repoRoot -PassThru
     try {
-        Save-WindowScreenshot -Process $process -OutputPath (Join-Path $outputDir $entry.File)
+        $deadline = (Get-Date).AddSeconds(20)
+        do {
+            Start-Sleep -Milliseconds 250
+        } while (-not (Test-Path $hwndFile) -and (Get-Date) -lt $deadline)
+
+        if (-not (Test-Path $hwndFile)) {
+            throw "Timed out waiting for GUI window handle file"
+        }
+
+        $hwndText = Get-Content -Path $hwndFile -Raw
+        $hwnd = [IntPtr]::new([int64]$hwndText.Trim())
+        Save-WindowScreenshot -WindowHandle $hwnd -OutputPath (Join-Path $outputDir $entry.File)
     }
     finally {
+        if (Test-Path $hwndFile) {
+            [System.IO.File]::Delete($hwndFile)
+        }
         if (-not $process.HasExited) {
             Stop-Process -Id $process.Id -Force
         }
