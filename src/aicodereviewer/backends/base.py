@@ -30,7 +30,12 @@ markdown code fences, preamble, or any text outside the JSON object.
           "title": "<short title>",
           "description": "<detailed description>",
           "code_context": "<relevant code snippet>",
-          "suggestion": "<how to fix>"
+                    "suggestion": "<how to fix>",
+                    "context_scope": "local|cross_file|project",
+                    "related_files": ["<path>", "..."],
+                    "systemic_impact": "<brief broader impact>",
+                    "confidence": "high|medium|low",
+                    "evidence_basis": "<batch code|project context|framework guidance|diff context|issue interaction>"
         }
       ]
     }
@@ -42,6 +47,9 @@ Rules:
 - "severity" MUST be one of: critical, high, medium, low, info.
 - "line" is the 1-based line number (null if file-level).
 - Include ALL findings you discover — do not merge multiple issues.
+- Use "context_scope" = "local" unless the finding is clearly supported across files or at project level.
+- Keep "related_files" short (0-3 entries) and only include files supported by concrete evidence.
+- Use systemic fields only when you can justify them from the provided code, prompt context, or framework guidance.
 """
 
 
@@ -531,6 +539,15 @@ class AIBackend(ABC):
                     + "\n\n".join(supplements)
                 )
 
+        base += (
+            "\n\nREVIEW METHOD:\n"
+            "1. Identify direct defects in the provided code first.\n"
+            "2. Then assess whether any defect implies cross-file or project-level impact.\n"
+            "3. Only emit broader-impact findings when supported by concrete evidence from the provided code, prompt context, framework guidance, or dependency hints.\n"
+            "4. Prefer fewer high-confidence systemic findings over speculative ones.\n"
+            "5. When a local defect suggests broader risk, preserve the local finding and use systemic metadata instead of duplicating the issue."
+        )
+
         if lang == "ja":
             lang_inst = "IMPORTANT: Provide your entire response in Japanese (日本語で回答してください)."
         else:
@@ -554,11 +571,13 @@ class AIBackend(ABC):
                 f"CODE TO REVIEW:\n{code_content}\n\n---\n\n"
                 "Compare the code against the specification and identify "
                 "deviations, missing implementations, or areas that don't "
-                "meet the requirements.\n\n"
+                "meet the requirements. After identifying direct mismatches, "
+                "assess whether any deviation implies broader cross-file or project-level impact based on the provided context. Only include broader findings when the evidence is concrete.\n\n"
                 "Respond with the JSON format described in your instructions."
             )
         return (
-            f"Review this code:\n\n{code_content}\n\n"
+            "Review this code. After identifying direct issues, assess whether any issue suggests cross-file or project-level impact based on the provided project context, framework guidance, or implied dependencies. Only include broader-impact findings when the evidence is concrete.\n\n"
+            f"CODE TO REVIEW:\n{code_content}\n\n"
             "Respond with the JSON format described in your instructions."
         )
 
@@ -581,7 +600,7 @@ class AIBackend(ABC):
             parts.append(f"SPECIFICATION DOCUMENT:\n{spec_content}\n\n---\n")
 
         parts.append(
-            "Review each of the following files. "
+            "Review each of the following files. Also look for issues that only become visible across files in this batch, such as contract mismatches, incomplete refactors, duplicated responsibility, dependency direction problems, and caller/callee inconsistencies. Only report broader findings when they are supported by the files shown here or by the provided project context. "
             "Respond with JSON following the schema in your instructions. "
             "Include a separate entry in the \"files\" array for each file, "
             "and a separate object in \"findings\" for each distinct issue.\n"
@@ -636,6 +655,10 @@ class AIBackend(ABC):
             parts.append(f"CHANGED FILE: {filename}\n")
             parts.append(f"{file_entry.get('content', '')}\n")
             parts.append(
+                "FOCUS YOUR REVIEW ON THE CHANGED LINES.\n"
+                "Use surrounding context only to understand intent and impact.\n"
+                "If a changed-line issue indicates a likely broader regression, only report that broader impact when it is supported by concrete evidence from this diff, the surrounding context, the commit message, or the specification.\n"
+                "Keep the primary finding anchored to the changed code.\n"
                 "Respond with the JSON format described in your instructions."
             )
             return "\n".join(parts)
@@ -675,6 +698,8 @@ class AIBackend(ABC):
         parts.append(
             "FOCUS YOUR REVIEW ON THE CHANGED LINES.\n"
             "Use surrounding context only to understand intent and impact.\n"
+            "If a changed-line issue indicates a likely broader regression, only report that broader impact when it is supported by concrete evidence from this diff, the surrounding context, the commit message, or the specification.\n"
+            "Keep the primary finding anchored to the changed code.\n"
             "Respond with the JSON format described in your instructions."
         )
         return "\n".join(parts)
@@ -708,7 +733,10 @@ class AIBackend(ABC):
         parts.append(
             "Review each of the following changed files. "
             "FOCUS YOUR REVIEW ON THE CHANGED LINES. "
-            "Use surrounding context only to understand intent and impact.\n"
+            "Use surrounding context only to understand intent and impact. "
+            "Also check whether the touched files reveal cross-file problems such as contract mismatches, partial refactors, broken call paths, or inconsistent validation/state handling. "
+            "Only report broader findings when they are supported by concrete evidence in these diffs, the surrounding context, the commit message, or the specification. "
+            "Keep each finding anchored to the changed code that exposes it.\n"
             "Respond with JSON following the schema in your instructions. "
             "Include a separate entry in the \"files\" array for each file.\n"
         )

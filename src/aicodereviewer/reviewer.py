@@ -466,6 +466,70 @@ def _build_project_structure_summary(files: Sequence[FileInfo]) -> str:
     return "\n".join(parts)
 
 
+def _infer_project_root(files: Sequence[FileInfo]) -> str:
+    """Infer a likely project root from reviewed files."""
+    if not files:
+        return "."
+
+    sample = files[0]
+    if isinstance(sample, dict):
+        sample_path = (
+            sample.get("path")
+            or sample.get("filename")
+            or sample.get("name")
+            or "."
+        )
+    else:
+        sample_path = str(sample)
+
+    root_candidate = Path(sample_path)
+    if root_candidate.suffix:
+        root_candidate = root_candidate.parent
+    if not root_candidate.is_absolute():
+        root_candidate = (Path.cwd() / root_candidate).resolve()
+
+    for _ in range(5):
+        if any(
+            (root_candidate / marker).exists()
+            for marker in (
+                "pyproject.toml",
+                "package.json",
+                "Cargo.toml",
+                "go.mod",
+                "pom.xml",
+                ".git",
+            )
+        ):
+            return str(root_candidate)
+        parent = root_candidate.parent
+        if parent == root_candidate:
+            break
+        root_candidate = parent
+
+    return str(root_candidate)
+
+
+def _build_dependency_highlights(files: Sequence[FileInfo]) -> Optional[str]:
+    """Build a compact dependency-edge summary for architectural review."""
+    scanned_paths = [
+        str(file_info) if not isinstance(file_info, dict)
+        else file_info.get("path") or file_info.get("filename") or ""
+        for file_info in files
+    ]
+    scanned_paths = [path for path in scanned_paths if path]
+    if len(scanned_paths) < 2:
+        return None
+
+    ctx = collect_project_context(_infer_project_root(files), scanned_paths)
+    if not ctx.dependency_edges:
+        return None
+
+    parts = ["Dependency Highlights:"]
+    for src, dst in ctx.dependency_edges[:10]:
+        parts.append(f"- {src} -> {dst}")
+    return "\n".join(parts)
+
+
 def architectural_review(
     files: Sequence[FileInfo],
     all_issues: List[ReviewIssue],
@@ -497,6 +561,11 @@ def architectural_review(
         return [], None
 
     structure_summary = _build_project_structure_summary(files)
+    dependency_highlights = None
+    try:
+        dependency_highlights = _build_dependency_highlights(files)
+    except Exception as exc:
+        logger.warning("Failed to build dependency highlights: %s", exc)
 
     # Condense existing findings (cap at 50)
     findings_lines: List[str] = []
@@ -507,8 +576,13 @@ def architectural_review(
         )
     findings_summary = "\n".join(findings_lines) if findings_lines else "(none)"
 
+    dependency_block = (
+        f"{dependency_highlights}\n\n" if dependency_highlights else ""
+    )
+
     user_message = (
         f"{structure_summary}\n\n"
+        f"{dependency_block}"
         f"Existing review findings ({len(all_issues)} total):\n"
         f"{findings_summary}\n\n"
         "Analyse the project at an architectural level.  Focus on cross-cutting "

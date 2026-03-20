@@ -42,6 +42,11 @@ class ReviewIssue:
         resolution_reason: User-provided reason when ignoring.
         resolved_at: Timestamp when the issue was resolved.
         ai_fix_applied: Code content of the applied fix.
+        context_scope: Scope of evidence for the finding.
+        related_files: Other files implicated by the finding.
+        systemic_impact: Brief note about broader consequences.
+        confidence: Model confidence for the finding.
+        evidence_basis: Short note about what evidence supports the finding.
         related_issues: Indices of related issues from interaction analysis.
         interaction_summary: Brief description of how this issue relates.
     """
@@ -56,6 +61,11 @@ class ReviewIssue:
     resolution_reason: str | None = None
     resolved_at: datetime | None = None
     ai_fix_applied: str | None = None
+    context_scope: str = "local"
+    related_files: list[str] = field(default_factory=_empty_str_list)
+    systemic_impact: str | None = None
+    confidence: str | None = None
+    evidence_basis: str | None = None
     issue_id: str | None = None
     related_issues: list[int] = field(default_factory=_empty_int_list)
     interaction_summary: str | None = None

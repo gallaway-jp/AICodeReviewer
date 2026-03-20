@@ -34,7 +34,7 @@ api_timeout_seconds = 300
 [processing]
 batch_size = 5
 enable_parallel_processing = false
-enable_interaction_analysis = false
+enable_interaction_analysis = true
 enable_architectural_review = false
 
 [logging]
@@ -71,6 +71,10 @@ Key settings:
 - `enable_parallel_processing`
 - `enable_interaction_analysis`
 - `enable_architectural_review`
+
+Default behavior:
+- `enable_interaction_analysis` is enabled by default because it adds a low-cost synthesis pass when the first review pass finds at least two issues.
+- `enable_architectural_review` remains disabled by default because it adds a broader project-level pass.
 
 Important distinction:
 - `enable_interaction_analysis` and `enable_architectural_review` are processing toggles, not selectable `--type` values.

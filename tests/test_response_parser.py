@@ -156,6 +156,55 @@ class TestJsonParse:
         assert len(issues) == 1
         assert "CWE-79" in issues[0].ai_feedback
 
+    def test_json_with_systemic_metadata(self, file_entries):
+        response = json.dumps({
+            "files": [{
+                "filename": "src/app.py",
+                "findings": [{
+                    "severity": "high",
+                    "title": "Contract drift",
+                    "description": "The changed payload no longer matches its caller assumptions.",
+                    "context_scope": "cross_file",
+                    "related_files": ["src/utils.py", "src/other.py"],
+                    "systemic_impact": "Breaks downstream call sites expecting the old key.",
+                    "confidence": "high",
+                    "evidence_basis": "batch code",
+                }],
+            }],
+        })
+        issues = _try_json_parse(response, file_entries, "regression")
+        assert len(issues) == 1
+        assert issues[0].context_scope == "cross_file"
+        assert issues[0].related_files == ["src/utils.py", "src/other.py"]
+        assert issues[0].systemic_impact == "Breaks downstream call sites expecting the old key."
+        assert issues[0].confidence == "high"
+        assert issues[0].evidence_basis == "batch code"
+        assert "Context Scope: cross_file" in issues[0].ai_feedback
+
+    def test_json_invalid_systemic_metadata_defaults_safely(self, file_entries):
+        response = json.dumps({
+            "files": [{
+                "filename": "src/app.py",
+                "findings": [{
+                    "severity": "medium",
+                    "title": "Speculative issue",
+                    "description": "This output uses invalid metadata values.",
+                    "context_scope": "planetary",
+                    "related_files": "src/utils.py",
+                    "systemic_impact": "",
+                    "confidence": "certain",
+                    "evidence_basis": "",
+                }],
+            }],
+        })
+        issues = _try_json_parse(response, file_entries, "security")
+        assert len(issues) == 1
+        assert issues[0].context_scope == "local"
+        assert issues[0].related_files == []
+        assert issues[0].systemic_impact is None
+        assert issues[0].confidence is None
+        assert issues[0].evidence_basis is None
+
 
 # ── Strategy 2: Markdown-fenced JSON ──────────────────────────────────────
 

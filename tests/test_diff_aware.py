@@ -299,6 +299,11 @@ class TestBuildDiffUserMessage:
         msg = AIBackend._build_diff_user_message(self._make_entry(), "security")
         assert "FOCUS YOUR REVIEW ON THE CHANGED LINES" in msg
 
+    def test_includes_evidence_backed_broader_impact_guardrail(self):
+        msg = AIBackend._build_diff_user_message(self._make_entry(), "security")
+        assert "only report that broader impact when it is supported by concrete evidence" in msg
+        assert "Keep the primary finding anchored to the changed code" in msg
+
     def test_includes_commit_messages(self):
         entry = self._make_entry(with_commit=True)
         msg = AIBackend._build_diff_user_message(entry, "security")
@@ -311,6 +316,7 @@ class TestBuildDiffUserMessage:
         assert "CHANGED FILE: src/app.py" in msg
         # Should still include the content
         assert "line1" in msg
+        assert "supported by concrete evidence" in msg
 
     def test_spec_preamble(self):
         entry = self._make_entry()
@@ -380,6 +386,12 @@ class TestBuildMultiFileDiffUserMessage:
     def test_focus_instruction(self):
         msg = AIBackend._build_multi_file_diff_user_message(self._make_entries(), "security")
         assert "FOCUS YOUR REVIEW ON THE CHANGED LINES" in msg
+
+    def test_includes_cross_file_diff_guardrails(self):
+        msg = AIBackend._build_multi_file_diff_user_message(self._make_entries(), "security")
+        assert "cross-file problems such as contract mismatches, partial refactors, broken call paths, or inconsistent validation/state handling" in msg
+        assert "Only report broader findings when they are supported by concrete evidence" in msg
+        assert "Keep each finding anchored to the changed code that exposes it" in msg
 
 
 # ── _is_diff_entry ───────────────────────────────────────────────────────

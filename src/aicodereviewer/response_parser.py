@@ -18,7 +18,7 @@ import json
 import logging
 import re
 from difflib import SequenceMatcher
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, cast
 
 from .models import ReviewIssue
 
@@ -157,15 +157,28 @@ def _json_to_issues(
     """
     issues: List[ReviewIssue] = []
     entry_map = {e["name"]: e for e in file_entries}
+    allowed_scopes = {"local", "cross_file", "project"}
+    allowed_confidence = {"high", "medium", "low"}
 
-    files_list = data.get("files") or data.get("results") or []
+    raw_files_list = data.get("files") or data.get("results") or []
     if isinstance(data, list):
         # Some models return a flat array of findings
-        files_list = [{"filename": "<unknown>", "findings": data}]
+        files_list: list[Any] = [{"filename": "<unknown>", "findings": data}]
+    elif isinstance(raw_files_list, list):
+        files_list = raw_files_list
+    else:
+        files_list = []
 
-    for file_block in files_list:
+    for file_block_any in files_list:
+        if not isinstance(file_block_any, dict):
+            continue
+        file_block = cast(Dict[str, Any], file_block_any)
         filename = file_block.get("filename") or file_block.get("file") or ""
         findings = file_block.get("findings") or file_block.get("issues") or []
+        if not isinstance(filename, str):
+            filename = str(filename)
+        if not isinstance(findings, list):
+            continue
 
         # Resolve entry for this file
         entry = entry_map.get(filename)
@@ -179,9 +192,16 @@ def _json_to_issues(
         elif not entry:
             entry = {"name": filename, "path": filename, "content": ""}
 
-        for finding in findings:
+        entry_content = entry.get("content")
+        if not isinstance(entry_content, str):
+            entry_content = ""
+
+        for finding_any in findings:
+            if not isinstance(finding_any, dict):
+                continue
+            finding = cast(Dict[str, Any], finding_any)
             severity = _normalize_severity(
-                finding.get("severity") or finding.get("level") or "medium"
+                str(finding.get("severity") or finding.get("level") or "medium")
             )
             line_num = finding.get("line") or finding.get("line_number")
             if isinstance(line_num, str):
@@ -189,11 +209,33 @@ def _json_to_issues(
                     line_num = int(line_num)
                 except ValueError:
                     line_num = None
-            category = finding.get("category") or review_type
-            title = finding.get("title") or ""
-            desc = finding.get("description") or ""
-            suggestion = finding.get("suggestion") or finding.get("recommendation") or ""
-            code_ctx = finding.get("code_context") or finding.get("code_snippet") or ""
+            elif not isinstance(line_num, int):
+                line_num = None
+            category = str(finding.get("category") or review_type)
+            title = str(finding.get("title") or "")
+            desc = str(finding.get("description") or "")
+            suggestion = str(finding.get("suggestion") or finding.get("recommendation") or "")
+            code_ctx = str(finding.get("code_context") or finding.get("code_snippet") or "")
+            context_scope = str(finding.get("context_scope") or "local").strip().lower()
+            if context_scope not in allowed_scopes:
+                context_scope = "local"
+            related_files_raw = finding.get("related_files") or []
+            related_files = [
+                str(path).strip()
+                for path in related_files_raw
+                if isinstance(path, str) and path.strip()
+            ] if isinstance(related_files_raw, list) else []
+            systemic_impact = finding.get("systemic_impact")
+            if systemic_impact is not None:
+                systemic_impact = str(systemic_impact).strip() or None
+            confidence = finding.get("confidence")
+            if confidence is not None:
+                confidence = str(confidence).strip().lower() or None
+            if confidence not in allowed_confidence:
+                confidence = None
+            evidence_basis = finding.get("evidence_basis")
+            if evidence_basis is not None:
+                evidence_basis = str(evidence_basis).strip() or None
 
             # Build human-readable description
             description = title
@@ -210,8 +252,18 @@ def _json_to_issues(
                 feedback_parts.append(f"Code: {code_ctx}")
             if suggestion:
                 feedback_parts.append(f"Suggestion: {suggestion}")
+            if context_scope != "local":
+                feedback_parts.append(f"Context Scope: {context_scope}")
+            if related_files:
+                feedback_parts.append(f"Related Files: {', '.join(related_files)}")
+            if systemic_impact:
+                feedback_parts.append(f"Systemic Impact: {systemic_impact}")
+            if confidence:
+                feedback_parts.append(f"Confidence: {confidence}")
+            if evidence_basis:
+                feedback_parts.append(f"Evidence Basis: {evidence_basis}")
             # Include extra fields the model may have added
-            cwe = finding.get("cwe_id") or finding.get("cwe") or ""
+            cwe = str(finding.get("cwe_id") or finding.get("cwe") or "")
             if cwe:
                 feedback_parts.append(f"CWE: {cwe}")
 
@@ -219,8 +271,8 @@ def _json_to_issues(
 
             # Fallback code snippet from entry content
             code_snippet = code_ctx or (
-                entry["content"][:200] + ("…" if len(entry["content"]) > 200 else "")
-                if entry.get("content") else ""
+                entry_content[:200] + ("…" if len(entry_content) > 200 else "")
+                if entry_content else ""
             )
 
             issues.append(ReviewIssue(
@@ -231,6 +283,11 @@ def _json_to_issues(
                 description=description[:200],
                 code_snippet=code_snippet,
                 ai_feedback=ai_feedback,
+                context_scope=context_scope,
+                related_files=related_files,
+                systemic_impact=systemic_impact,
+                confidence=confidence,
+                evidence_basis=evidence_basis,
             ))
 
     return issues

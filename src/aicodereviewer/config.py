@@ -119,7 +119,7 @@ class Config:
         # ── processing ─────────────────────────────────────────────────────
         self._add("processing", "batch_size", "5")
         self._add("processing", "enable_parallel_processing", "false")
-        self._add("processing", "enable_interaction_analysis", "false")
+        self._add("processing", "enable_interaction_analysis", "true")
         self._add("processing", "enable_architectural_review", "false")
 
         # ── logging ────────────────────────────────────────────────────────

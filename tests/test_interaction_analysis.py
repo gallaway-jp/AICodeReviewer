@@ -422,13 +422,12 @@ class TestCollectReviewIssuesInteractionConfig:
     """Test that the interaction analysis is controlled by config."""
 
     @patch("aicodereviewer.reviewer.config")
-    def test_disabled_by_default(self, mock_config):
-        """When enable_interaction_analysis is false, analyze_interactions
-        should not be called."""
+    def test_enabled_by_default(self, mock_config):
+        """The default config enables the low-cost interaction pass."""
         # Just verify the config default
         from aicodereviewer.config import Config
         cfg = Config.__new__(Config)
         cfg.config = __import__("configparser").ConfigParser()
         cfg._set_defaults()  # noqa: SLF001
         val = cfg.config.get("processing", "enable_interaction_analysis")
-        assert val == "false"
+        assert val == "true"

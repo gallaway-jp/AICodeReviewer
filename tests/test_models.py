@@ -50,6 +50,33 @@ class TestReviewIssue:
 
         assert issue.line_number is None
         assert issue.status == "pending"
+        assert issue.context_scope == "local"
+        assert issue.related_files == []
+        assert issue.systemic_impact is None
+        assert issue.confidence is None
+        assert issue.evidence_basis is None
+
+    def test_review_issue_with_systemic_metadata(self):
+        """Systemic metadata should be stored on the issue."""
+        issue = ReviewIssue(
+            file_path="/path/to/file.py",
+            issue_type="regression",
+            severity="high",
+            description="Contract mismatch",
+            code_snippet="return {'name': ...}",
+            ai_feedback="Schema renamed without updating callers",
+            context_scope="cross_file",
+            related_files=["/path/to/api.py", "/path/to/schema.py"],
+            systemic_impact="Breaks callers expecting display_name",
+            confidence="high",
+            evidence_basis="batch code",
+        )
+
+        assert issue.context_scope == "cross_file"
+        assert issue.related_files == ["/path/to/api.py", "/path/to/schema.py"]
+        assert issue.systemic_impact == "Breaks callers expecting display_name"
+        assert issue.confidence == "high"
+        assert issue.evidence_basis == "batch code"
 
 
 class TestReviewReport:
@@ -184,7 +211,12 @@ class TestReviewReport:
                 'status': "resolved",
                 'resolution_reason': None,
                 'resolved_at': datetime.now().isoformat(),
-                'ai_fix_applied': None
+                'ai_fix_applied': None,
+                'context_scope': 'cross_file',
+                'related_files': ['/path/to/caller.py'],
+                'systemic_impact': 'Breaks callers relying on the old contract',
+                'confidence': 'medium',
+                'evidence_basis': 'project context',
             }
         ]
 
@@ -213,6 +245,11 @@ class TestReviewReport:
         assert len(report.issues_found) == 1
         assert isinstance(report.generated_at, datetime)
         assert isinstance(report.issues_found[0].resolved_at, datetime)
+        assert report.issues_found[0].context_scope == 'cross_file'
+        assert report.issues_found[0].related_files == ['/path/to/caller.py']
+        assert report.issues_found[0].systemic_impact == 'Breaks callers relying on the old contract'
+        assert report.issues_found[0].confidence == 'medium'
+        assert report.issues_found[0].evidence_basis == 'project context'
 
     def test_review_report_from_dict_legacy(self):
         """Old v1 dicts without review_types/backend still deserialise cleanly."""

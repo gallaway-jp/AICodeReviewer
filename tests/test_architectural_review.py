@@ -266,6 +266,25 @@ class TestArchitecturalReview:
         assert "Project Structure:" in user_message
         assert "Existing review findings" in user_message
 
+    @patch("aicodereviewer.reviewer.collect_project_context")
+    def test_user_message_contains_dependency_highlights(self, mock_collect_context):
+        response = json.dumps({"issues": []})
+        backend = _MockBackend(review_response=response)
+        files = _make_file_infos(4)
+
+        ctx = MagicMock()
+        ctx.dependency_edges = [
+            ("src/module_0.py", "src/module_1.py"),
+            ("src/module_1.py", "src/module_2.py"),
+        ]
+        mock_collect_context.return_value = ctx
+
+        architectural_review(files, [], backend, "en")
+
+        user_message = backend._review_calls[0][0]
+        assert "Dependency Highlights:" in user_message
+        assert "src/module_0.py -> src/module_1.py" in user_message
+
     def test_user_message_contains_findings_summary(self):
         """Existing issues should be summarised in the prompt."""
         response = json.dumps({"issues": []})
