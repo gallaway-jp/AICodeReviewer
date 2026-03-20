@@ -20,12 +20,15 @@ Resolve / Skip / AI-Fix-Mode buttons, open the built-in editor etc.
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 
 # ── Ensure the project ``src/`` is importable ─────────────────────────────
 _project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_project_root / "src"))
+
+logger = logging.getLogger(__name__)
 
 
 def main() -> None:
@@ -54,6 +57,7 @@ def main() -> None:
     # ── 2. Build the App in testing_mode ───────────────────────────────────
     from aicodereviewer.gui.app import App
     app = App(testing_mode=True)
+    logger.info("Manual GUI test app created (lang=%s, theme=%s)", args.lang, args.theme)
 
     # ── 3. Inject sample issues into the Results tab ───────────────────────
     from aicodereviewer.gui.test_fixtures import create_sample_issues
@@ -64,6 +68,7 @@ def main() -> None:
     def _inject_results() -> None:
         app._show_issues(sample_issues)
         app.status_var.set("Manual Testing Mode — sample data loaded")
+        logger.info("Injected %d sample issues into the Results tab", len(sample_issues))
 
     app.after(200, _inject_results)
 
@@ -86,9 +91,11 @@ def main() -> None:
         # Select some review types
         for key, var in app.type_vars.items():
             var.set(key in {"security", "performance", "error_handling"})
+        logger.info("Preselected review types: security, performance, error_handling")
 
         # Set backend to Local LLM
         app.backend_var.set("local")
+        logger.info("Populated Review tab fields for manual testing")
 
     app.after(100, _populate_review_tab)
 

@@ -56,13 +56,13 @@ def _fix_titlebar(win: "tk.BaseWidget") -> None:
 class QueueLogHandler(logging.Handler):
     """Send log records to a :class:`queue.Queue` for GUI consumption."""
 
-    def __init__(self, log_queue: queue.Queue[str]):
+    def __init__(self, log_queue: queue.Queue[tuple[int, str]]):
         super().__init__()
         self.log_queue = log_queue
 
     def emit(self, record: logging.LogRecord):
         try:
-            self.log_queue.put_nowait(self.format(record))
+            self.log_queue.put_nowait((record.levelno, self.format(record)))
         except queue.Full:
             pass
 

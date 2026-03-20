@@ -37,6 +37,7 @@ class HealthMixin:
         backend_name = self.backend_var.get()
         config.set_value("backend", "type", backend_name)
         self._sync_review_to_menu()
+        logger.info("Backend changed to %s", backend_name)
         if not self._testing_mode:
             self._auto_health_check()
 
@@ -47,6 +48,7 @@ class HealthMixin:
         if self._testing_mode:
             if self._health_check_backend:
                 return
+            logger.info("Simulating health check for backend %s", self.backend_var.get())
             self._health_check_backend = "simulated"
             self._set_action_buttons_state("disabled")
             self.cancel_btn.configure(state="normal")

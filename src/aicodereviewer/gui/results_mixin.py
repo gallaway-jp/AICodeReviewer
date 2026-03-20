@@ -205,6 +205,7 @@ class ResultsTabMixin:
     # ══════════════════════════════════════════════════════════════════════
 
     def _show_issues(self, issues: List[ReviewIssue]):
+        logger.info("Displaying %d issues on the Results tab", len(issues))
         self._issues = issues
         for w in self.results_frame.winfo_children():
             w.destroy()

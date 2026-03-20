@@ -43,6 +43,8 @@ from .health_mixin import HealthMixin
 
 logger = logging.getLogger(__name__)
 
+LogEntry = tuple[int, str]
+
 # Re-export for backward compatibility (tests, tools, etc.)
 from .widgets import _CancelledError, _fix_titlebar, InfoTooltip  # noqa: F401
 from .dialogs import FileSelector, ConfirmDialog  # noqa: F401
@@ -95,8 +97,8 @@ class App(
         self.minsize(900, 680)
 
         # Logging queue
-        self._log_queue: queue.Queue = queue.Queue(maxsize=5000)
-        self._log_lines: List[tuple] = []
+        self._log_queue: queue.Queue[LogEntry] = queue.Queue(maxsize=5000)
+        self._log_lines: List[LogEntry] = []
         self._install_log_handler()
 
         # State
@@ -210,9 +212,15 @@ class App(
     # -- LOG handling --
 
     def _install_log_handler(self):
+        level_name = (config.get("logging", "log_level", "INFO") or "INFO").upper()
+        level = getattr(logging, level_name, logging.INFO)
+        root_logger = logging.getLogger()
+        if root_logger.level == logging.NOTSET or root_logger.level > level:
+            root_logger.setLevel(level)
         self._queue_handler = QueueLogHandler(self._log_queue)
         self._queue_handler.setFormatter(logging.Formatter("%(message)s"))
-        logging.getLogger().addHandler(self._queue_handler)
+        self._queue_handler.setLevel(level)
+        root_logger.addHandler(self._queue_handler)
 
     def destroy(self):
         """Clean up log handler and stop poll loop before destroying the window."""
@@ -293,6 +301,10 @@ class App(
 
     def _show_toast(self, message: str, *, duration: int = 6000,
                     error: bool = False):
+        if error:
+            logger.warning("UI toast: %s", message)
+        else:
+            logger.info("UI toast: %s", message)
         bg = "#dc2626" if error else ("#1a7f37", "#2ea043")
         fg = "white"
 
