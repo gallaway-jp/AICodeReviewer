@@ -1,323 +1,117 @@
-# AICodeReviewer Demo - What to Expect
+# Demo Walkthrough
 
-This guide shows you what to expect when running the AICodeReviewer on the sample project.
+This is the canonical English walkthrough for the sample project.
 
-## Project Overview
+## Goal
 
-The sample project consists of 5 Python files with **40+ intentional code issues** across multiple categories.
+Use the sample project to validate that:
+- your environment is configured correctly
+- the CLI review workflow behaves as expected
+- findings, actions, and report outputs make sense before you run the tool on a real project
 
-## Running Your First Review
+## Before You Start
 
-Let's walk through a **Security Review** example:
-
-### Step 1: Start the Review
+Review the intentional issue inventory:
 
 ```bash
-python -m aicodereviewer examples/sample_project \
-  --type security \
-  --programmers "Demo User" \
-  --reviewers "AI Reviewer"
+python -c "from pathlib import Path; print((Path('examples/sample_project/README.md')).read_text(encoding='utf-8'))"
 ```
 
-### Step 2: Initial Scan Output
+Or open [sample_project/README.md](sample_project/README.md) directly.
 
-```
-Scanning examples/sample_project - Scope: entire project (Output Language: en)...
-Found 5 files to review (estimated time: 0m 40s)
-Collecting review issues from 5 files...
-```
+## Suggested First Command
 
-### Step 3: AI Analysis Per File
+Start with a dry run:
 
-```
-Analyzing examples/sample_project/user_auth.py...
-Analyzing examples/sample_project/data_processor.py...
-Analyzing examples/sample_project/calculator.py...
-Analyzing examples/sample_project/api_handler.py...
-Analyzing examples/sample_project/utils.py...
+```bash
+aicodereviewer examples/sample_project --type security --dry-run
 ```
 
-### Step 4: Interactive Issue Review
+Then run a real review:
 
-For each issue found, you'll see:
-
-```
-================================================================================
-ISSUE 1/8
-================================================================================
-File: examples/sample_project/user_auth.py
-Type: security
-Severity: critical
-Code snippet:
-def login(self, username, password):
-    """Authenticate user - SECURITY ISSUE: SQL injection vulnerability"""
-    query = f"SELECT * FROM users WHERE username='{username}' AND password='{password}'"
-    self.cursor.execute(query)
-...
-
-AI Feedback:
-CRITICAL SECURITY VULNERABILITY: SQL Injection
-
-The login method is vulnerable to SQL injection attacks. An attacker could bypass 
-authentication or extract sensitive data by providing malicious input.
-
-Example attack:
-  username: admin' OR '1'='1
-  password: anything
-
-RECOMMENDATION:
-1. Use parameterized queries with placeholders
-2. Never concatenate user input into SQL strings
-3. Use an ORM like SQLAlchemy for safer database operations
-
-Fixed code example:
-  query = "SELECT * FROM users WHERE username=? AND password=?"
-  self.cursor.execute(query, (username, password))
-
-SEVERITY: Critical - This vulnerability allows complete authentication bypass
-IMPACT: Data breach, unauthorized access, potential database compromise
-
-Status: pending
-
-Actions:
-  1. RESOLVED - Mark as resolved (program will verify)
-  2. IGNORE - Ignore this issue (requires reason)
-  3. AI FIX - Let AI fix the code
-  4. VIEW CODE - Show full file content
-
-Choose action (1-4):
+```bash
+aicodereviewer examples/sample_project --type security --programmers "Demo User" --reviewers "AI Reviewer"
 ```
 
-### Step 5: Your Choices
+## What Happens During A Review
 
-#### Option 1: Mark as Resolved
-If you fix the issue manually, choose `1`:
-```
-Choose action (1-4): 1
-✅ Issue marked as resolved!
-```
-The AI will re-analyze to verify the fix.
+1. The project is scanned.
+2. Files are selected for the chosen scope.
+3. The backend analyzes the content.
+4. Findings are presented interactively.
+5. Final reports are written using the configured output formats.
 
-#### Option 2: Ignore with Reason
-If you want to skip this issue, choose `2`:
-```
-Choose action (1-4): 2
-Enter reason for ignoring this issue: This is a demo file, not production code
-✅ Issue ignored with reason provided.
-```
+## Interactive Actions
 
-#### Option 3: Let AI Fix It
-Choose `3` to see and apply an AI-generated fix:
-```
-Choose action (1-4): 3
+During CLI review, you will see action prompts for each issue.
 
-🤖 AI suggests the following fix:
-================================================================================
---- a/user_auth.py
-+++ b/user_auth.py
-@@ -15,8 +15,8 @@ class UserAuth:
-     
-     def login(self, username, password):
--        """Authenticate user - SECURITY ISSUE: SQL injection vulnerability"""
--        query = f"SELECT * FROM users WHERE username='{username}' AND password='{password}'"
--        self.cursor.execute(query)
-+        """Authenticate user with parameterized query"""
-+        query = "SELECT * FROM users WHERE username=? AND password=?"
-+        self.cursor.execute(query, (username, password))
-         result = self.cursor.fetchone()
-         return result is not None
-================================================================================
-Apply this AI fix? (y/n): y
-📁 Backup created: user_auth.py.backup
-✅ AI fix applied successfully!
-```
+Current workflow includes:
+- `RESOLVED`
+- `IGNORE`
+- `AI FIX`
+- `VIEW CODE`
+- `SKIP`
+- force-resolve when verification fails and you choose to override
 
-#### Option 4: View Full Code
-Choose `4` to see the complete file:
-```
-Choose action (1-4): 4
+## Example Review Flow
 
-Full file content (examples/sample_project/user_auth.py):
---------------------------------------------------
-"""
-User authentication module with intentional security vulnerabilities.
-"""
-import pickle
-import hashlib
-import sqlite3
-
-[... full file content ...]
---------------------------------------------------
-```
-
-### Step 6: Continue Through All Issues
-
-The process repeats for each issue. You'll see issues for:
-- SQL injection (critical)
-- Weak MD5 hashing (high)
-- Unsafe pickle (high)
-- Hardcoded credentials (medium)
-- Predictable tokens (medium)
-
-### Step 7: Final Report
-
-After handling all issues:
-
-```
-Generating review report...
-Saved JSON review report to review_report_20251221_160530.json
-Saved human-readable summary to review_report_20251221_160530_summary.txt
-```
-
-## Expected Results by Review Type
-
-### Security Review (~5-8 issues)
-
-**Critical Issues:**
+Security reviews should surface issues such as:
 - SQL injection in `user_auth.py`
-- Unsafe pickle deserialization
+- weak password hashing
+- unsafe deserialization
+- hardcoded credentials
+- predictable tokens
 
-**High Issues:**
-- Weak MD5 password hashing
-- Bare exception handling
+Performance reviews should surface issues such as:
+- nested-loop duplicate detection
+- repeated I/O
+- inefficient list operations
 
-**Medium Issues:**
-- Hardcoded credentials
-- Predictable session tokens
+Best-practices reviews should surface issues such as:
+- magic numbers
+- naming problems
+- duplicated logic
+- global mutable state
 
-**Quality Score:** ~40/100 (Poor - Critical vulnerabilities present)
+Error-handling reviews should surface issues such as:
+- missing exception handling
+- bare `except` clauses
+- missing validation
 
----
+Maintainability reviews should surface issues such as:
+- deep nesting
+- oversized functions
+- cryptic names
 
-### Performance Review (~6-8 issues)
+## Reports
 
-**High Issues:**
-- O(n²) duplicate finding algorithm
-- String concatenation in loops
+By default, reports are timestamped. Output formats are controlled through `config.ini`.
 
-**Medium Issues:**
-- Repeated file I/O operations
-- Multiple data passes instead of single comprehension
-- Inefficient list operations
+Typical outputs include:
+- `review_report_YYYYMMDD_HHMMSS.json`
+- `review_report_YYYYMMDD_HHMMSS_summary.txt`
 
-**Low Issues:**
-- Blocking sleep calls
+If Markdown output is enabled, a Markdown report is generated too.
 
-**Quality Score:** ~55/100 (Fair - Multiple performance bottlenecks)
+You can force a stable output filename:
 
----
-
-### Best Practices Review (~8-10 issues)
-
-**Medium Issues:**
-- Magic numbers (0.175 tax rate)
-- Poor naming (f, calc, doEverything)
-- Global mutable state
-- Code duplication
-
-**Low Issues:**
-- Too many function parameters
-- Methods doing multiple things
-- Non-standard naming conventions
-
-**Quality Score:** ~60/100 (Fair - Multiple style violations)
-
----
-
-### Error Handling Review (~6-7 issues)
-
-**High Issues:**
-- No exception handling on network calls
-- Bare except clauses catching all exceptions
-
-**Medium Issues:**
-- File operations without try-catch
-- No input validation
-- Assuming data structure without checks
-
-**Quality Score:** ~50/100 (Fair - Missing critical error handling)
-
----
-
-### Maintainability Review (~3-5 issues)
-
-**High Issues:**
-- Deep nested conditionals (5+ levels)
-- Very long functions (50+ lines, multiple responsibilities)
-
-**Medium Issues:**
-- Cryptic variable names (a, b, c, x, y, z)
-- Complex logic without documentation
-
-**Quality Score:** ~65/100 (Fair - Some maintainability concerns)
-
----
-
-## Summary Report Example
-
-After completing a review, the summary file will look like:
-
-```
-AI Code Review Report
-==================================================
-
-Project: examples/sample_project
-Review Type: security
-Scope: project
-Files Scanned: 5
-Quality Score: 42/100
-Programmers: Demo User
-Reviewers: AI Reviewer
-Generated: 2025-12-21 16:05:30
-Language: en
-
-Issues Summary:
-------------------------------
-Resolved: 2
-Ignored: 1
-Pending: 5
-
-Detailed Issues:
-==================================================
-
-Issue 1:
-  File: examples/sample_project/user_auth.py
-  Type: security
-  Severity: critical
-  Status: resolved
-  Description: Review feedback for user_auth.py
-  Code: def login(self, username, password):
-    """Authenticate user - SECURITY ISSUE: SQL injection vulnerability"""
-    query = f"SELECT * FROM users WHERE username='{username}' AND password='{password}'"...
-  AI Feedback: CRITICAL SECURITY VULNERABILITY: SQL Injection
-
-The login method is vulnerable to SQL injection attacks...
-
-[... continues for all issues ...]
+```bash
+aicodereviewer examples/sample_project --type performance --programmers Demo --reviewers Reviewer --output examples/demo_outputs/performance.json
 ```
 
-## Tips for Demo
+## Suggested Demo Sequence
 
-1. **Start with Security** - Shows the most dramatic findings (critical vulnerabilities)
-2. **Try AI Fix** - Demonstrates the automated fix generation
-3. **Compare Review Types** - Run multiple types to see different perspectives
-4. **Check Quality Scores** - Watch how they improve as you fix issues
-5. **Review Generated Reports** - See both JSON (for tools) and summary (for humans)
+1. Run `security`
+2. Run `performance`
+3. Run `best_practices`
+4. Run `error_handling`
+5. Run `maintainability`
 
-## Next Steps
+This sequence makes it easy to compare how different review types interpret the same codebase.
 
-After exploring the demo:
+## Related Guides
 
-1. **Run on real code** - Try your own projects
-2. **Customize config** - Enable parallel processing for speed
-3. **Integrate with CI/CD** - Add to your pipeline
-4. **Use diff scope** - Review pull requests: `--scope diff --commits HEAD~1..HEAD`
-5. **Try different languages** - Add `--lang ja` for Japanese output
-
-## Questions?
-
-See the main [README.md](../README.md) for:
-- Installation instructions
-- AWS Bedrock setup
-- Configuration options
-- Complete feature documentation
+- [QUICK_REFERENCE.md](QUICK_REFERENCE.md)
+- [examples/README.md](README.md)
+- [Project README](../README.md)
+- [CLI Guide](../docs/cli.md)

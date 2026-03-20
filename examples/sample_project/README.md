@@ -1,6 +1,6 @@
 # Sample Project with Intentional Code Issues
 
-This is a demonstration project containing intentional code quality issues across multiple categories to showcase the AICodeReviewer tool's capabilities.
+This is a deliberately flawed project used to demonstrate AICodeReviewer safely and predictably.
 
 ## Project Structure
 
@@ -55,23 +55,26 @@ sample_project/
 
 ## Running Reviews
 
-Use the AICodeReviewer tool to analyze these files:
+Use this project to validate one review type at a time:
 
 ```bash
 # Security review
-python -m aicodereviewer examples/sample_project --type security --programmers "Demo User" --reviewers "AI Reviewer"
+aicodereviewer examples/sample_project --type security --programmers "Demo User" --reviewers "AI Reviewer"
 
 # Performance review
-python -m aicodereviewer examples/sample_project --type performance --programmers "Demo User" --reviewers "AI Reviewer"
+aicodereviewer examples/sample_project --type performance --programmers "Demo User" --reviewers "AI Reviewer"
 
 # Best practices review
-python -m aicodereviewer examples/sample_project --type best_practices --programmers "Demo User" --reviewers "AI Reviewer"
+aicodereviewer examples/sample_project --type best_practices --programmers "Demo User" --reviewers "AI Reviewer"
 
 # Error handling review
-python -m aicodereviewer examples/sample_project --type error_handling --programmers "Demo User" --reviewers "AI Reviewer"
+aicodereviewer examples/sample_project --type error_handling --programmers "Demo User" --reviewers "AI Reviewer"
 
 # Maintainability review
-python -m aicodereviewer examples/sample_project --type maintainability --programmers "Demo User" --reviewers "AI Reviewer"
+aicodereviewer examples/sample_project --type maintainability --programmers "Demo User" --reviewers "AI Reviewer"
+
+# Dry run
+aicodereviewer examples/sample_project --type security --dry-run
 ```
 
 ## Expected Findings
@@ -82,3 +85,9 @@ The AI reviewer should identify and provide specific recommendations for all int
 - Recognize code style and best practice violations
 - Find error handling gaps
 - Suggest maintainability improvements
+
+## Related Docs
+
+- [examples/README.md](../README.md)
+- [DEMO_WALKTHROUGH.md](../DEMO_WALKTHROUGH.md)
+- [QUICK_REFERENCE.md](../QUICK_REFERENCE.md)

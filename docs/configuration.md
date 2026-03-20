@@ -1,0 +1,156 @@
+# Configuration Reference
+
+Configuration is loaded from `config.ini` in the working directory or project root.
+
+## Sections Overview
+
+| Section | Purpose |
+|---|---|
+| `backend` | Active backend selection |
+| `performance` | Rate limits, payload limits, and timeouts |
+| `processing` | Batch behavior and analysis toggles |
+| `logging` | Log level and file logging |
+| `model` | Bedrock model selection |
+| `aws` | AWS credentials and SSO settings |
+| `kiro` | WSL distro and CLI command |
+| `copilot` | CLI path, timeout, model |
+| `local_llm` | Local server URL, API mode, model, token limits |
+| `gui` | Theme, language, and saved GUI state |
+| `output` | Report output formats |
+
+## Example
+
+```ini
+[backend]
+type = local
+
+[performance]
+max_file_size_mb = 10
+max_fix_file_size_mb = 5
+min_request_interval_seconds = 6.0
+max_requests_per_minute = 10
+api_timeout_seconds = 300
+
+[processing]
+batch_size = 5
+enable_parallel_processing = false
+enable_interaction_analysis = false
+enable_architectural_review = false
+
+[logging]
+log_level = INFO
+enable_file_logging = false
+
+[local_llm]
+api_url = http://localhost:1234
+api_type = openai
+model = default
+max_tokens = 4096
+
+[output]
+formats = json,txt,md
+```
+
+## Performance
+
+Key settings:
+- `max_file_size_mb`
+- `max_fix_file_size_mb`
+- `file_cache_size`
+- `min_request_interval_seconds`
+- `max_requests_per_minute`
+- `api_timeout_seconds`
+- `connect_timeout_seconds`
+- `max_content_length`
+- `max_fix_content_length`
+
+## Processing
+
+Key settings:
+- `batch_size`
+- `enable_parallel_processing`
+- `enable_interaction_analysis`
+- `enable_architectural_review`
+
+Important distinction:
+- `enable_interaction_analysis` and `enable_architectural_review` are processing toggles, not selectable `--type` values.
+
+## Logging
+
+Key settings:
+- `log_level`
+- `enable_performance_logging`
+- `enable_file_logging`
+- `log_file`
+
+## Backend-Specific Settings
+
+### Bedrock
+
+- `model.model_id`
+- `aws.region`
+- `aws.access_key_id`
+- `aws.session_token`
+- `aws.sso_session`
+- `aws.sso_account_id`
+- `aws.sso_role_name`
+- `aws.sso_region`
+- `aws.sso_start_url`
+- `aws.sso_registration_scopes`
+
+### Kiro
+
+- `kiro.wsl_distro`
+- `kiro.cli_command`
+- `kiro.timeout`
+
+### Copilot
+
+- `copilot.copilot_path`
+- `copilot.timeout`
+- `copilot.model`
+
+### Local LLM
+
+- `local_llm.api_url`
+- `local_llm.api_type`
+- `local_llm.model`
+- `local_llm.api_key`
+- `local_llm.timeout`
+- `local_llm.max_tokens`
+
+Supported `api_type` values:
+- `lmstudio`
+- `ollama`
+- `openai`
+- `anthropic`
+
+## GUI Settings
+
+Common persisted fields:
+- `gui.theme`
+- `gui.language`
+- `gui.review_language`
+- `gui.editor_command`
+- `gui.project_path`
+- `gui.programmers`
+- `gui.reviewers`
+- `gui.spec_file`
+- `gui.review_types`
+- `gui.file_select_mode`
+- `gui.selected_files`
+
+## Output Formats
+
+`output.formats` accepts a comma-separated list such as:
+
+```ini
+[output]
+formats = json,txt,md
+```
+
+## Related Guides
+
+- [Backend Guide](backends.md)
+- [Reports and Outputs](reports.md)
+- [Troubleshooting](troubleshooting.md)

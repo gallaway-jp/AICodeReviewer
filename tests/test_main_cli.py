@@ -76,6 +76,27 @@ def test_happy_path_exits_when_no_files(monkeypatch):
     ])
 
 
+def test_dry_run_does_not_require_backend(monkeypatch):
+    """CLI dry-run should proceed without creating a backend client."""
+    create_backend_called = False
+
+    def _fake_create_backend(_name):
+        nonlocal create_backend_called
+        create_backend_called = True
+        raise AssertionError("create_backend should not be called for dry-run")
+
+    monkeypatch.setattr(cli, "create_backend", _fake_create_backend)
+    monkeypatch.setattr(cli, "scan_project_with_scope", lambda path, scope, diff_file=None, commits=None: ["./proj/file.py"])
+
+    run_main_with_args([
+        "./proj",
+        "--type", "security",
+        "--dry-run",
+    ])
+
+    assert create_backend_called is False
+
+
 def test_parse_review_types_single():
     """Single type string returns a one-element list."""
     result = cli._parse_review_types("security")

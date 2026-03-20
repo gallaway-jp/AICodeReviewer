@@ -1,0 +1,70 @@
+# Contributing
+
+This project accepts changes to code, tests, docs, and examples. The documentation revamp expects contributors to keep docs aligned with behavior.
+
+## Development Setup
+
+```bash
+git clone <repo-url>
+cd AICodeReviewer
+pip install -e ".[all]"
+```
+
+## Test Commands
+
+Run the full test suite:
+
+```bash
+pytest -v
+```
+
+Run a focused test file:
+
+```bash
+pytest tests/test_scanner.py -v
+```
+
+Manual GUI validation:
+
+```bash
+python tools/manual_test_gui.py
+```
+
+## Documentation Update Expectations
+
+When you change behavior, update the affected docs in the same change set.
+
+Typical examples:
+- new CLI flag or changed default -> update [CLI Guide](cli.md) and root `README.md`
+- new backend behavior -> update [Backend Guide](backends.md)
+- new settings or defaults -> update [Configuration Reference](configuration.md)
+- GUI workflow change -> update [GUI Guide](gui.md)
+- new review type or changed semantics -> update [Review Types Reference](review-types.md)
+
+If the change is release-relevant, also update:
+- [Release Notes](../RELEASE_NOTES.md)
+- [Release Process](release-process.md)
+
+## Source of Truth
+
+Use these as the primary references when editing docs:
+- `src/aicodereviewer/main.py`
+- `src/aicodereviewer/config.py`
+- `src/aicodereviewer/backends/base.py`
+- `src/aicodereviewer/gui/`
+- `src/aicodereviewer/reporter.py`
+- `tests/`
+
+## Docs Overhaul Spec
+
+The documentation revamp is tracked in:
+
+- `.github/specs/docs-overhaul/spec.md`
+
+Use that spec when deciding whether a docs change is complete.
+
+## Maintainer Workflow
+
+For release preparation, changelog hygiene, and validation expectations, use:
+
+- [Release Process](release-process.md)

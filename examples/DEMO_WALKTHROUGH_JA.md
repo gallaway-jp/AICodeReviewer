@@ -1,263 +1,64 @@
 # AICodeReviewer 日本語デモ
 
-このガイドでは、日本語出力モードでのAICodeReviewerの動作を示します。
+このガイドは、サンプルプロジェクトを使って日本語出力でレビューを試すための簡潔な手順です。
+
+## 目的
+
+以下を安全に確認できます。
+- 日本語出力が有効か
+- CLIレビューの対話フローが理解できるか
+- レポート生成が期待どおりか
+
+## 最初に読むもの
+
+- [sample_project/README.md](sample_project/README.md)
+- 英語版の詳細手順: [DEMO_WALKTHROUGH.md](DEMO_WALKTHROUGH.md)
+
+英語版を正本とし、この日本語ガイドは日本語レビュー実行の補助として使ってください。
 
 ## 日本語レビューの実行
 
-### コマンド例
+まずはドライラン:
 
 ```bash
-# セキュリティレビュー（日本語）
-python -m aicodereviewer examples/sample_project \
-  --type security \
-  --programmers "デモユーザー" \
-  --reviewers "AIレビュアー" \
-  --lang ja
-
-# パフォーマンスレビュー（日本語）
-python -m aicodereviewer examples/sample_project \
-  --type performance \
-  --programmers "デモユーザー" \
-  --reviewers "AIレビュアー" \
-  --lang ja
-
-# ベストプラクティスレビュー（日本語）
-python -m aicodereviewer examples/sample_project \
-  --type best_practices \
-  --programmers "デモユーザー" \
-  --reviewers "AIレビュアー" \
-  --lang ja
+aicodereviewer examples/sample_project --type security --lang ja --dry-run
 ```
 
-## 日本語での出力例
+実際のレビュー:
 
-### セキュリティレビュー
-
-```
-================================================================================
-問題 1/8
-================================================================================
-ファイル: examples/sample_project/user_auth.py
-タイプ: security
-深刻度: critical
-コードスニペット:
-def login(self, username, password):
-    """Authenticate user - SECURITY ISSUE: SQL injection vulnerability"""
-    query = f"SELECT * FROM users WHERE username='{username}' AND password='{password}'"
-    self.cursor.execute(query)
-...
-
-AIフィードバック:
-重大なセキュリティ脆弱性: SQLインジェクション
-
-loginメソッドにSQLインジェクション攻撃の脆弱性があります。攻撃者は悪意のある
-入力を提供することで、認証をバイパスしたり、機密データを抽出したりできます。
-
-攻撃例:
-  ユーザー名: admin' OR '1'='1
-  パスワード: anything
-
-推奨事項:
-1. プレースホルダーを使用したパラメータ化クエリを使用してください
-2. ユーザー入力をSQL文字列に連結しないでください
-3. SQLAlchemyなどのORMを使用して、より安全なデータベース操作を行ってください
-
-修正コード例:
-  query = "SELECT * FROM users WHERE username=? AND password=?"
-  self.cursor.execute(query, (username, password))
-
-深刻度: 致命的 - この脆弱性により認証を完全にバイパスできます
-影響: データ漏洩、不正アクセス、データベース侵害の可能性
-
-ステータス: pending
-
-アクション:
-  1. 解決済み - 解決済みとしてマークする（プログラムが検証します）
-  2. 無視 - この問題を無視する（理由が必要です）
-  3. AI修正 - AIにコードを修正させる
-  4. コード表示 - ファイル全体を表示する
-
-アクションを選択 (1-4):
+```bash
+aicodereviewer examples/sample_project --type security --programmers "デモユーザー" --reviewers "AIレビュアー" --lang ja
 ```
 
-### パフォーマンスレビュー
+## 日本語レビューで確認したいポイント
 
-```
-================================================================================
-問題 2/8
-================================================================================
-ファイル: examples/sample_project/data_processor.py
-タイプ: performance
-深刻度: high
-コードスニペット:
-def find_duplicates(self, numbers):
-    """PERFORMANCE ISSUE: Nested loops with O(n²) complexity"""
-    duplicates = []
-    for i in range(len(numbers)):
-        for j in range(len(numbers)):
-            if i != j and numbers[i] == numbers[j]:
-...
+- 問題の説明が日本語で出ること
+- 深刻度とタイプが理解しやすいこと
+- 対話アクションがレビューの流れに沿っていること
 
-AIフィードバック:
-パフォーマンス問題: O(n²)の計算量
+## 対話アクション
 
-このfind_duplicatesメソッドは二重ループを使用しており、データ量が増えると
-処理時間が二次関数的に増加します。大規模なデータセットでは非常に遅くなります。
+現在のCLIフローでは、以下の操作を確認できます。
+- `RESOLVED`
+- `IGNORE`
+- `AI FIX`
+- `VIEW CODE`
+- `SKIP`
+- 検証失敗時の強制解決
 
-現在の実装:
-- 時間計算量: O(n²)
-- 10,000件のデータで約1億回の比較が必要
-- 実行時間: 数秒から数分
+## 代表的な検出例
 
-推奨される改善:
-1. setデータ構造を使用してO(n)の計算量に改善
-2. Counterクラスを使用してより効率的に重複をカウント
+- `security`: SQLインジェクション、弱いハッシュ、危険なデシリアライズ
+- `performance`: O(n^2)アルゴリズム、無駄なI/O、非効率な処理
+- `best_practices`: マジックナンバー、命名、重複ロジック
+- `error_handling`: 例外処理不足、bare except、入力検証不足
+- `maintainability`: 深いネスト、長すぎる関数、読みにくい変数名
 
-修正コード例:
-  from collections import Counter
-  def find_duplicates(self, numbers):
-      counter = Counter(numbers)
-      return [num for num, count in counter.items() if count > 1]
+## 関連ガイド
 
-期待される改善:
-- 時間計算量: O(n)
-- 10,000件のデータで10,000回の操作のみ
-- 実行時間: ミリ秒単位
-
-深刻度: 高 - 大規模データでシステムが著しく遅くなります
-影響: ユーザーエクスペリエンスの低下、サーバーリソースの無駄遣い
-
-ステータス: pending
-```
-
-### ベストプラクティスレビュー
-
-```
-================================================================================
-問題 3/8
-================================================================================
-ファイル: examples/sample_project/calculator.py
-タイプ: best_practices
-深刻度: medium
-コードスニペット:
-def calculate_tax(amount):
-    return amount * 0.175
-...
-
-AIフィードバック:
-ベストプラクティス違反: マジックナンバー
-
-税率の値（0.175）がハードコードされており、コードの可読性と保守性を低下させています。
-
-問題点:
-1. 0.175が何を意味するのか明確ではない（17.5%の税率）
-2. 税率が変更された場合、コード全体を検索して変更する必要がある
-3. 異なる税率を使用する場合に柔軟性がない
-
-推奨事項:
-1. 名前付き定数として定義する
-2. 定数名は大文字で記述する（Pythonの慣例）
-3. ドキュメンテーションコメントを追加する
-
-修正コード例:
-  # 消費税率（17.5%）
-  TAX_RATE = 0.175
-  
-  def calculate_tax(amount):
-      """税額を計算する
-      
-      Args:
-          amount: 税抜き金額
-      
-      Returns:
-          float: 税額
-      """
-      return amount * TAX_RATE
-
-追加の改善提案:
-- 税率を設定ファイルから読み込む
-- 地域や商品カテゴリに応じて異なる税率をサポート
-
-深刻度: 中 - 保守性とコード品質に影響
-影響: 技術的負債の蓄積、将来のメンテナンスコスト増加
-
-ステータス: pending
-```
-
-### エラーハンドリングレビュー
-
-```
-================================================================================
-問題 4/8
-================================================================================
-ファイル: examples/sample_project/api_handler.py
-タイプ: error_handling
-深刻度: high
-コードスニペット:
-def fetch_data(self, endpoint):
-    """ERROR HANDLING ISSUE: No exception handling"""
-    response = requests.get(f"{self.base_url}/{endpoint}")
-    return response.json()
-...
-
-AIフィードバック:
-エラーハンドリング不足: 例外処理なし
-
-このメソッドにはネットワークリクエストの例外処理がありません。
-ネットワーク障害、タイムアウト、無効なレスポンスなどでアプリケーションがクラッシュします。
-
-発生する可能性のあるエラー:
-1. requests.exceptions.ConnectionError - ネットワーク接続の問題
-2. requests.exceptions.Timeout - リクエストタイムアウト
-3. requests.exceptions.HTTPError - HTTPステータスエラー（404, 500等）
-4. ValueError - JSONパースエラー（無効なレスポンス）
-
-推奨される改善:
-1. try-exceptブロックで例外をキャッチ
-2. 適切なタイムアウト設定を追加
-3. HTTPステータスコードを確認
-4. 詳細なエラーログを記録
-5. デフォルト値またはNoneを返す
-
-修正コード例:
-  import logging
-  
-  def fetch_data(self, endpoint):
-      """APIからデータを取得する（例外処理付き）"""
-      try:
-          response = requests.get(
-              f"{self.base_url}/{endpoint}",
-              timeout=10
-          )
-          response.raise_for_status()
-          return response.json()
-      except requests.exceptions.Timeout:
-          logging.error(f"タイムアウト: {endpoint}")
-          return None
-      except requests.exceptions.HTTPError as e:
-          logging.error(f"HTTPエラー: {e.response.status_code}")
-          return None
-      except requests.exceptions.RequestException as e:
-          logging.error(f"リクエストエラー: {e}")
-          return None
-      except ValueError as e:
-          logging.error(f"JSONパースエラー: {e}")
-          return None
-
-深刻度: 高 - 本番環境でアプリケーションクラッシュを引き起こす可能性
-影響: ユーザーエクスペリエンスの低下、サービスの信頼性低下
-
-ステータス: pending
-```
-
-### 保守性レビュー
-
-```
-================================================================================
-問題 5/8
-================================================================================
-ファイル: examples/sample_project/utils.py
-タイプ: maintainability
+- [QUICK_REFERENCE.md](QUICK_REFERENCE.md)
+- [Project README](../README.md)
+- [CLI Guide](../docs/cli.md)
 深刻度: high
 コードスニペット:
 def check_eligibility(age, income, credit_score, employment_status, has_collateral):

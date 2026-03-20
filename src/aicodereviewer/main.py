@@ -182,7 +182,7 @@ def _run_review(args: argparse.Namespace, review_types: list, target_lang: str) 
             logger.error(t("cli.spec_read_error", error=exc))
             return
 
-    if client is None:
+    if client is None and not args.dry_run:
         logger.error("Failed to create backend '%s'; cannot run review.", backend_name)
         return
 

@@ -1,101 +1,78 @@
-# AICodeReviewer v2.0.1
+# Release Notes
 
-Maintenance release with UX improvements and bug fixes.
+This file records notable product changes by release.
 
-## New Features
-- **AI Fix batch mode** – select multiple issues and generate fixes in batch from the Results tab
-- **Diff preview** – preview proposed code changes before applying AI fixes
-- **Improved cancellation** – responsive Cancel button during review sessions
+Current setup, installation, backend configuration, and usage guidance live in:
+- [README.md](README.md)
+- [docs/README.md](docs/README.md)
 
-## Bug Fixes
-- Fixed WinError 206 (command line too long) when using Copilot CLI for combined multi-file reviews
-- Fixed UnicodeDecodeError on Windows with cp932 encoding
-- Fixed "I didn't get a task" Copilot response for long prompts (now uses temp file)
-- Added "Fix failed" status indicator for AI fixes that fail to generate
-- Improved type annotations throughout codebase for better IDE support
+Maintainer release workflow guidance lives in:
+- [docs/release-process.md](docs/release-process.md)
 
----
+## Versioning Note
 
-# AICodeReviewer v2.0.0
-
-Major upgrade with multi-backend support, multi-type reviews, and a graphical interface.
-
-## New Features
-- **Multi-type reviews** – combine any review types in one session (`--type security,performance,testing` or `--type all`)
-- **AWS Bedrock improvements** – exponential back-off retry, lazy connection validation, multi-model support
-- **Kiro CLI backend** – run reviews via Amazon Kiro CLI through WSL with automatic Windows→WSL path translation
-- **GitHub Copilot CLI backend** – run reviews via standalone GitHub Copilot CLI (`copilot -p`) in programmatic mode
-- **CustomTkinter GUI** – full-featured graphical interface (`--gui`) with live log, results viewer, settings editor
-- **4 new review types** – `dependency`, `concurrency`, `api_design`, `data_validation` (19 total)
-- **Skip action** – leave issues pending during interactive review
-- **Force resolve** – override failed verification when you know an issue is fixed
-- **English-first messages** – all output defaults to English (Japanese via `--lang ja`)
-- **Improved reporter** – breakdowns by severity and review type in summary reports
-
-## Breaking Changes
-- `--type` now accepts comma-separated values; old single-value usage still works
-- Review types list expanded from 15 to 19
-- `BedrockClient` import path changed to `aicodereviewer.backends.bedrock.BedrockBackend` (backward-compat shim at old path)
-- Minimum Python version raised to 3.10
+This changelog preserves historical release milestones. Repository metadata such as the package version in `pyproject.toml` is the source of truth for the current package build version.
 
 ---
 
-# AICodeReviewer v0.1.0 — First Release
+## v2.0.1
 
-This is the first public release of AICodeReviewer for Windows.
+Maintenance release focused on UX improvements and reliability fixes.
 
-- Binary: `dist/AICodeReviewer.exe`
-- SHA256: `7E87BAD805F41EC90198DDDD9874D96E7F33FA7A1801E886C21026AC28B9AB31`
-- Minimum Python runtime: Not required (standalone)
-- Supported OS: Windows (x64)
+### Added
+- AI Fix batch mode from the Results tab
+- Diff preview before applying AI-generated changes
+- More responsive cancellation behavior during review sessions
 
-## Highlights
-- Single-file Windows executable built with PyInstaller
-- Multi-language code analysis (security, performance, best practices, and more)
-- Interactive workflow (confirm, ignore with reason, AI fix, view code)
-- Generates JSON + summary reports
+### Fixed
+- Windows WinError 206 for large Copilot CLI command lines
+- `UnicodeDecodeError` on Windows with `cp932` environments
+- Copilot long-prompt failure cases by routing large prompts through a temp file
+- Missing "Fix failed" status reporting for AI-fix failures
+- Type-annotation coverage improvements across the codebase
 
-## Install & Run
-1. Download `AICodeReviewer.exe` from the release assets.
-2. Optionally download `AICodeReviewer.exe.sha256` and verify:
-   ```powershell
-   Get-FileHash .\AICodeReviewer.exe -Algorithm SHA256
-   ```
-3. Run:
-   ```powershell
-   .\AICodeReviewer.exe "C:\path\to\project" --type best_practices --programmers "Alice Bob" --reviewers "Charlie"
-   ```
+---
 
-For advanced usage and options, see [README.md](README.md).
+## v2.0.0
 
-## Known Notes
-- Windows SmartScreen may warn because the executable is not code-signed. If possible, use a code signing certificate for future releases.
-- AWS profile features use Windows Credential Manager via `keyring`. Use `--set-profile`/`--clear-profile` if needed.
+Major release introducing multi-backend support, multi-type reviews, and the GUI.
 
-## Licenses
-- Project license: see [LICENSE](LICENSE)
-- Third-party notices: see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+### Added
+- Multi-type reviews in one session with comma-separated `--type` values and `--type all`
+- AWS Bedrock improvements including lazy validation and retry/backoff behavior
+- Kiro CLI backend via WSL on Windows
+- GitHub Copilot CLI backend
+- CustomTkinter GUI with review, results, settings, and log tabs
+- New review types introduced in this release: `dependency`, `concurrency`, `api_design`, `data_validation`
+- Interactive review actions for skip and force-resolve flows
+- Improved report summaries with richer severity and review-type breakdowns
 
-## Changelog
-- v0.1.0
-  - Initial Windows binary release
-  - Adds interactive review flow and multi-language scanning
-  - Includes performance and rate-limit controls via `config.ini`
+### Changed
+- English became the default output language, with Japanese still supported
+- The `--type` flag expanded from single-value usage to comma-separated multi-value usage
 
-## Screenshots
-Below are sample screenshots from the interactive workflow and reports:
+### Breaking Changes
+- Review-type inventory expanded relative to pre-2.0 releases
+- Backend import paths shifted to the `aicodereviewer.backends.*` structure
+- Minimum supported Python version was raised during the 2.0 line
 
-![Sample Project 1](https://github.com/gallaway-jp/AICodeReviewer/releases/download/v0.1.0/AICodeReviewer_sample_project_1.PNG)
-![Sample Project 2](https://github.com/gallaway-jp/AICodeReviewer/releases/download/v0.1.0/AICodeReviewer_sample_project_2.PNG)
-![Sample Project 3](https://github.com/gallaway-jp/AICodeReviewer/releases/download/v0.1.0/AICodeReviewer_sample_project_3.PNG)
-![Sample Project 4](https://github.com/gallaway-jp/AICodeReviewer/releases/download/v0.1.0/AICodeReviewer_sample_project_4.PNG)
-![Sample Project 5](https://github.com/gallaway-jp/AICodeReviewer/releases/download/v0.1.0/AICodeReviewer_sample_project_5.PNG)
-![Sample Project 6](https://github.com/gallaway-jp/AICodeReviewer/releases/download/v0.1.0/AICodeReviewer_sample_project_6.PNG)
-![Sample Project 7](https://github.com/gallaway-jp/AICodeReviewer/releases/download/v0.1.0/AICodeReviewer_sample_project_7.PNG)
-![Sample Project 8](https://github.com/gallaway-jp/AICodeReviewer/releases/download/v0.1.0/AICodeReviewer_sample_project_8.PNG)
-![Sample Project 9](https://github.com/gallaway-jp/AICodeReviewer/releases/download/v0.1.0/AICodeReviewer_sample_project_9.PNG)
-![Sample Project 10](https://github.com/gallaway-jp/AICodeReviewer/releases/download/v0.1.0/AICodeReviewer_sample_project_10.PNG)
-![Sample Project 11](https://github.com/gallaway-jp/AICodeReviewer/releases/download/v0.1.0/AICodeReviewer_sample_project_11.PNG)
-![Sample Project 12](https://github.com/gallaway-jp/AICodeReviewer/releases/download/v0.1.0/AICodeReviewer_sample_project_12.PNG)
-![Sample Project 13](https://github.com/gallaway-jp/AICodeReviewer/releases/download/v0.1.0/AICodeReviewer_sample_project_13.PNG)
-![Sample Project 14](https://github.com/gallaway-jp/AICodeReviewer/releases/download/v0.1.0/AICodeReviewer_sample_project_14.PNG)
+---
+
+## v0.1.0
+
+Initial public Windows-focused release.
+
+### Highlights
+- First public packaged release
+- Interactive review workflow for resolving, ignoring, fixing, and viewing code
+- Multi-language scanning and review support
+- JSON and summary report generation
+- Configurable performance and rate-limit behavior via `config.ini`
+
+### Historical Note
+
+The original v0.1.0 release included a Windows executable distribution. That packaging model is historical context only and is not the primary usage path documented in the current repository.
+
+### Historical Assets
+
+The original release page included screenshots and executable artifacts. Those references are intentionally not repeated here as current installation guidance.

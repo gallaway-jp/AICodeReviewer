@@ -14,19 +14,22 @@
 
 ```bash
 # Security
-python -m aicodereviewer examples/sample_project --type security --programmers "Demo" --reviewers "AI"
+aicodereviewer examples/sample_project --type security --programmers "Demo" --reviewers "AI"
 
 # Performance  
-python -m aicodereviewer examples/sample_project --type performance --programmers "Demo" --reviewers "AI"
+aicodereviewer examples/sample_project --type performance --programmers "Demo" --reviewers "AI"
 
 # Best Practices
-python -m aicodereviewer examples/sample_project --type best_practices --programmers "Demo" --reviewers "AI"
+aicodereviewer examples/sample_project --type best_practices --programmers "Demo" --reviewers "AI"
 
 # Error Handling
-python -m aicodereviewer examples/sample_project --type error_handling --programmers "Demo" --reviewers "AI"
+aicodereviewer examples/sample_project --type error_handling --programmers "Demo" --reviewers "AI"
 
 # Maintainability
-python -m aicodereviewer examples/sample_project --type maintainability --programmers "Demo" --reviewers "AI"
+aicodereviewer examples/sample_project --type maintainability --programmers "Demo" --reviewers "AI"
+
+# Dry run
+aicodereviewer examples/sample_project --type security --dry-run
 ```
 
 ## Interactive Actions
@@ -37,6 +40,8 @@ When presented with an issue:
 - **2 (IGNORE)** - Skip issue; must provide reason
 - **3 (AI FIX)** - Generate automatic fix; shows diff first
 - **4 (VIEW CODE)** - Display full file content for context
+- **5 (SKIP)** - Leave issue pending and move on
+- **Force resolve** - Available when verification fails and you intentionally override it
 
 ## Key Intentional Issues
 
@@ -114,6 +119,7 @@ After review completion:
 
 - `review_report_YYYYMMDD_HHMMSS.json` - Full structured data
 - `review_report_YYYYMMDD_HHMMSS_summary.txt` - Human-readable summary
+- Optional Markdown output if enabled in `config.ini`
 
 ## Quality Score Interpretation
 
@@ -124,3 +130,9 @@ After review completion:
 - **0-29**: Critical - Multiple critical issues
 
 The sample project should score around **40-50** before fixes due to intentional critical security issues.
+
+## Related Docs
+
+- [DEMO_WALKTHROUGH.md](DEMO_WALKTHROUGH.md)
+- [examples/README.md](README.md)
+- [CLI Guide](../docs/cli.md)
