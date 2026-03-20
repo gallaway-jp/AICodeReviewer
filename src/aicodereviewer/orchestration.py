@@ -7,7 +7,7 @@ confirmation, and report generation.
 """
 import logging
 from datetime import datetime
-from typing import Optional, List, Any, Callable, Dict, Union
+from typing import Optional, List, Any, Callable, Dict, Union, cast
 
 from .backup import cleanup_old_backups
 from .scanner import scan_project_with_scope as default_scan
@@ -36,6 +36,17 @@ CancelCheck = Callable[[], bool]
 logger = logging.getLogger(__name__)
 
 
+def _target_file_path(target_file: Any) -> str:
+    """Extract a displayable path from a scan result item."""
+    if isinstance(target_file, dict):
+        mapping = cast(dict[str, object], target_file)
+        raw_path = mapping.get("path")
+        if raw_path is not None:
+            return str(raw_path)
+        return str(mapping)
+    return str(cast(object, target_file))
+
+
 class AppRunner:
     """
     Orchestrates a complete review session.
@@ -46,13 +57,13 @@ class AppRunner:
         backend_name: Name of the active backend for report metadata.
     """
 
-    client: AIBackend
+    client: AIBackend | None
     scan_fn: ScanFunction
     backend_name: str
 
     def __init__(
         self,
-        client: AIBackend,
+        client: AIBackend | None,
         *,
         scan_fn: Optional[ScanFunction] = None,
         backend_name: str = "bedrock",
@@ -60,6 +71,7 @@ class AppRunner:
         self.client = client
         self.scan_fn = scan_fn or default_scan
         self.backend_name = backend_name
+        self._last_run_state: dict[str, Any] = {}
 
     def run(
         self,
@@ -94,6 +106,8 @@ class AppRunner:
         if path and not dry_run:
             cleanup_old_backups(path)
 
+        diff_source = (diff_file or commits) if scope == "diff" else None
+
         type_label = ", ".join(review_types)
         scope_desc = (
             t("orch.scope_project") if scope == "project"
@@ -104,7 +118,21 @@ class AppRunner:
         )
 
         target_files: List[Any] = self.scan_fn(path, scope, diff_file, commits)
+        target_paths = [_target_file_path(fi) for fi in target_files]
         if not target_files:
+            self._set_last_run_state(
+                status="no_files",
+                project_path=path or "",
+                scope=scope,
+                diff_source=diff_source,
+                files_scanned=0,
+                target_paths=[],
+                issue_count=0,
+                review_types=list(review_types),
+                language=target_lang,
+                backend=self.backend_name,
+                dry_run=dry_run,
+            )
             logger.info(t("orch.no_files"))
             return None
 
@@ -117,15 +145,31 @@ class AppRunner:
 
         # ── dry run ───────────────────────────────────────────────────────
         if dry_run:
+            self._set_last_run_state(
+                status="dry_run",
+                project_path=path or "",
+                scope=scope,
+                diff_source=diff_source,
+                files_scanned=num_files,
+                target_paths=target_paths,
+                issue_count=0,
+                review_types=list(review_types),
+                language=target_lang,
+                backend=self.backend_name,
+                dry_run=True,
+            )
             logger.info(t("orch.dry_run_header"))
             for i, fi in enumerate(target_files, 1):
-                fp = fi.get("path", fi) if isinstance(fi, dict) else fi  # type: ignore[union-attr]
+                fp = _target_file_path(fi)
                 logger.info("  %d. %s", i, fp)
             logger.info(t("orch.dry_run_total", count=num_files))
             logger.info(t("orch.dry_run_types", types=type_label))
             logger.info(t("orch.dry_run_lang", language=target_lang))
             logger.info(t("orch.dry_run_no_api"))
             return None
+
+        if self.client is None:
+            raise RuntimeError("AI backend client is required for non-dry-run review")
 
         # ── collect issues ────────────────────────────────────────────────
         logger.info(t("orch.collecting"))
@@ -140,16 +184,42 @@ class AppRunner:
         )
 
         if not issues:
+            self._set_last_run_state(
+                status="no_issues",
+                project_path=path or "",
+                scope=scope,
+                diff_source=diff_source,
+                files_scanned=num_files,
+                target_paths=target_paths,
+                issue_count=0,
+                review_types=list(review_types),
+                language=target_lang,
+                backend=self.backend_name,
+                dry_run=False,
+            )
             logger.info(t("orch.no_issues"))
             return None
 
         logger.info(t("orch.found_issues", count=len(issues)))
 
+        self._set_last_run_state(
+            status="issues_found",
+            project_path=path or "",
+            scope=scope,
+            diff_source=diff_source,
+            files_scanned=num_files,
+            target_paths=target_paths,
+            issue_count=len(issues),
+            review_types=list(review_types),
+            language=target_lang,
+            backend=self.backend_name,
+            dry_run=False,
+        )
+
         if cancel_check and cancel_check():
             return None
 
         # Store metadata for deferred report generation
-        diff_source = (diff_file or commits) if scope == "diff" else None
         self._pending_report_meta = dict(
             project_path=path or "",
             review_types=list(review_types),
@@ -184,6 +254,19 @@ class AppRunner:
         output_file: Optional[str] = None,
     ) -> Optional[str]:
         """Generate and save the report. Called by the GUI on Finalize."""
+        report = self.build_report(issues)
+        if report is None:
+            return None
+
+        out = generate_review_report(report, output_file)
+        logger.info(t("orch.complete", path=out))
+        return out
+
+    def build_report(
+        self,
+        issues: Optional[List[ReviewIssue]] = None,
+    ) -> Optional[ReviewReport]:
+        """Build a review report object without writing it to disk."""
         meta = getattr(self, "_pending_report_meta", None)
         if not meta:
             return None
@@ -193,7 +276,7 @@ class AppRunner:
 
         quality_score = calculate_quality_score(issues)
 
-        report = ReviewReport(
+        return ReviewReport(
             project_path=meta["project_path"],
             review_type=", ".join(meta["review_types"]),
             scope=meta["scope"],
@@ -209,6 +292,6 @@ class AppRunner:
             backend=meta["backend"],
         )
 
-        out = generate_review_report(report, output_file)
-        logger.info(t("orch.complete", path=out))
-        return out
+    def _set_last_run_state(self, **state: Any) -> None:
+        """Persist summary state for callers that need structured results."""
+        self._last_run_state = dict(state)

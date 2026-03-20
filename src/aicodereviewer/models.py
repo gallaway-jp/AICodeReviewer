@@ -15,6 +15,16 @@ from typing import Any
 __all__ = ["ReviewIssue", "ReviewReport", "calculate_quality_score"]
 
 
+def _empty_int_list() -> list[int]:
+    """Return an empty integer list for dataclass defaults."""
+    return []
+
+
+def _empty_str_list() -> list[str]:
+    """Return an empty string list for dataclass defaults."""
+    return []
+
+
 @dataclass
 class ReviewIssue:
     """
@@ -46,7 +56,8 @@ class ReviewIssue:
     resolution_reason: str | None = None
     resolved_at: datetime | None = None
     ai_fix_applied: str | None = None
-    related_issues: list[int] = field(default_factory=list)
+    issue_id: str | None = None
+    related_issues: list[int] = field(default_factory=_empty_int_list)
     interaction_summary: str | None = None
 
 
@@ -82,11 +93,11 @@ class ReviewReport:
     issues_found: list[ReviewIssue]
     generated_at: datetime
     language: str
-    review_types: list[str] = field(default_factory=list)
+    review_types: list[str] = field(default_factory=_empty_str_list)
     diff_source: str | None = None
     quality_score: int | None = None
-    programmers: list[str] = field(default_factory=list)
-    reviewers: list[str] = field(default_factory=list)
+    programmers: list[str] = field(default_factory=_empty_str_list)
+    reviewers: list[str] = field(default_factory=_empty_str_list)
     backend: str = "bedrock"
     interaction_analysis: str | None = None
     architecture_summary: str | None = None

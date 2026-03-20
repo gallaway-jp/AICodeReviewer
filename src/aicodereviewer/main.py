@@ -12,19 +12,39 @@ Supports:
 - GUI launcher (``--gui``)
 """
 import argparse
+import json
 import logging
+import shutil
 import sys
-from typing import Sequence
+import time
+from pathlib import Path
+from typing import Any, Callable, Sequence, cast
 
 from aicodereviewer.auth import get_system_language, set_profile_name, clear_profile
 from aicodereviewer.backends import create_backend
+from aicodereviewer.backends.health import check_backend, HealthReport
 from aicodereviewer.backends.base import REVIEW_TYPE_KEYS, REVIEW_TYPE_META
-from aicodereviewer.backup import cleanup_old_backups
+from aicodereviewer.config import config
+from aicodereviewer.fixer import apply_ai_fix
+from aicodereviewer.models import ReviewIssue, ReviewReport
 from aicodereviewer.scanner import scan_project_with_scope
 from aicodereviewer.orchestration import AppRunner
 from aicodereviewer.i18n import t, set_locale
 
 logger = logging.getLogger(__name__)
+
+SCHEMA_VERSION = 1
+TOOL_COMMANDS = {"review", "health"}
+EXIT_OK = 0
+EXIT_FAILURE = 1
+EXIT_CANCELLED = 3
+
+
+def cleanup_old_backups(path: str) -> None:
+    """Compatibility shim kept for legacy tests and integrations."""
+    from aicodereviewer.backup import cleanup_old_backups as _cleanup_old_backups
+
+    _cleanup_old_backups(path)
 
 
 def _print_console(text: str, end: str = "\n") -> None:
@@ -81,6 +101,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     target_lang = _determine_target_lang(argv)
     set_locale(target_lang)
+
+    if argv and argv[0] in TOOL_COMMANDS:
+        parser = _build_tool_parser()
+        args = parser.parse_args(argv)
+        _setup_logging()
+        return _run_tool_command(parser, args, target_lang)
 
     parser = argparse.ArgumentParser(
         description=t("cli.desc"),
@@ -164,13 +190,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     review_types = _parse_review_types(args.review_types)
 
     # ── validation ─────────────────────────────────────────────────────────
-    _validate_args(parser, args, review_types)
+    _validate_review_args(parser, args, review_types)
 
     # ── run ────────────────────────────────────────────────────────────────
     return _run_review(args, review_types, target_lang)
 
 
-def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace, review_types: list) -> None:
+def _validate_review_args(
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
+    review_types: list[str],
+) -> None:
     """Validate semantic constraints on parsed arguments."""
     if args.scope == "diff" and not args.diff_file and not args.commits:
         parser.error("--diff-file or --commits required for diff scope")
@@ -187,7 +217,7 @@ def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace, re
         parser.error("--spec-file required when using specification type")
 
 
-def _run_review(args: argparse.Namespace, review_types: list, target_lang: str) -> int:
+def _run_review(args: argparse.Namespace, review_types: list[str], target_lang: str) -> int:
     """Create the backend, load the spec file if needed, and execute the review."""
     backend_name = args.backend or "bedrock"
 
@@ -232,9 +262,417 @@ def _run_review(args: argparse.Namespace, review_types: list, target_lang: str) 
     return 0
 
 
+def _build_tool_parser() -> argparse.ArgumentParser:
+    """Build the non-interactive tool-mode parser."""
+    parser = argparse.ArgumentParser(
+        description="Non-interactive tool mode for AICodeReviewer",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    review_parser = subparsers.add_parser(
+        "review",
+        help="Run a non-interactive review and emit JSON",
+    )
+    _add_common_review_args(review_parser)
+    _add_runtime_override_args(review_parser)
+
+    health_parser = subparsers.add_parser(
+        "health",
+        help="Run backend health checks and emit JSON",
+    )
+    health_parser.add_argument(
+        "--backend",
+        choices=["bedrock", "kiro", "copilot", "local"],
+        default=None,
+        help="Backend override",
+    )
+    health_parser.add_argument(
+        "--lang",
+        choices=["en", "ja", "default"],
+        default="default",
+        help="Output language",
+    )
+    health_parser.add_argument(
+        "--json-out",
+        metavar="FILE",
+        help="Optional path to also write the JSON result",
+    )
+    _add_runtime_override_args(health_parser)
+
+    return parser
+
+
+def _add_common_review_args(parser: argparse.ArgumentParser) -> None:
+    """Add shared review arguments for tool-mode commands."""
+    parser.add_argument("path", nargs="?", help="Project directory for project-scope reviews")
+    parser.add_argument("--scope", choices=["project", "diff"], default="project")
+    parser.add_argument("--diff-file", metavar="FILE")
+    parser.add_argument("--commits", metavar="RANGE")
+    parser.add_argument("--type", dest="review_types", default="best_practices")
+    parser.add_argument("--spec-file", metavar="FILE")
+    parser.add_argument(
+        "--backend",
+        choices=["bedrock", "kiro", "copilot", "local"],
+        default=None,
+    )
+    parser.add_argument("--lang", choices=["en", "ja", "default"], default="default")
+    parser.add_argument("--output", metavar="FILE")
+    parser.add_argument("--programmers", nargs="+", metavar="NAME")
+    parser.add_argument("--reviewers", nargs="+", metavar="NAME")
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--json-out", metavar="FILE")
+    parser.add_argument("--cancel-file", metavar="FILE")
+    parser.add_argument("--timeout-seconds", type=float)
+
+
+def _add_runtime_override_args(parser: argparse.ArgumentParser) -> None:
+    """Add runtime configuration override flags for tool-mode commands."""
+    parser.add_argument("--model", metavar="MODEL")
+    parser.add_argument("--region", metavar="REGION")
+    parser.add_argument("--api-url", metavar="URL")
+    parser.add_argument("--api-type", metavar="TYPE")
+    parser.add_argument("--local-model", metavar="MODEL")
+    parser.add_argument("--copilot-model", metavar="MODEL")
+    parser.add_argument("--kiro-cli-command", metavar="CMD")
+    parser.add_argument("--timeout", type=float, metavar="SECONDS")
+
+
+def _run_tool_command(
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
+    target_lang: str,
+) -> int:
+    """Dispatch a tool-mode subcommand."""
+    if args.command == "review":
+        review_types = _parse_review_types(args.review_types)
+        _validate_review_args(parser, args, review_types)
+        return _run_review_tool_mode(args, review_types, target_lang)
+    if args.command == "health":
+        return _run_health_tool_mode(args)
+    raise ValueError(f"Unsupported tool command: {args.command}")
+
+
+def _apply_runtime_overrides(args: argparse.Namespace) -> str:
+    """Apply per-invocation config overrides and return the effective backend."""
+    backend_name = args.backend or config.get("backend", "type", "bedrock")
+
+    if args.backend:
+        config.set_value("backend", "type", args.backend)
+    if args.model:
+        config.set_value("model", "model_id", args.model)
+    if args.region:
+        config.set_value("aws", "region", args.region)
+    if args.api_url:
+        config.set_value("local_llm", "api_url", args.api_url)
+    if args.api_type:
+        config.set_value("local_llm", "api_type", args.api_type)
+    if args.local_model:
+        config.set_value("local_llm", "model", args.local_model)
+    if args.copilot_model:
+        config.set_value("copilot", "model", args.copilot_model)
+    if args.kiro_cli_command:
+        config.set_value("kiro", "cli_command", args.kiro_cli_command)
+    if args.timeout is not None:
+        timeout_value = str(args.timeout)
+        config.set_value("performance", "api_timeout_seconds", timeout_value)
+        if backend_name == "kiro":
+            config.set_value("kiro", "timeout", timeout_value)
+        elif backend_name == "copilot":
+            config.set_value("copilot", "timeout", timeout_value)
+        elif backend_name == "local":
+            config.set_value("local_llm", "timeout", timeout_value)
+
+    return backend_name
+
+
+def _build_cancel_check(
+    cancel_file: str | None,
+    timeout_seconds: float | None,
+) -> tuple[Callable[[], bool], Callable[[], str | None]]:
+    """Create a cancellable predicate backed by a file sentinel or timeout."""
+    started_at = time.monotonic()
+    cancel_path = Path(cancel_file) if cancel_file else None
+    reason: str | None = None
+
+    def check() -> bool:
+        nonlocal reason
+        if reason is not None:
+            return True
+        if cancel_path and cancel_path.exists():
+            reason = f"cancel_file:{cancel_path}"
+            return True
+        if timeout_seconds is not None and (time.monotonic() - started_at) >= timeout_seconds:
+            reason = "timeout"
+            return True
+        return False
+
+    return check, lambda: reason
+
+
+def _assign_issue_ids(issues: list[ReviewIssue]) -> None:
+    """Assign stable issue IDs for machine-readable tool workflows."""
+    for index, issue in enumerate(issues, 1):
+        if issue.issue_id:
+            continue
+        issue.issue_id = f"issue-{index:04d}"
+
+
+def _serialize_issue(issue: ReviewIssue) -> dict[str, Any]:
+    """Convert a review issue into a JSON-safe dictionary."""
+    payload = dict(issue.__dict__)
+    if issue.resolved_at is not None:
+        payload["resolved_at"] = issue.resolved_at.isoformat()
+    return payload
+
+
+def _load_json_artifact(artifact_path: str) -> dict[str, Any]:
+    """Load a JSON artifact from disk."""
+    with open(artifact_path, "r", encoding="utf-8") as fh:
+        data = json.load(fh)
+    if not isinstance(data, dict):
+        raise ValueError(f"Artifact must contain a JSON object: {artifact_path}")
+    return cast(dict[str, Any], data)
+
+
+def _load_report_from_artifact(artifact_path: str) -> ReviewReport:
+    """Load a review report from either a raw report file or review envelope."""
+    artifact = _load_json_artifact(artifact_path)
+    if isinstance(artifact.get("report"), dict):
+        return ReviewReport.from_dict(artifact["report"])
+    if "issues_found" in artifact and "project_path" in artifact:
+        return ReviewReport.from_dict(artifact)
+    raise ValueError(f"Unsupported review artifact format: {artifact_path}")
+
+
+def _artifact_kind(artifact: dict[str, Any]) -> str:
+    """Infer the artifact kind from a loaded JSON object."""
+    command = artifact.get("command")
+    if isinstance(command, str) and command:
+        return command
+    if "issues_found" in artifact and "project_path" in artifact:
+        return "review-report"
+    raise ValueError("Unsupported artifact: command/type could not be determined")
+
+
+def _flatten_issue_ids(raw_issue_ids: list[str] | None) -> list[str]:
+    """Normalize repeated --issue-id flags into a clean list."""
+    if not raw_issue_ids:
+        return []
+    return [issue_id.strip() for issue_id in raw_issue_ids if issue_id and issue_id.strip()]
+
+
+def _select_issue_ids(issues: list[ReviewIssue], selected_ids: list[str]) -> list[ReviewIssue]:
+    """Return either all issues or the selected issue subset."""
+    _assign_issue_ids(issues)
+    if not selected_ids:
+        return issues
+    selected = {issue_id for issue_id in selected_ids}
+    return [issue for issue in issues if issue.issue_id in selected]
+
+
+def _serialize_health_report(report: HealthReport) -> dict[str, Any]:
+    """Convert a backend health report to a JSON-safe dictionary."""
+    return {
+        "backend": report.backend,
+        "ready": report.ready,
+        "summary": report.summary,
+        "checks": [
+            {
+                "name": check.name,
+                "passed": check.passed,
+                "detail": check.detail,
+                "fix_hint": check.fix_hint,
+            }
+            for check in report.checks
+        ],
+    }
+
+
+def _write_json_result(payload: dict[str, Any], output_file: str | None = None) -> None:
+    """Emit structured JSON to stdout and optionally persist a copy."""
+    rendered = json.dumps(payload, ensure_ascii=False)
+    if output_file:
+        with open(output_file, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, indent=2, ensure_ascii=False)
+    _print_console(rendered)
+
+
+def _apply_fix_to_file(file_path: str, fixed_content: str) -> str:
+    """Write fixed content to disk after creating a .backup copy."""
+    backup_path = f"{file_path}.backup"
+    shutil.copy2(file_path, backup_path)
+    with open(file_path, "w", encoding="utf-8") as fh:
+        fh.write(fixed_content)
+    return backup_path
+
+
+def _load_spec_content(spec_file: str | None, dry_run: bool) -> str | None:
+    """Read specification review content when required."""
+    if not spec_file or dry_run:
+        return None
+
+    try:
+        with open(spec_file, "r", encoding="utf-8") as fh:
+            return fh.read()
+    except FileNotFoundError:
+        logger.error(t("cli.spec_not_found", path=spec_file))
+        return None
+    except Exception as exc:
+        logger.error(t("cli.spec_read_error", error=exc))
+        return None
+
+
+def _run_review_tool_mode(
+    args: argparse.Namespace,
+    review_types: list[str],
+    target_lang: str,
+) -> int:
+    """Run non-interactive review mode and emit a structured JSON envelope."""
+    backend_name = _apply_runtime_overrides(args)
+    cancel_check, get_cancel_reason = _build_cancel_check(args.cancel_file, args.timeout_seconds)
+
+    payload: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "command": "review",
+        "backend": backend_name,
+        "dry_run": bool(args.dry_run),
+        "review_types": list(review_types),
+        "scope": args.scope,
+        "path": args.path,
+        "success": False,
+        "exit_code": EXIT_FAILURE,
+    }
+
+    client = None
+    try:
+        if not args.dry_run:
+            client = create_backend(backend_name)
+
+        spec_content = _load_spec_content(args.spec_file, args.dry_run)
+        if args.spec_file and not args.dry_run and spec_content is None:
+            payload.update({
+                "status": "error",
+                "error": {"message": f"Failed to read spec file: {args.spec_file}"},
+            })
+            _write_json_result(payload, args.json_out)
+            return EXIT_FAILURE
+
+        runner = AppRunner(client, scan_fn=scan_project_with_scope, backend_name=backend_name)
+        result = runner.run(
+            path=args.path,
+            scope=args.scope,
+            diff_file=args.diff_file,
+            commits=args.commits,
+            review_types=review_types,
+            spec_content=spec_content,
+            target_lang=target_lang,
+            programmers=args.programmers or [],
+            reviewers=args.reviewers or [],
+            dry_run=args.dry_run,
+            output_file=args.output,
+            interactive=False,
+            cancel_check=cancel_check,
+        )
+
+        if cancel_check():
+            payload.update({
+                "status": "cancelled",
+                "success": False,
+                "exit_code": EXIT_CANCELLED,
+                "cancel_reason": get_cancel_reason(),
+            })
+            _write_json_result(payload, args.json_out)
+            return EXIT_CANCELLED
+
+        run_state = getattr(runner, "_last_run_state", {}) or {}
+        payload.update({
+            "files_scanned": run_state.get("files_scanned", 0),
+            "target_paths": run_state.get("target_paths", []),
+            "status": run_state.get("status", "completed"),
+        })
+
+        if args.dry_run:
+            payload.update({
+                "success": True,
+                "exit_code": EXIT_OK,
+                "report_path": None,
+                "issue_count": 0,
+                "issues": [],
+                "report": None,
+            })
+            _write_json_result(payload, args.json_out)
+            return EXIT_OK
+
+        if isinstance(result, list):
+            _assign_issue_ids(result)
+            report = runner.build_report(result)
+            report_path = runner.generate_report(result, args.output) if args.output else None
+            payload.update({
+                "status": "completed",
+                "success": True,
+                "exit_code": EXIT_OK,
+                "issue_count": len(result),
+                "issues": [_serialize_issue(issue) for issue in result],
+                "report": report.to_dict() if report is not None else None,
+                "report_path": report_path,
+            })
+            _write_json_result(payload, args.json_out)
+            return EXIT_OK
+
+        payload.update({
+            "success": True,
+            "exit_code": EXIT_OK,
+            "issue_count": 0,
+            "issues": [],
+            "report": None,
+            "report_path": None,
+        })
+        _write_json_result(payload, args.json_out)
+        return EXIT_OK
+    except Exception as exc:
+        logger.error("Tool review failed: %s", exc)
+        payload.update({
+            "status": "error",
+            "error": {"message": str(exc)},
+        })
+        _write_json_result(payload, args.json_out)
+        return EXIT_FAILURE
+
+
+def _run_health_tool_mode(args: argparse.Namespace) -> int:
+    """Run backend health checks and emit a structured JSON envelope."""
+    backend_name = _apply_runtime_overrides(args)
+
+    try:
+        report = check_backend(backend_name)
+        exit_code = EXIT_OK if report.ready else EXIT_FAILURE
+        payload: dict[str, Any] = {
+            "schema_version": SCHEMA_VERSION,
+            "command": "health",
+            "success": report.ready,
+            "exit_code": exit_code,
+            **_serialize_health_report(report),
+        }
+        _write_json_result(payload, args.json_out)
+        return exit_code
+    except Exception as exc:
+        logger.error("Tool health check failed: %s", exc)
+        payload: dict[str, Any] = {
+            "schema_version": SCHEMA_VERSION,
+            "command": "health",
+            "backend": backend_name,
+            "success": False,
+            "exit_code": EXIT_FAILURE,
+            "status": "error",
+            "error": {"message": str(exc)},
+        }
+        _write_json_result(payload, args.json_out)
+        return EXIT_FAILURE
+
+
 # ── helpers ────────────────────────────────────────────────────────────────
 
-def _parse_review_types(raw: str) -> list:
+def _parse_review_types(raw: str) -> list[str]:
     """
     Parse a comma-separated (or 'all') review type string.
 
@@ -243,8 +681,8 @@ def _parse_review_types(raw: str) -> list:
     parts = [p.strip().lower() for p in raw.replace("+", ",").split(",") if p.strip()]
     if "all" in parts:
         return list(REVIEW_TYPE_KEYS)
-    seen = set()
-    result = []
+    seen: set[str] = set()
+    result: list[str] = []
     for p in parts:
         if p in REVIEW_TYPE_KEYS and p not in seen:
             result.append(p)
