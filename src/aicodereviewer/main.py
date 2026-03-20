@@ -34,7 +34,7 @@ from aicodereviewer.i18n import t, set_locale
 logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 1
-TOOL_COMMANDS = {"review", "health"}
+TOOL_COMMANDS = {"review", "health", "fix-plan", "apply-fixes"}
 EXIT_OK = 0
 EXIT_FAILURE = 1
 EXIT_CANCELLED = 3
@@ -299,6 +299,29 @@ def _build_tool_parser() -> argparse.ArgumentParser:
     )
     _add_runtime_override_args(health_parser)
 
+    fix_plan_parser = subparsers.add_parser(
+        "fix-plan",
+        help="Generate a non-interactive AI fix plan from a review artifact",
+    )
+    fix_plan_parser.add_argument("--report-file", required=True, metavar="FILE")
+    fix_plan_parser.add_argument("--issue-id", action="append", dest="issue_ids", default=[])
+    fix_plan_parser.add_argument(
+        "--backend",
+        choices=["bedrock", "kiro", "copilot", "local"],
+        default=None,
+    )
+    fix_plan_parser.add_argument("--lang", choices=["en", "ja", "default"], default="default")
+    fix_plan_parser.add_argument("--json-out", metavar="FILE")
+    _add_runtime_override_args(fix_plan_parser)
+
+    apply_fixes_parser = subparsers.add_parser(
+        "apply-fixes",
+        help="Apply generated fixes from a fix-plan artifact",
+    )
+    apply_fixes_parser.add_argument("--plan-file", required=True, metavar="FILE")
+    apply_fixes_parser.add_argument("--issue-id", action="append", dest="issue_ids", default=[])
+    apply_fixes_parser.add_argument("--json-out", metavar="FILE")
+
     return parser
 
 
@@ -349,6 +372,10 @@ def _run_tool_command(
         return _run_review_tool_mode(args, review_types, target_lang)
     if args.command == "health":
         return _run_health_tool_mode(args)
+    if args.command == "fix-plan":
+        return _run_fix_plan_tool_mode(args)
+    if args.command == "apply-fixes":
+        return _run_apply_fixes_tool_mode(args)
     raise ValueError(f"Unsupported tool command: {args.command}")
 
 
@@ -637,6 +664,184 @@ def _run_review_tool_mode(
         })
         _write_json_result(payload, args.json_out)
         return EXIT_FAILURE
+
+
+def _run_fix_plan_tool_mode(args: argparse.Namespace) -> int:
+    """Generate AI fixes for issues in a review artifact without writing files."""
+    backend_name = _apply_runtime_overrides(args)
+    selected_ids = _flatten_issue_ids(args.issue_ids)
+    payload: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "command": "fix-plan",
+        "backend": backend_name,
+        "report_file": args.report_file,
+        "selected_issue_ids": selected_ids,
+        "success": False,
+        "exit_code": EXIT_FAILURE,
+    }
+
+    try:
+        report = _load_report_from_artifact(args.report_file)
+        issues = list(report.issues_found)
+        selected_issues = _select_issue_ids(issues, selected_ids)
+        if not selected_issues:
+            payload.update({
+                "status": "no_matching_issues",
+                "issue_count": 0,
+                "fixes": [],
+            })
+            _write_json_result(payload, args.json_out)
+            return EXIT_FAILURE
+
+        client = create_backend(backend_name)
+        fixes: list[dict[str, Any]] = []
+        generated_count = 0
+        failed_count = 0
+
+        for issue in selected_issues:
+            review_type = issue.issue_type or (report.review_types[0] if report.review_types else report.review_type)
+            fixed_content = apply_ai_fix(issue, client, review_type, report.language)
+            if fixed_content:
+                generated_count += 1
+                fixes.append({
+                    "issue_id": issue.issue_id,
+                    "file_path": issue.file_path,
+                    "issue_type": issue.issue_type,
+                    "severity": issue.severity,
+                    "description": issue.description,
+                    "status": "generated",
+                    "proposed_content": fixed_content,
+                })
+            else:
+                failed_count += 1
+                fixes.append({
+                    "issue_id": issue.issue_id,
+                    "file_path": issue.file_path,
+                    "issue_type": issue.issue_type,
+                    "severity": issue.severity,
+                    "description": issue.description,
+                    "status": "failed",
+                    "proposed_content": None,
+                })
+
+        success = generated_count > 0
+        payload.update({
+            "status": "completed" if failed_count == 0 else "partial",
+            "success": success,
+            "exit_code": EXIT_OK if success else EXIT_FAILURE,
+            "issue_count": len(selected_issues),
+            "generated_count": generated_count,
+            "failed_count": failed_count,
+            "fixes": fixes,
+        })
+        _write_json_result(payload, args.json_out)
+        return EXIT_OK if success else EXIT_FAILURE
+    except Exception as exc:
+        logger.error("Tool fix-plan failed: %s", exc)
+        payload.update({
+            "status": "error",
+            "error": {"message": str(exc)},
+        })
+        _write_json_result(payload, args.json_out)
+        return EXIT_FAILURE
+
+
+def _run_apply_fixes_tool_mode(args: argparse.Namespace) -> int:
+    """Apply selected fixes from a fix-plan artifact to disk with backups."""
+    selected_ids = _flatten_issue_ids(args.issue_ids)
+    payload: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "command": "apply-fixes",
+        "plan_file": args.plan_file,
+        "selected_issue_ids": selected_ids,
+        "success": False,
+        "exit_code": EXIT_FAILURE,
+    }
+
+    try:
+        plan = _load_json_artifact(args.plan_file)
+        fixes_raw = plan.get("fixes", [])
+        if not isinstance(fixes_raw, list):
+            raise ValueError("Fix-plan artifact must contain a 'fixes' list")
+
+        selected_set = set(selected_ids)
+        applicable_fixes: list[dict[str, Any]] = []
+        for item in cast(list[Any], fixes_raw):
+            if not isinstance(item, dict):
+                continue
+            fix_item = cast(dict[str, Any], item)
+            issue_id = fix_item.get("issue_id")
+            status = fix_item.get("status")
+            if selected_set and issue_id not in selected_set:
+                continue
+            if status != "generated":
+                continue
+            applicable_fixes.append(fix_item)
+
+        if not applicable_fixes:
+            payload.update({
+                "status": "no_applicable_fixes",
+                "applied_count": 0,
+                "results": [],
+            })
+            _write_json_result(payload, args.json_out)
+            return EXIT_FAILURE
+
+        results: list[dict[str, Any]] = []
+        applied_count = 0
+        failed_count = 0
+        for item in applicable_fixes:
+            issue_id = str(item.get("issue_id", ""))
+            file_path = str(item.get("file_path", ""))
+            proposed_content = item.get("proposed_content")
+            try:
+                if not file_path or not isinstance(proposed_content, str):
+                    raise ValueError("Fix entry is missing file_path or proposed_content")
+                backup_path = _apply_fix_to_file(file_path, proposed_content)
+                applied_count += 1
+                results.append({
+                    "issue_id": issue_id,
+                    "file_path": file_path,
+                    "status": "applied",
+                    "backup_path": backup_path,
+                })
+            except Exception as exc:
+                failed_count += 1
+                results.append({
+                    "issue_id": issue_id,
+                    "file_path": file_path,
+                    "status": "failed",
+                    "error": str(exc),
+                })
+
+        success = applied_count > 0 and failed_count == 0
+        payload.update({
+            "status": "completed" if failed_count == 0 else "partial",
+            "success": success,
+            "exit_code": EXIT_OK if success else EXIT_FAILURE,
+            "applied_count": applied_count,
+            "failed_count": failed_count,
+            "results": results,
+        })
+        _write_json_result(payload, args.json_out)
+        return EXIT_OK if success else EXIT_FAILURE
+    except Exception as exc:
+        logger.error("Tool apply-fixes failed: %s", exc)
+        payload.update({
+            "status": "error",
+            "error": {"message": str(exc)},
+        })
+        _write_json_result(payload, args.json_out)
+        return EXIT_FAILURE
+
+
+def _apply_fix_to_file(file_path: str, fixed_content: str) -> str:
+    """Write fixed content to disk after creating a .backup copy."""
+    backup_path = f"{file_path}.backup"
+    shutil.copy2(file_path, backup_path)
+    with open(file_path, "w", encoding="utf-8") as fh:
+        fh.write(fixed_content)
+    return backup_path
 
 
 def _run_health_tool_mode(args: argparse.Namespace) -> int:

@@ -242,3 +242,168 @@ def test_tool_health_applies_runtime_overrides(monkeypatch, capsys):
     assert ("local_llm", "timeout", "12.0") in set_calls
 
 
+def test_tool_fix_plan_generates_fixes_from_report_artifact(monkeypatch, capsys, tmp_path):
+    report_path = tmp_path / "report.json"
+    report = ReviewReport(
+        project_path=str(tmp_path),
+        review_type="security",
+        scope="project",
+        total_files_scanned=1,
+        issues_found=[
+            ReviewIssue(
+                file_path=str(tmp_path / "example.py"),
+                issue_type="security",
+                severity="high",
+                description="Unsafe pattern",
+                code_snippet="bad()",
+                ai_feedback="Use safe().",
+                issue_id="issue-0007",
+            )
+        ],
+        generated_at=datetime(2026, 3, 20, 10, 0, 0),
+        language="en",
+        review_types=["security"],
+        backend="bedrock",
+    )
+    report_path.write_text(json.dumps(report.to_dict()), encoding="utf-8")
+
+    monkeypatch.setattr(cli, "create_backend", lambda _name: MagicMock())
+    monkeypatch.setattr(cli, "apply_ai_fix", lambda issue, client, review_type, lang: "fixed()\n")
+
+    exit_code = run_main_with_args([
+        "fix-plan",
+        "--report-file",
+        str(report_path),
+        "--issue-id",
+        "issue-0007",
+    ])
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert exit_code == 0
+    assert payload["command"] == "fix-plan"
+    assert payload["generated_count"] == 1
+    assert payload["fixes"][0]["issue_id"] == "issue-0007"
+    assert payload["fixes"][0]["status"] == "generated"
+    assert payload["fixes"][0]["proposed_content"] == "fixed()\n"
+
+
+def test_tool_fix_plan_reads_review_envelope_artifact(monkeypatch, capsys, tmp_path):
+    report = ReviewReport(
+        project_path=str(tmp_path),
+        review_type="security",
+        scope="project",
+        total_files_scanned=1,
+        issues_found=[
+            ReviewIssue(
+                file_path=str(tmp_path / "example.py"),
+                issue_type="security",
+                severity="high",
+                description="Unsafe pattern",
+                code_snippet="bad()",
+                ai_feedback="Use safe().",
+            )
+        ],
+        generated_at=datetime(2026, 3, 20, 10, 0, 0),
+        language="en",
+        review_types=["security"],
+        backend="bedrock",
+    )
+    artifact_path = tmp_path / "review-envelope.json"
+    artifact_path.write_text(
+        json.dumps({"schema_version": 1, "command": "review", "report": report.to_dict()}),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(cli, "create_backend", lambda _name: MagicMock())
+    monkeypatch.setattr(cli, "apply_ai_fix", lambda issue, client, review_type, lang: "fixed()\n")
+
+    exit_code = run_main_with_args([
+        "fix-plan",
+        "--report-file",
+        str(artifact_path),
+    ])
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert exit_code == 0
+    assert payload["generated_count"] == 1
+    assert payload["fixes"][0]["issue_id"] == "issue-0001"
+
+
+def test_tool_apply_fixes_writes_selected_files_and_backups(capsys, tmp_path):
+    file_one = tmp_path / "one.py"
+    file_two = tmp_path / "two.py"
+    file_one.write_text("old one\n", encoding="utf-8")
+    file_two.write_text("old two\n", encoding="utf-8")
+
+    plan_path = tmp_path / "fix-plan.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "command": "fix-plan",
+                "fixes": [
+                    {
+                        "issue_id": "issue-0001",
+                        "file_path": str(file_one),
+                        "status": "generated",
+                        "proposed_content": "new one\n",
+                    },
+                    {
+                        "issue_id": "issue-0002",
+                        "file_path": str(file_two),
+                        "status": "generated",
+                        "proposed_content": "new two\n",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = run_main_with_args([
+        "apply-fixes",
+        "--plan-file",
+        str(plan_path),
+        "--issue-id",
+        "issue-0002",
+    ])
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert exit_code == 0
+    assert payload["applied_count"] == 1
+    assert file_one.read_text(encoding="utf-8") == "old one\n"
+    assert file_two.read_text(encoding="utf-8") == "new two\n"
+    assert (tmp_path / "two.py.backup").read_text(encoding="utf-8") == "old two\n"
+
+
+def test_tool_apply_fixes_reports_no_applicable_fixes(capsys, tmp_path):
+    plan_path = tmp_path / "fix-plan.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "command": "fix-plan",
+                "fixes": [
+                    {
+                        "issue_id": "issue-0001",
+                        "file_path": str(tmp_path / "one.py"),
+                        "status": "failed",
+                        "proposed_content": None,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = run_main_with_args([
+        "apply-fixes",
+        "--plan-file",
+        str(plan_path),
+    ])
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert exit_code == 1
+    assert payload["status"] == "no_applicable_fixes"
+
+
