@@ -399,6 +399,14 @@ class AIBackend(ABC):
                       ``None`` to remove a previously registered callback.
         """
 
+    def close(self) -> None:
+        """Release any backend-owned resources.
+
+        The default implementation is a no-op so stateless backends do not
+        need to override it. Backends that own processes, threads, sessions,
+        or event loops should override this method.
+        """
+
     # ── public API ─────────────────────────────────────────────────────────
 
     @abstractmethod

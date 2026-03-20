@@ -19,6 +19,7 @@ Configuration (``config.ini`` ``[local_llm]`` section)::
 import logging
 import time
 from typing import Any, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 import requests
 
@@ -54,16 +55,16 @@ class LocalLLMBackend(AIBackend):
         model: Optional[str] = None,
         api_key: Optional[str] = None,
     ):
-        # Store base URL without any path suffix (e.g., http://localhost:1234, not http://localhost:1234/v1)
-        self.api_url: str = str(
-            api_url
-            or config.get("local_llm", "api_url", "http://localhost:1234")
-        ).rstrip("/")
-
         self.api_type: str = str(
             api_type
             or config.get("local_llm", "api_type", "lmstudio")
         ).strip().lower()
+
+        raw_api_url = str(
+            api_url
+            or config.get("local_llm", "api_url", "http://localhost:1234")
+        )
+        self.api_url: str = self._normalize_api_url(raw_api_url, self.api_type)
 
         self.model: str = str(model or config.get("local_llm", "model", "default"))
         self.api_key: str = str(api_key or config.get("local_llm", "api_key", ""))
@@ -75,11 +76,45 @@ class LocalLLMBackend(AIBackend):
         self.min_request_interval: float = float(
             config.get("performance", "min_request_interval_seconds")
         )
+        self._cancel_requested: bool = False
 
         logger.info(
             "Local LLM backend: %s (type=%s, model=%s)",
             self.api_url, self.api_type, self.model,
         )
+
+    def cancel(self) -> None:
+        """Request cancellation before the next outbound HTTP call begins."""
+        self._cancel_requested = True
+
+    def close(self) -> None:
+        """Release backend state by marking the current request flow cancelled."""
+        self.cancel()
+
+    @staticmethod
+    def _normalize_api_url(api_url: str, api_type: str) -> str:
+        """Normalize configured API URLs to a consistent base form."""
+        stripped = api_url.strip().rstrip("/")
+        if not stripped:
+            return stripped
+
+        parsed = urlsplit(stripped)
+        path = parsed.path.rstrip("/")
+
+        suffixes = {
+            "lmstudio": ("/api/v1", "/v1"),
+            "openai": ("/v1",),
+            "anthropic": ("/v1",),
+            "ollama": ("/api",),
+        }.get(api_type, ())
+
+        for suffix in suffixes:
+            if path.lower().endswith(suffix):
+                path = path[:-len(suffix)]
+                break
+
+        normalized = urlunsplit((parsed.scheme, parsed.netloc, path or "", parsed.query, parsed.fragment))
+        return normalized.rstrip("/")
 
     def _get_model_to_use(self) -> str:
         """Get the actual model to use for inference.
@@ -90,6 +125,11 @@ class LocalLLMBackend(AIBackend):
         """
         if self.model != "default":
             return self.model
+
+        if self.api_type == "anthropic":
+            raise ValueError(
+                "Anthropic-compatible endpoints require an explicit model; 'default' cannot be auto-discovered."
+            )
         
         # For default model, try to get the first available model from the API
         try:
@@ -175,8 +215,9 @@ class LocalLLMBackend(AIBackend):
         Test connectivity to the local LLM server.
 
         Checks:
-            1. Server is reachable (GET /models or similar)
-            2. A short inference call succeeds
+            1. Server is reachable (GET /models or similar) when supported
+            2. For providers without a passive discovery endpoint, a minimal
+               request succeeds
         """
         try:
             if self.api_type == "lmstudio":
@@ -212,8 +253,9 @@ class LocalLLMBackend(AIBackend):
         test_payload_fn: Any,
         headers: dict[str, str],
         label: str,
+        require_inference: bool = True,
     ) -> bool:
-        """Common validation logic: discover models, then run a test inference.
+        """Common validation logic: discover models, then optionally run inference.
 
         Args:
             list_url: URL to GET the model list (empty to skip discovery).
@@ -222,6 +264,7 @@ class LocalLLMBackend(AIBackend):
             test_payload_fn: Callable ``(model_name) -> dict`` that builds the test payload.
             headers: HTTP headers for both requests.
             label: Human-readable label for log messages.
+            require_inference: Whether to perform a POST validation after discovery.
         """
         model_to_test = self.model
 
@@ -241,6 +284,9 @@ class LocalLLMBackend(AIBackend):
             except Exception as exc:
                 logger.error("Failed to list %s models: %s", label, exc)
                 return False
+
+        if not require_inference:
+            return True
 
         # Step 2 – tiny inference test
         try:
@@ -278,6 +324,7 @@ class LocalLLMBackend(AIBackend):
             },
             headers=headers,
             label="LM Studio",
+            require_inference=False,
         )
 
     def _invoke_lmstudio(self, system_prompt: str, user_message: str) -> str:
@@ -342,6 +389,7 @@ class LocalLLMBackend(AIBackend):
             },
             headers=headers,
             label="Ollama",
+            require_inference=False,
         )
 
     def _invoke_ollama(self, system_prompt: str, user_message: str) -> str:
@@ -411,10 +459,16 @@ class LocalLLMBackend(AIBackend):
             },
             headers=headers,
             label="OpenAI-compatible",
+            require_inference=False,
         )
 
     def _validate_anthropic(self) -> bool:
         """Validate an Anthropic-compatible endpoint."""
+        if self.model == "default":
+            logger.error(
+                "Anthropic-compatible endpoints require an explicit model; set local_llm.model instead of 'default'."
+            )
+            return False
         headers = self._anthropic_headers()
         return self._validate_with_model_discovery(
             list_url="",  # Anthropic endpoints don't have a /models endpoint
@@ -433,7 +487,14 @@ class LocalLLMBackend(AIBackend):
 
     def _invoke(self, system_prompt: str, user_message: str) -> str:
         """Dispatch to the appropriate API implementation."""
-        self._enforce_rate_limit()
+        try:
+            self._enforce_rate_limit()
+        except RuntimeError as exc:
+            return f"Error: {exc}"
+
+        if self._cancel_requested:
+            return "Error: Cancelled."
+
         try:
             if self.api_type == "lmstudio":
                 return self._invoke_lmstudio(system_prompt, user_message)
@@ -546,4 +607,14 @@ class LocalLLMBackend(AIBackend):
         now = time.time()
         elapsed = now - self.last_request_time
         if elapsed < self.min_request_interval:
-            time.sleep(self.min_request_interval - elapsed)
+            self._sleep_with_cancel(self.min_request_interval - elapsed)
+
+    def _sleep_with_cancel(self, duration: float) -> None:
+        """Sleep in short increments so cancellation can stop queued work."""
+        remaining = max(0.0, duration)
+        while remaining > 0:
+            if self._cancel_requested:
+                raise RuntimeError("Cancelled.")
+            sleep_chunk = min(remaining, 0.2)
+            time.sleep(sleep_chunk)
+            remaining -= sleep_chunk

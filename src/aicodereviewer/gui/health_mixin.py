@@ -288,10 +288,8 @@ class HealthMixin:
 
         def _worker():
             try:
-                import aicodereviewer.backends.models as _m
-                kiro_path = config.get("kiro", "cli_command", "kiro-cli")
+                kiro_path = config.get("kiro", "cli_command", "kiro")
                 wsl_distro = config.get("kiro", "wsl_distro", "")
-                _m._kiro_models_cache = []  # force fresh discovery
                 models = get_kiro_models(kiro_path, wsl_distro)
                 self.after(0, lambda: self._apply_kiro_models(models))
             finally:

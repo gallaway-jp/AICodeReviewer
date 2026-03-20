@@ -66,6 +66,7 @@ STRINGS: dict[str, str] = {
     "gui.val.dry_run_done":            "ドライラン完了 – ファイル一覧はログタブをご覧ください。",
     "gui.val.report_saved":           "レポート保存先: {path}",
     "gui.val.report_load_error":      "レポート読み込みエラー: {error}",
+    "gui.val.cancellation_requested": "キャンセルを受け付けました。現在のリクエストはバックエンドの応答後に停止します。",
     "gui.val.cancelled":              "キャンセルされました。",
     "gui.cancel_btn":                 "キャンセル",
 
@@ -458,6 +459,7 @@ STRINGS: dict[str, str] = {
     "gui.results.session_loaded":      "セッションを読み込みました: {count}件",
     "gui.results.session_load_fail":   "セッションの読み込みに失敗しました: {err}",
     "gui.results.session_overwrite":   "現在の結果を保存済みセッションで置き換えますか？",
+    "gui.results.finalize_unavailable": "レポート用メタデータがないため、このセッションは最終化できません。",
     "gui.results.fixed_section":      "修正済み問題",
     "gui.results.issues_section":     "問題",
     "gui.results.skip_reason_ph":     "スキップ理由を入力…",

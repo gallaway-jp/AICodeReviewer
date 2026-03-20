@@ -17,9 +17,11 @@ import os
 import re
 import subprocess
 import logging
-from typing import Optional, List, Tuple
+import time
+from typing import Callable, Optional, List, Tuple
 
 __all__ = [
+    "CancelledProcessError",
     "windows_to_wsl_path",
     "wsl_to_windows_path",
     "is_wsl_available",
@@ -29,6 +31,67 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
+
+class CancelledProcessError(Exception):
+    """Raised when a subprocess is cancelled before completion."""
+
+
+def _terminate_process(process: subprocess.Popen[str]) -> None:
+    """Terminate a subprocess and escalate to kill if needed."""
+    try:
+        process.terminate()
+        process.wait(timeout=2)
+    except Exception:
+        try:
+            process.kill()
+            process.wait(timeout=2)
+        except Exception:
+            pass
+
+
+def _run_subprocess(
+    command: List[str],
+    *,
+    timeout: int,
+    stdin_data: Optional[str],
+    creationflags: int = 0,
+    cancel_check: Optional[Callable[[], bool]] = None,
+) -> Tuple[int, str, str]:
+    """Run a subprocess with optional cancellation polling."""
+    process = subprocess.Popen(
+        command,
+        stdin=subprocess.PIPE if stdin_data is not None else None,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        creationflags=creationflags,
+    )
+
+    deadline = time.monotonic() + timeout
+    pending_input = stdin_data
+
+    while True:
+        if cancel_check and cancel_check():
+            _terminate_process(process)
+            raise CancelledProcessError()
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            _terminate_process(process)
+            raise subprocess.TimeoutExpired(command, timeout)
+
+        try:
+            stdout, stderr = process.communicate(
+                input=pending_input,
+                timeout=min(0.2, remaining),
+            )
+            return process.returncode, stdout, stderr
+        except subprocess.TimeoutExpired:
+            pending_input = None
+            continue
 
 
 def windows_to_wsl_path(windows_path: str) -> str:
@@ -152,6 +215,7 @@ def run_in_wsl(
     cwd: Optional[str] = None,
     timeout: int = 300,
     stdin_data: Optional[str] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
 ) -> Tuple[int, str, str]:
     """
     Execute a command inside WSL and capture its output.
@@ -162,6 +226,7 @@ def run_in_wsl(
         cwd: Working directory *inside* WSL (WSL path format).
         timeout: Maximum seconds to wait for the command.
         stdin_data: Optional string to pass on stdin.
+        cancel_check: Optional callable returning True when the process should be cancelled.
 
     Returns:
         Tuple of (return_code, stdout, stderr).
@@ -179,50 +244,14 @@ def run_in_wsl(
 
     logger.debug("WSL command: %s", " ".join(wsl_cmd))
 
-    # Build subprocess args - use explicit calls to avoid type issues with **kwargs
-    if os.name == "nt":
-        if stdin_data is not None:
-            result = subprocess.run(
-                wsl_cmd,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                encoding="utf-8",
-                errors="replace",
-                creationflags=subprocess.CREATE_NO_WINDOW,
-                input=stdin_data,
-            )
-        else:
-            result = subprocess.run(
-                wsl_cmd,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                encoding="utf-8",
-                errors="replace",
-                creationflags=subprocess.CREATE_NO_WINDOW,
-            )
-    else:
-        if stdin_data is not None:
-            result = subprocess.run(
-                wsl_cmd,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                encoding="utf-8",
-                errors="replace",
-                input=stdin_data,
-            )
-        else:
-            result = subprocess.run(
-                wsl_cmd,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                encoding="utf-8",
-                errors="replace",
-            )
-    return result.returncode, result.stdout, result.stderr
+    creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+    return _run_subprocess(
+        wsl_cmd,
+        timeout=timeout,
+        stdin_data=stdin_data,
+        creationflags=creationflags,
+        cancel_check=cancel_check,
+    )
 
 
 def ensure_wsl_tool(tool_name: str, distro: Optional[str] = None) -> bool:

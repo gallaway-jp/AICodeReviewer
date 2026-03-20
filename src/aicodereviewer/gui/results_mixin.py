@@ -1868,6 +1868,24 @@ class ResultsTabMixin:
                 if config.config_path else Path.cwd())
         return base / "session.json"
 
+    def _get_session_report_meta(self) -> dict[str, Any] | None:
+        runner = getattr(self, "_review_runner", None)
+        if not runner:
+            return None
+        meta = getattr(runner, "_pending_report_meta", None)
+        return dict(meta) if meta else None
+
+    def _restore_session_report_meta(self, meta: dict[str, Any] | None) -> None:
+        if not meta:
+            self._review_runner = None
+            return
+
+        from aicodereviewer.orchestration import AppRunner
+
+        runner = AppRunner(None, backend_name=meta.get("backend", "bedrock"))
+        runner._pending_report_meta = dict(meta)
+        self._review_runner = runner
+
     def _save_session(self):
         if not self._issues:
             return
@@ -1880,6 +1898,7 @@ class ResultsTabMixin:
         data = {
             "saved_at": datetime.datetime.now().isoformat(),
             "issues": [dataclasses.asdict(iss) for iss in self._issues],
+            "report_meta": self._get_session_report_meta(),
         }
         try:
             self._session_path.write_text(
@@ -1926,6 +1945,7 @@ class ResultsTabMixin:
                 t("gui.results.session_load_fail", err=str(exc)),
             )
             return
+        self._restore_session_report_meta(raw.get("report_meta"))
         self._issues = issues
         self._show_issues(issues)
         self._show_toast(t("gui.results.session_loaded", count=len(issues)))
@@ -1938,15 +1958,31 @@ class ResultsTabMixin:
 
     def _do_finalize(self):
         runner = getattr(self, "_review_runner", None)
+        if not runner:
+            if self._testing_mode:
+                self.status_var.set(t("common.ready"))
+            else:
+                message = t("gui.results.finalize_unavailable")
+                self.status_var.set(message)
+                self._show_toast(message, error=True)
+                return
+
+        report_saved = False
         if runner:
             issues = [c["issue"] for c in self._issue_cards]
             report_path = runner.generate_report(issues)
             if report_path:
                 self.status_var.set(t("gui.val.report_saved", path=report_path))
+                report_saved = True
             else:
-                self.status_var.set(t("common.ready"))
-        else:
-            self.status_var.set(t("common.ready"))
+                if self._testing_mode:
+                    self.status_var.set(t("common.ready"))
+                    report_saved = True
+                else:
+                    message = t("gui.results.finalize_unavailable")
+                    self.status_var.set(message)
+                    self._show_toast(message, error=True)
+                    return
 
         for w in self.results_frame.winfo_children():
             w.destroy()
@@ -1955,6 +1991,9 @@ class ResultsTabMixin:
         self.review_changes_btn.configure(state="disabled")
         self.finalize_btn.configure(state="disabled")
         self.save_session_btn.configure(state="disabled")
+        if report_saved:
+            self._issues = []
+            self._review_runner = None
 
         if self._testing_mode:
             def _reload_fixtures():

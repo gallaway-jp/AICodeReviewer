@@ -5,6 +5,8 @@ Tests for the LocalLLMBackend.
 Uses mocked HTTP responses to test OpenAI-compatible and
 Anthropic-compatible API paths without a running server.
 """
+import time
+
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -54,7 +56,7 @@ class TestLocalLLMConstruction:
 
     def test_creates_with_explicit_params(self):
         backend = _make_backend()
-        assert backend.api_url == "http://localhost:9999/v1"
+        assert backend.api_url == "http://localhost:9999"
         assert backend.api_type == "openai"
         assert backend.model == "test-model"
         assert backend.api_key == "test-key"
@@ -62,6 +64,18 @@ class TestLocalLLMConstruction:
     def test_api_type_anthropic(self):
         backend = _make_backend(api_type="anthropic")
         assert backend.api_type == "anthropic"
+
+    def test_openai_url_normalizes_v1_suffix(self):
+        backend = _make_backend(api_type="openai", api_url="http://localhost:9999/v1/")
+        assert backend.api_url == "http://localhost:9999"
+
+    def test_lmstudio_url_normalizes_api_v1_suffix(self):
+        backend = _make_backend(api_type="lmstudio", api_url="http://localhost:1234/api/v1/")
+        assert backend.api_url == "http://localhost:1234"
+
+    def test_ollama_url_normalizes_api_suffix(self):
+        backend = _make_backend(api_type="ollama", api_url="http://localhost:11434/api/")
+        assert backend.api_url == "http://localhost:11434"
 
 
 # ── OpenAI-compatible review ───────────────────────────────────────────────
@@ -130,7 +144,7 @@ class TestAnthropicReview:
         mock_post.return_value = _mock_response(200, {
             "content": [{"type": "text", "text": "Anthropic review"}]
         })
-        backend = _make_backend(api_type="anthropic")
+        backend = _make_backend(api_type="anthropic", model="claude-3-5-sonnet")
         result = backend.get_review("def bar(): pass", "best_practices", "en")
         assert result == "Anthropic review"
 
@@ -139,16 +153,21 @@ class TestAnthropicReview:
         mock_post.return_value = _mock_response(200, {
             "content": [{"type": "text", "text": "fixed()"}]
         })
-        backend = _make_backend(api_type="anthropic")
+        backend = _make_backend(api_type="anthropic", model="claude-3-5-sonnet")
         result = backend.get_fix("broken()", "Fix it", "security", "en")
         assert result == "fixed()"
 
     @patch("aicodereviewer.backends.local_llm.requests.post")
     def test_get_review_empty_content(self, mock_post):
         mock_post.return_value = _mock_response(200, {"content": []})
-        backend = _make_backend(api_type="anthropic")
+        backend = _make_backend(api_type="anthropic", model="claude-3-5-sonnet")
         result = backend.get_review("code", "security", "en")
         assert "Error" in result or "Empty" in result
+
+    def test_get_review_requires_explicit_anthropic_model(self):
+        backend = _make_backend(api_type="anthropic", model="default")
+        result = backend.get_review("code", "security", "en")
+        assert "require an explicit model" in result
 
 
 # ── validate_connection ────────────────────────────────────────────────────
@@ -167,6 +186,7 @@ class TestValidateConnection:
         })
         backend = _make_backend()
         assert backend.validate_connection() is True
+        mock_post.assert_not_called()
 
     @patch("aicodereviewer.backends.local_llm.requests.post")
     @patch("aicodereviewer.backends.local_llm.requests.get")
@@ -176,20 +196,38 @@ class TestValidateConnection:
         mock_post.return_value = _mock_response(503, text="Unavailable")
         backend = _make_backend()
         assert backend.validate_connection() is True
+        mock_post.assert_not_called()
+
+    @patch("aicodereviewer.backends.local_llm.requests.post")
+    @patch("aicodereviewer.backends.local_llm.requests.get")
+    def test_ollama_validate_success_does_not_infer(self, mock_get, mock_post):
+        mock_get.return_value = _mock_response(200, {
+            "models": [{"name": "llama3"}]
+        })
+        backend = _make_backend(api_type="ollama", api_url="http://localhost:11434", model="default")
+        assert backend.validate_connection() is True
+        mock_get.assert_called_once()
+        mock_post.assert_not_called()
 
     @patch("aicodereviewer.backends.local_llm.requests.post")
     def test_anthropic_validate_success(self, mock_post):
         mock_post.return_value = _mock_response(200, {
             "content": [{"type": "text", "text": "hi"}]
         })
-        backend = _make_backend(api_type="anthropic")
+        backend = _make_backend(api_type="anthropic", model="claude-3-5-sonnet")
         assert backend.validate_connection() is True
 
     @patch("aicodereviewer.backends.local_llm.requests.post")
     def test_anthropic_validate_failure(self, mock_post):
         mock_post.return_value = _mock_response(401, text="Unauthorized")
-        backend = _make_backend(api_type="anthropic")
+        backend = _make_backend(api_type="anthropic", model="claude-3-5-sonnet")
         assert backend.validate_connection() is False
+
+    @patch("aicodereviewer.backends.local_llm.requests.post")
+    def test_anthropic_validate_requires_explicit_model(self, mock_post):
+        backend = _make_backend(api_type="anthropic", model="default")
+        assert backend.validate_connection() is False
+        mock_post.assert_not_called()
 
     @patch("aicodereviewer.backends.local_llm.requests.post")
     def test_connection_error(self, mock_post):
@@ -246,10 +284,10 @@ class TestHeaders:
 class TestRateLimiting:
     """Test the rate-limiting mechanism."""
 
-    @patch("aicodereviewer.backends.local_llm.time.sleep")
+    @patch("aicodereviewer.backends.local_llm.LocalLLMBackend._sleep_with_cancel")
     @patch("aicodereviewer.backends.local_llm.time.time")
     @patch("aicodereviewer.backends.local_llm.requests.post")
-    def test_enforce_rate_limit(self, mock_post, mock_time, mock_sleep):
+    def test_enforce_rate_limit(self, mock_post, mock_time, mock_sleep_with_cancel):
         mock_post.return_value = _mock_response(200, {
             "choices": [{"message": {"content": "ok"}}]
         })
@@ -259,4 +297,32 @@ class TestRateLimiting:
         mock_time.return_value = 100.5  # Only 0.5s elapsed
 
         backend.get_review("code", "security", "en")
-        mock_sleep.assert_called_once_with(pytest.approx(1.5, abs=0.1))
+        mock_sleep_with_cancel.assert_called_once_with(pytest.approx(1.5, abs=0.1))
+
+    @patch("aicodereviewer.backends.local_llm.requests.post")
+    def test_get_review_returns_cancelled_when_cancelled_before_request(self, mock_post):
+        backend = _make_backend()
+        backend.cancel()
+
+        result = backend.get_review("code", "security", "en")
+
+        assert result == "Error: Cancelled."
+        mock_post.assert_not_called()
+
+    @patch("aicodereviewer.backends.local_llm.LocalLLMBackend._sleep_with_cancel")
+    @patch("aicodereviewer.backends.local_llm.requests.post")
+    def test_get_review_returns_cancelled_when_rate_limit_wait_is_cancelled(self, mock_post, mock_sleep_with_cancel):
+        backend = _make_backend()
+        backend.min_request_interval = 2.0
+        backend.last_request_time = time.time()
+
+        def _cancel(_duration):
+            backend.cancel()
+            raise RuntimeError("Cancelled.")
+
+        mock_sleep_with_cancel.side_effect = _cancel
+
+        result = backend.get_review("code", "security", "en")
+
+        assert result == "Error: Cancelled."
+        mock_post.assert_not_called()

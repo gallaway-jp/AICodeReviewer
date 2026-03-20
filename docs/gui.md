@@ -97,7 +97,7 @@ Capabilities:
 4. Choose the backend.
 5. Enter programmer and reviewer metadata.
 6. Start the review.
-7. Use the Results tab to inspect, filter, fix, save sessions, and finalize.
+7. Use the Results tab to inspect, filter, fix, save sessions, reload sessions, and finalize reports from the restored issue state.
 8. Use the Output Log tab if anything looks wrong or you need runtime detail.
 
 ## GUI Workflow Diagram

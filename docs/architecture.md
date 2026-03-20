@@ -174,7 +174,7 @@ sequenceDiagram
 
 ## Report Persistence Notes
 
-- GUI session save/load stores issue state only, not backend clients or pending scan inputs.
+- GUI session save/load stores issue state plus the report metadata needed to finalize a reloaded session, but it does not restore live backend clients or rerun scans.
 - Final report generation uses the in-memory issue list currently shown in the GUI, so status changes, skips, and AI-fix outcomes are reflected in the exported report.
 - Output file formats are controlled by the `output.formats` config value and may emit JSON, TXT, and Markdown in one finalize action.
 

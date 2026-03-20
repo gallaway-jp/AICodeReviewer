@@ -539,7 +539,25 @@ class ReviewTabMixin:
             self._stop_health_countdown()
             self._set_action_buttons_state("normal")
             self.status_var.set(t("gui.val.cancelled"))
+        elif self._running:
+            self.status_var.set(t("gui.val.cancellation_requested"))
         self.cancel_btn.configure(state="disabled")
+
+    def _release_review_client(self) -> None:
+        client = getattr(self, '_review_client', None)
+        self._review_client = None
+        if client is None:
+            return
+        if hasattr(client, 'set_stream_callback'):
+            try:
+                client.set_stream_callback(None)
+            except Exception as exc:
+                logger.warning("Failed to clear backend stream callback: %s", exc)
+        if hasattr(client, 'close'):
+            try:
+                client.close()
+            except Exception as exc:
+                logger.warning("Failed to close backend: %s", exc)
 
     # ── Health-check countdown ticker ─────────────────────────────────────
 
@@ -719,6 +737,9 @@ class ReviewTabMixin:
                     cancel_check=self._cancel_event.is_set,
                 )
 
+                if self._cancel_event.is_set():
+                    raise _CancelledError(t("gui.val.cancelled"))
+
                 if dry_run:
                     self.after(0, lambda: self._show_dry_run_complete())
                 elif isinstance(result, list):
@@ -737,9 +758,7 @@ class ReviewTabMixin:
                                                                 str(exc)))
             finally:
                 self._running = False
-                # Remove any streaming callback before the client is released.
-                if client is not None:
-                    client.set_stream_callback(None)
+                self._release_review_client()
                 self.after(0, self._stop_elapsed_timer)
                 self.after(0, lambda: self._set_action_buttons_state("normal"))
                 self.after(0, lambda: self.cancel_btn.configure(state="disabled"))

@@ -24,6 +24,7 @@ Install the SDK::
     in requirements).
 """
 import asyncio
+import concurrent.futures
 import logging
 import os
 import shutil
@@ -175,6 +176,51 @@ class CopilotBackend(AIBackend):
             except Exception as exc:
                 logger.warning("Error cancelling Copilot session: %s", exc)
 
+    def close(self) -> None:
+        """Shut down the Copilot client, active session, and private event loop."""
+        if getattr(self, "_loop", None) is None:
+            return
+        if self._loop.is_closed():
+            return
+
+        try:
+            if self._active_session is not None:
+                future = asyncio.run_coroutine_threadsafe(self._active_session.destroy(), self._loop)
+                try:
+                    future.result(timeout=2)
+                except Exception:
+                    pass
+                self._active_session = None
+
+            if self._client is not None:
+                future = asyncio.run_coroutine_threadsafe(self._client.stop(), self._loop)
+                try:
+                    future.result(timeout=3)
+                except Exception:
+                    pass
+                self._client = None
+
+            async def _shutdown_loop() -> None:
+                pending = [
+                    task for task in asyncio.all_tasks(self._loop)
+                    if task is not asyncio.current_task(self._loop) and not task.done()
+                ]
+                for task in pending:
+                    task.cancel()
+                if pending:
+                    await asyncio.gather(*pending, return_exceptions=True)
+
+            future = asyncio.run_coroutine_threadsafe(_shutdown_loop(), self._loop)
+            try:
+                future.result(timeout=3)
+            except Exception:
+                pass
+            self._loop.call_soon_threadsafe(self._loop.stop)
+            self._loop_thread.join(timeout=3)
+        finally:
+            if not self._loop.is_closed():
+                self._loop.close()
+
     # ── private helpers ────────────────────────────────────────────────────
 
     def _submit(self, coro: Any) -> Any:
@@ -284,7 +330,7 @@ class CopilotBackend(AIBackend):
         """Synchronous wrapper around :meth:`_run_sdk_async`."""
         try:
             return self._submit(self._run_sdk_async(system_prompt, user_message))
-        except TimeoutError:
+        except (TimeoutError, concurrent.futures.TimeoutError):
             return "Error: GitHub Copilot timed out."
         except Exception as exc:
             logger.error("Copilot backend error: %s", exc)

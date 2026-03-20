@@ -48,14 +48,14 @@ def test_rate_limit_respects_min_interval(monkeypatch, mock_session):
     client.request_count = 0
     client.max_requests_per_minute = 100
 
-    mock_sleep = MagicMock()
+    wait_mock = MagicMock()
     mock_time = MagicMock(side_effect=[101, 101])
-    monkeypatch.setattr(f"{MODULE}.time.sleep", mock_sleep)
+    monkeypatch.setattr(f"{MODULE}.BedrockBackend._sleep_with_cancel", wait_mock)
     monkeypatch.setattr(f"{MODULE}.time.time", mock_time)
 
     client._enforce_rate_limit()
 
-    mock_sleep.assert_called_once_with(5)
+    wait_mock.assert_called_once_with(5)
 
 
 def test_rate_limit_resets_minute_window(monkeypatch, mock_session):
@@ -66,14 +66,14 @@ def test_rate_limit_resets_minute_window(monkeypatch, mock_session):
     client.last_request_time = 0
     client.min_request_interval = 0
 
-    mock_sleep = MagicMock()
+    wait_mock = MagicMock()
     mock_time = MagicMock(side_effect=[100, 150])
-    monkeypatch.setattr(f"{MODULE}.time.sleep", mock_sleep)
+    monkeypatch.setattr(f"{MODULE}.BedrockBackend._sleep_with_cancel", wait_mock)
     monkeypatch.setattr(f"{MODULE}.time.time", mock_time)
 
     client._enforce_rate_limit()
 
-    mock_sleep.assert_called_once_with(50)
+    wait_mock.assert_called_once_with(50)
     assert client.request_count == 0
     assert client.window_start == 150
 
@@ -120,13 +120,12 @@ def test_get_review_success_happy_path(monkeypatch, mock_session):
     }
 
     monkeypatch.setattr(f"{MODULE}.BedrockBackend._enforce_rate_limit", lambda self: None)
-    monkeypatch.setattr(f"{MODULE}.BedrockBackend.validate_connection", lambda self: True)
-    client._validated = True
 
     result = client.get_review("code", review_type="security", lang="en")
 
     assert result == "ok"
     assert client.request_count == 1
+    assert client.client.converse.call_count == 1
 
 
 def test_get_review_retries_on_throttling(monkeypatch, mock_session):
@@ -142,14 +141,42 @@ def test_get_review_retries_on_throttling(monkeypatch, mock_session):
     ]
 
     monkeypatch.setattr(f"{MODULE}.BedrockBackend._enforce_rate_limit", lambda self: None)
-    client._validated = True
-    sleep_mock = MagicMock()
-    monkeypatch.setattr(f"{MODULE}.time.sleep", sleep_mock)
+    wait_mock = MagicMock()
+    monkeypatch.setattr(f"{MODULE}.BedrockBackend._sleep_with_cancel", wait_mock)
 
     result = client.get_review("code", review_type="security", lang="en")
 
     assert result == "ok"
-    sleep_mock.assert_called_once()
+    wait_mock.assert_called_once_with(30)
+
+
+def test_get_review_returns_cancelled_when_retry_wait_is_cancelled(monkeypatch, mock_session):
+    client = BedrockBackend()
+
+    throttling_error = ClientError(
+        {"Error": {"Code": "ThrottlingException", "Message": "Slow down"}},
+        "converse",
+    )
+    client.client.converse.side_effect = throttling_error
+
+    monkeypatch.setattr(f"{MODULE}.BedrockBackend._enforce_rate_limit", lambda self: None)
+    monkeypatch.setattr(
+        f"{MODULE}.BedrockBackend._sleep_with_cancel",
+        lambda self, duration: self.cancel(),
+    )
+
+    result = client.get_review("code", review_type="security", lang="en")
+
+    assert result == "Error: Cancelled."
+
+
+def test_get_review_returns_cancelled_when_rate_limit_wait_is_cancelled(monkeypatch, mock_session):
+    client = BedrockBackend()
+    client._cancel_requested = True
+
+    result = client.get_review("code", review_type="security", lang="en")
+
+    assert result == "Error: Cancelled."
 
 
 # ── get_fix ────────────────────────────────────────────────────────────────

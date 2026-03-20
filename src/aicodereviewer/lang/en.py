@@ -66,6 +66,7 @@ STRINGS: dict[str, str] = {
     "gui.val.dry_run_done":            "Dry run complete – see Log tab for file listing.",
     "gui.val.report_saved":           "Report saved: {path}",
     "gui.val.report_load_error":      "Error loading report: {error}",
+    "gui.val.cancellation_requested": "Cancellation requested. The current request will stop after the backend returns.",
     "gui.val.cancelled":              "Cancelled.",
     "gui.cancel_btn":                 "Cancel",
 
@@ -444,6 +445,7 @@ STRINGS: dict[str, str] = {
     "gui.results.session_loaded":      "Session loaded: {count} issues",
     "gui.results.session_load_fail":   "Failed to load session: {err}",
     "gui.results.session_overwrite":   "Replace current results with the saved session?",
+    "gui.results.finalize_unavailable": "This session cannot be finalized because report metadata is unavailable.",
     "gui.results.fixed_section":      "Fixed Issues",
     "gui.results.issues_section":     "Issues",
     "gui.results.skip_reason_ph":     "Enter reason for skipping…",

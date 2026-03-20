@@ -145,7 +145,7 @@ class Config:
 
         # ── kiro ───────────────────────────────────────────────────────────
         self._add("kiro", "wsl_distro", "")
-        self._add("kiro", "cli_command", "kiro-cli")
+        self._add("kiro", "cli_command", "kiro")
         self._add("kiro", "timeout", "300")
 
         # ── copilot ────────────────────────────────────────────────────────

@@ -227,6 +227,8 @@ class App(
         self._log_polling = False
         if hasattr(self, "_queue_handler"):
             logging.getLogger().removeHandler(self._queue_handler)
+        if hasattr(self, "_release_review_client"):
+            self._release_review_client()
         super().destroy()
 
     def _poll_log_queue(self):

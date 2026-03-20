@@ -21,6 +21,10 @@ from aicodereviewer.auth import create_aws_session
 logger = logging.getLogger(__name__)
 
 
+class _BedrockCancelRequested(Exception):
+    """Internal sentinel used to abort retry and rate-limit waits."""
+
+
 class BedrockBackend(AIBackend):
     """
     AWS Bedrock backend using the unified ``converse`` API.
@@ -56,10 +60,14 @@ class BedrockBackend(AIBackend):
             self.max_requests_per_minute: int = config.get(
                 "performance", "max_requests_per_minute"
             )
-            self._validated: bool = False
+            self._cancel_requested: bool = False
 
         except ProfileNotFound as exc:
             raise RuntimeError(f"AWS profile not found: {exc}") from exc
+
+    def cancel(self) -> None:
+        """Request cancellation for pending wait periods and retries."""
+        self._cancel_requested = True
 
     # ── AIBackend interface ────────────────────────────────────────────────
 
@@ -137,14 +145,24 @@ class BedrockBackend(AIBackend):
             sleep_time = 60 - (now - self.window_start)
             if sleep_time > 0:
                 logger.info("Rate limit reached. Sleeping %.1fs …", sleep_time)
-                time.sleep(sleep_time)
+                self._sleep_with_cancel(sleep_time)
             self.request_count = 0
             self.window_start = time.time()
 
         # Minimum interval
         elapsed = now - self.last_request_time
         if elapsed < self.min_request_interval:
-            time.sleep(self.min_request_interval - elapsed)
+            self._sleep_with_cancel(self.min_request_interval - elapsed)
+
+    def _sleep_with_cancel(self, duration: float) -> None:
+        """Sleep in short increments so GUI cancellation can break waits."""
+        remaining = max(0.0, duration)
+        while remaining > 0:
+            if self._cancel_requested:
+                raise _BedrockCancelRequested()
+            sleep_chunk = min(remaining, 0.2)
+            time.sleep(sleep_chunk)
+            remaining -= sleep_chunk
 
     def _invoke(
         self,
@@ -155,13 +173,13 @@ class BedrockBackend(AIBackend):
         _retry: int = 0,
     ) -> str:
         """Send a converse request with rate limiting and retry logic."""
-        self._enforce_rate_limit()
+        try:
+            self._enforce_rate_limit()
+        except _BedrockCancelRequested:
+            return "Error: Cancelled."
 
-        # Lazy validation on first real call
-        if not self._validated:
-            if not self.validate_connection():
-                return "Error: Backend connection validation failed."
-            self._validated = True
+        if self._cancel_requested:
+            return "Error: Cancelled."
 
         messages = [{"role": "user", "content": [{"text": user_message}]}]
         try:
@@ -182,7 +200,10 @@ class BedrockBackend(AIBackend):
             if code == "ThrottlingException" and _retry < 3:
                 wait = min(30 * (2 ** _retry), 120)
                 logger.warning("Throttled by AWS. Retrying in %ds …", wait)
-                time.sleep(wait)
+                try:
+                    self._sleep_with_cancel(wait)
+                except _BedrockCancelRequested:
+                    return "Error: Cancelled."
                 return self._invoke(
                     system_prompt, user_message, max_tokens, temperature, _retry + 1
                 )

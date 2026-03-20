@@ -8,10 +8,11 @@ inside WSL while accessing Windows-local files through ``/mnt/`` paths.
 This backend shells out to ``kiro`` inside WSL, converts Windows paths
 transparently, and parses the plain-text output.
 """
-import json
 import logging
-import tempfile
 import os
+import shlex
+import subprocess
+import time
 from typing import Optional
 
 from .base import AIBackend
@@ -21,6 +22,7 @@ from aicodereviewer.path_utils import (
     is_wsl_available,
     run_in_wsl,
     ensure_wsl_tool,
+    CancelledProcessError,
 )
 
 logger = logging.getLogger(__name__)
@@ -48,15 +50,24 @@ class KiroBackend(AIBackend):
         self.distro: Optional[str] = (
             config.get("kiro", "wsl_distro", "").strip() or None
         )
-        self.cli_cmd: str = config.get("kiro", "cli_command", "kiro-cli").strip()
+        self.cli_cmd: str = config.get("kiro", "cli_command", "kiro").strip()
         self.model: str = config.get("kiro", "model", "").strip() or None
         self.timeout: int = int(config.get("kiro", "timeout", "300"))
+        self._cancel_requested: bool = False
 
         if os.name == "nt" and not is_wsl_available():
             raise RuntimeError(
                 "WSL is not available. Kiro backend requires Windows Subsystem "
                 "for Linux. Install WSL with: wsl --install"
             )
+
+    def cancel(self) -> None:
+        """Request cancellation for the active Kiro subprocess."""
+        self._cancel_requested = True
+
+    def close(self) -> None:
+        """Release any active subprocess by requesting cancellation."""
+        self.cancel()
 
     # ── AIBackend interface ────────────────────────────────────────────────
 
@@ -111,6 +122,63 @@ class KiroBackend(AIBackend):
 
     # ── private helpers ────────────────────────────────────────────────────
 
+    def _build_bash_command(self, subcommand: str, *, file_path: Optional[str] = None) -> str:
+        """Build a bash-safe Kiro command string for execution via ``bash -lc``."""
+        parts = [self.cli_cmd, subcommand]
+        if self.model:
+            parts.extend(["--model", self.model])
+        if subcommand == "chat":
+            parts.append("--no-interactive")
+        if file_path is not None:
+            parts.append(file_path)
+        return shlex.join(parts)
+
+    def _terminate_process(self, process: subprocess.Popen[str]) -> None:
+        try:
+            process.terminate()
+            process.wait(timeout=2)
+        except Exception:
+            try:
+                process.kill()
+                process.wait(timeout=2)
+            except Exception:
+                pass
+
+    def _run_native_bash(self, bash_cmd: str, prompt: str) -> str:
+        """Run a native bash command with cancellation polling."""
+        process = subprocess.Popen(
+            ["bash", "-lc", bash_cmd],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        deadline = time.monotonic() + self.timeout
+        pending_input = prompt
+
+        while True:
+            if self._cancel_requested:
+                self._terminate_process(process)
+                raise CancelledProcessError()
+
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                self._terminate_process(process)
+                raise subprocess.TimeoutExpired(["bash", "-lc", bash_cmd], self.timeout)
+
+            try:
+                stdout, stderr = process.communicate(
+                    input=pending_input,
+                    timeout=min(0.2, remaining),
+                )
+                if process.returncode != 0:
+                    err_msg = stderr.strip() or f"Kiro exited with code {process.returncode}"
+                    return f"Error: Kiro CLI – {err_msg}"
+                return stdout.strip()
+            except subprocess.TimeoutExpired:
+                pending_input = None
+                continue
+
     def _run_kiro_prompt(self, prompt: str) -> str:
         """
         Send a prompt to Kiro CLI and capture the response.
@@ -122,8 +190,7 @@ class KiroBackend(AIBackend):
         try:
             # Build the kiro-cli invocation; use bash -lc on both platforms so
             # that ~/.local/bin (where kiro-cli lives) is always on the PATH.
-            model_flag = f" --model {self.model}" if self.model else ""
-            bash_cmd = f"{self.cli_cmd} chat{model_flag} --no-interactive"
+            bash_cmd = self._build_bash_command("chat")
 
             if os.name == "nt":
                 rc, stdout, stderr = run_in_wsl(
@@ -131,6 +198,7 @@ class KiroBackend(AIBackend):
                     distro=self.distro,
                     timeout=self.timeout,
                     stdin_data=prompt,
+                    cancel_check=lambda: self._cancel_requested,
                 )
                 if rc != 0:
                     err_msg = stderr.strip() or f"Kiro exited with code {rc}"
@@ -138,19 +206,10 @@ class KiroBackend(AIBackend):
                     return f"Error: Kiro CLI – {err_msg}"
                 return stdout.strip()
             else:
-                # Native Linux/macOS execution
-                import subprocess
-                result = subprocess.run(
-                    ["bash", "-lc", bash_cmd],
-                    input=prompt,
-                    capture_output=True,
-                    text=True,
-                    timeout=self.timeout,
-                )
-                if result.returncode != 0:
-                    err_msg = result.stderr.strip() or f"Kiro exited with code {result.returncode}"
-                    return f"Error: Kiro CLI – {err_msg}"
-                return result.stdout.strip()
+                return self._run_native_bash(bash_cmd, prompt)
+
+        except CancelledProcessError:
+            return "Error: Cancelled."
 
         except Exception as exc:
             logger.error("Kiro backend error: %s", exc)
@@ -173,8 +232,7 @@ class KiroBackend(AIBackend):
             )
             prompt = f"{system_prompt}\n\nReview the file at: {wsl_path}"
 
-            model_flag = f" --model {self.model}" if self.model else ""
-            bash_cmd = f"{self.cli_cmd} review{model_flag} {wsl_path}"
+            bash_cmd = self._build_bash_command("review", file_path=wsl_path)
 
             if os.name == "nt":
                 rc, stdout, stderr = run_in_wsl(
@@ -182,22 +240,16 @@ class KiroBackend(AIBackend):
                     distro=self.distro,
                     timeout=self.timeout,
                     stdin_data=prompt,
+                    cancel_check=lambda: self._cancel_requested,
                 )
                 if rc != 0:
                     return f"Error: Kiro CLI – {stderr.strip()}"
                 return stdout.strip()
             else:
-                import subprocess
-                result = subprocess.run(
-                    ["bash", "-lc", bash_cmd],
-                    input=prompt,
-                    capture_output=True,
-                    text=True,
-                    timeout=self.timeout,
-                )
-                if result.returncode != 0:
-                    return f"Error: Kiro CLI – {result.stderr.strip()}"
-                return result.stdout.strip()
+                return self._run_native_bash(bash_cmd, prompt)
+
+        except CancelledProcessError:
+            return "Error: Cancelled."
 
         except Exception as exc:
             logger.error("Kiro file review error: %s", exc)

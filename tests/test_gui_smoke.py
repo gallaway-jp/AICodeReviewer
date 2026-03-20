@@ -23,6 +23,8 @@ import pytest
 # Ensure src is importable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+from aicodereviewer.i18n import t
+
 # Skip the entire module if display is not available (headless CI)
 try:
     import tkinter as tk
@@ -40,7 +42,14 @@ pytestmark = pytest.mark.skipif(not HAS_DISPLAY, reason="No display available")
 def app() -> Generator[Any, None, None]:
     """Create and yield an App in testing mode, then destroy it."""
     from aicodereviewer.gui.app import App
-    application = App(testing_mode=True)
+    try:
+        application = App(testing_mode=True)
+    except tk.TclError as exc:
+        error_text = str(exc)
+        known_tcl_env_failures = ("auto.tcl", "tcl_findLibrary")
+        if any(marker in error_text for marker in known_tcl_env_failures):
+            pytest.skip(f"Tk unavailable during App setup: {exc}")
+        raise
     application.update_idletasks()
     yield application
     try:
@@ -124,6 +133,34 @@ class TestTestingMode:
     def test_reset_defaults_noop(self, app: Any) -> None:
         """_reset_defaults should return immediately in testing mode."""
         app._reset_defaults()  # Should not show confirmation dialog
+
+    def test_destroy_releases_review_client(self, app: Any) -> None:
+        """Destroying the app should close any active review backend."""
+        class _DummyClient:
+            def __init__(self) -> None:
+                self.closed = False
+
+            def set_stream_callback(self, _callback: Any) -> None:
+                return None
+
+            def close(self) -> None:
+                self.closed = True
+
+        client = _DummyClient()
+        app._review_client = client
+
+        app.destroy()
+
+        assert client.closed is True
+
+    def test_cancel_operation_sets_requested_status(self, app: Any) -> None:
+        """Cancelling a running review should report that cancellation is pending."""
+        app._running = True
+        app._review_client = None
+
+        app._cancel_operation()
+
+        assert app.status_var.get() == t("gui.val.cancellation_requested")
 
 
 class TestScopeToggle:

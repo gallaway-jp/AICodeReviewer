@@ -102,8 +102,7 @@ def backend(mock_cli):
     with patch.dict(sys.modules, {"copilot": fake_mod}):
         b = _make_backend(mock_cli)
         yield b
-    b._loop.call_soon_threadsafe(b._loop.stop)
-    b._loop_thread.join(timeout=3)
+    b.close()
 
 
 # ---------------------------------------------------------------------------
@@ -188,8 +187,7 @@ class TestGetReview:
             try:
                 assert b.get_review("some code") == custom_reply
             finally:
-                b._loop.call_soon_threadsafe(b._loop.stop)
-                b._loop_thread.join(timeout=3)
+                b.close()
 
 
 # ---------------------------------------------------------------------------
@@ -208,8 +206,7 @@ class TestGetFix:
             try:
                 assert b.get_fix("x = 1", "unused variable") == reply.strip()
             finally:
-                b._loop.call_soon_threadsafe(b._loop.stop)
-                b._loop_thread.join(timeout=3)
+                b.close()
 
     def test_returns_none_on_error(self, backend, mock_cli):
         mock_cli.create_session = AsyncMock(side_effect=RuntimeError("boom"))
@@ -278,6 +275,16 @@ class TestCancel:
         mock_sess.destroy.assert_awaited()
 
 
+class TestClose:
+    def test_close_stops_loop_thread(self, backend, mock_cli):
+        backend.get_review("x = 1")
+
+        backend.close()
+
+        assert backend._loop_thread.is_alive() is False
+        mock_cli.stop.assert_awaited()
+
+
 # ---------------------------------------------------------------------------
 # get_copilot_models
 # ---------------------------------------------------------------------------
@@ -293,9 +300,9 @@ class TestGetCopilotModels:
 
     def test_cache_returned_on_second_call(self):
         from aicodereviewer.backends import models as m
-        m._copilot_models_cache.extend(["gpt-5", "o3"])
+        m._copilot_models_cache["copilot"] = ["gpt-5", "o3"]
         with patch.object(m, "_discover_copilot_models") as mock_disc:
-            result = m.get_copilot_models()
+            result = m.get_copilot_models("copilot")
         mock_disc.assert_not_called()
         assert result == ["gpt-5", "o3"]
 
@@ -303,7 +310,7 @@ class TestGetCopilotModels:
         from aicodereviewer.backends import models as m
 
         def _fill_cache(path):
-            m._copilot_models_cache.extend(["gpt-5"])
+            m._copilot_models_cache[path] = ["gpt-5"]
             return ["gpt-5"]
 
         with patch.object(m, "_discover_copilot_models", side_effect=_fill_cache):

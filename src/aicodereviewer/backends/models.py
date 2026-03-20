@@ -3,8 +3,8 @@
 Model discovery and auto-loading for all backend types.
 
 Provides lazy-cached model list retrieval for Copilot, Bedrock, and
-local LLM backends.  Auto-loads the first available model when none are
-already running (LM Studio / Ollama) and cleans up on exit.
+local LLM backends. Model discovery is passive and does not warm, load,
+or otherwise mutate provider state.
 """
 import atexit
 import asyncio
@@ -109,7 +109,7 @@ def _resolve_copilot_exe(cli_path: str) -> str:
 
 # ── GitHub Copilot model discovery ─────────────────────────────────────────
 
-_copilot_models_cache: List[str] = []
+_copilot_models_cache: Dict[str, List[str]] = {}
 
 
 def get_copilot_models(copilot_path: str = "") -> List[str]:
@@ -119,12 +119,11 @@ def get_copilot_models(copilot_path: str = "") -> List[str]:
         copilot_path: Path to the copilot executable. If empty, uses config.
     """
     global _copilot_models_cache
-    if not _copilot_models_cache:
-        # Lazy discovery if cache is empty
-        if not copilot_path:
-            copilot_path = config.get("copilot", "copilot_path", "copilot")
+    if not copilot_path:
+        copilot_path = config.get("copilot", "copilot_path", "copilot")
+    if copilot_path not in _copilot_models_cache:
         _discover_copilot_models(copilot_path)
-    return list(_copilot_models_cache)
+    return list(_copilot_models_cache.get(copilot_path, []))
 
 
 async def _discover_copilot_models_via_sdk(copilot_path: str) -> List[str]:
@@ -176,7 +175,7 @@ def _discover_copilot_models(copilot_path: str = "copilot") -> List[str]:
 
     Replaces the old ``copilot --help`` regex approach with a proper
     JSON-RPC call via :func:`_discover_copilot_models_via_sdk`.
-    Results are cached in ``_copilot_models_cache``.
+    Results are cached in ``_copilot_models_cache`` keyed by cli path.
     """
     global _copilot_models_cache
     # On Windows, shutil.which may return a .bat/.ps1 wrapper which the SDK
@@ -192,19 +191,20 @@ def _discover_copilot_models(copilot_path: str = "copilot") -> List[str]:
         models = []
 
     if models:
-        _copilot_models_cache = models
+        _copilot_models_cache[copilot_path] = models
         logger.debug(
             "Discovered %d Copilot models via SDK: %s", len(models), models
         )
     else:
+        _copilot_models_cache[copilot_path] = []
         logger.debug("Could not discover Copilot models via SDK.")
 
-    return list(_copilot_models_cache)
+    return list(_copilot_models_cache.get(copilot_path, []))
 
 
 # ── Kiro CLI model discovery ───────────────────────────────────────────────
 
-_kiro_models_cache: List[str] = []
+_kiro_models_cache: Dict[Tuple[str, str], List[str]] = {}
 
 
 def get_kiro_models(kiro_path: str = "", wsl_distro: str = "") -> List[str]:
@@ -215,17 +215,18 @@ def get_kiro_models(kiro_path: str = "", wsl_distro: str = "") -> List[str]:
         wsl_distro: WSL distribution to use. If empty, uses config.
     """
     global _kiro_models_cache
-    if not _kiro_models_cache:
-        # Lazy discovery if cache is empty
-        if not kiro_path:
-            kiro_path = config.get("kiro", "cli_command", "kiro-cli")
-        if not wsl_distro:
-            wsl_distro = config.get("kiro", "wsl_distro", "")
+    if not kiro_path:
+        kiro_path = config.get("kiro", "cli_command", "kiro")
+    if not wsl_distro:
+        wsl_distro = config.get("kiro", "wsl_distro", "")
+
+    cache_key = (kiro_path, wsl_distro)
+    if cache_key not in _kiro_models_cache:
         _discover_kiro_models(kiro_path, wsl_distro)
-    return list(_kiro_models_cache)
+    return list(_kiro_models_cache.get(cache_key, []))
 
 
-def _discover_kiro_models(kiro_path: str = "kiro-cli", wsl_distro: str = "") -> List[str]:
+def _discover_kiro_models(kiro_path: str = "kiro", wsl_distro: str = "") -> List[str]:
     """Discover available Kiro models from the Kiro CLI.
 
     Triggers the "invalid model" error which lists all available models.
@@ -236,7 +237,7 @@ def _discover_kiro_models(kiro_path: str = "kiro-cli", wsl_distro: str = "") -> 
     (where kiro-cli lives) is on the PATH.
     Falls back to a curated Claude model list when the CLI is unavailable.
 
-    Results are cached in ``_kiro_models_cache``.
+    Results are cached in ``_kiro_models_cache`` keyed by CLI path and distro.
     """
     global _kiro_models_cache
     import re
@@ -284,18 +285,19 @@ def _discover_kiro_models(kiro_path: str = "kiro-cli", wsl_distro: str = "") -> 
         models = [s.strip().rstrip(".,") for s in raw.split(",") if s.strip()]
         logger.debug("Discovered %d Kiro models: %s", len(models), models)
 
+    cache_key = (kiro_path, wsl_distro)
     if models:
-        _kiro_models_cache = models  # preserve order returned by CLI
+        _kiro_models_cache[cache_key] = models  # preserve order returned by CLI
     else:
-        _kiro_models_cache = []
+        _kiro_models_cache[cache_key] = []
         logger.debug("kiro-cli unavailable or model list empty. Dropdown will be empty.")
 
-    return list(_kiro_models_cache)
+    return list(_kiro_models_cache.get(cache_key, []))
 
 
 # ── AWS Bedrock model discovery ────────────────────────────────────────────
 
-_bedrock_models_cache: List[str] = []
+_bedrock_models_cache: Dict[str, List[str]] = {}
 
 
 def get_bedrock_models(region: str = "") -> List[str]:
@@ -305,17 +307,17 @@ def get_bedrock_models(region: str = "") -> List[str]:
         region: AWS region. If empty, uses config.
     """
     global _bedrock_models_cache
-    if not _bedrock_models_cache:
-        if not region:
-            region = config.get("aws", "region", "us-east-1")
+    if not region:
+        region = config.get("aws", "region", "us-east-1")
+    if region not in _bedrock_models_cache:
         _discover_bedrock_models(region)
-    return list(_bedrock_models_cache)
+    return list(_bedrock_models_cache.get(region, []))
 
 
 def _discover_bedrock_models(region: str = "us-east-1") -> List[str]:
     """Discover available Bedrock models using AWS CLI.
 
-    Results are cached in ``_bedrock_models_cache``.
+    Results are cached in ``_bedrock_models_cache`` keyed by AWS region.
     """
     global _bedrock_models_cache
     import json as _json
@@ -338,12 +340,13 @@ def _discover_bedrock_models(region: str = "us-east-1") -> List[str]:
             logger.debug("Failed to parse Bedrock model list: %s", e)
 
     if models:
-        _bedrock_models_cache = models
+        _bedrock_models_cache[region] = models
         logger.debug("Discovered %d Bedrock models", len(models))
     else:
+        _bedrock_models_cache[region] = []
         logger.debug("Could not discover Bedrock models")
 
-    return list(_bedrock_models_cache)
+    return list(_bedrock_models_cache.get(region, []))
 
 
 # ── Local LLM model discovery ──────────────────────────────────────────────
@@ -385,13 +388,13 @@ def _discover_local_models(api_url: str = "http://localhost:1234", api_type: str
     """Discover available local LLM models by querying the API.
 
     Handles different API types:
-    - LM Studio: /api/v1/models (auto-loads first model if none loaded)
-    - Ollama: /api/tags (auto-loads first model if none pulled)
-    - OpenAI-compatible: /v1/models (auto-loads first model if none available)
+    - LM Studio: /api/v1/models
+    - Ollama: /api/tags
+    - OpenAI-compatible: /v1/models
     - Anthropic-compatible: No public models endpoint
 
     Results are cached in ``_local_models_cache`` with a cache key.
-    If no models are loaded, automatically loads the first available model.
+    Discovery is passive and must not automatically load a model.
     """
     global _local_models_cache, _local_models_cache_key, _auto_loaded_models
     import json as _json
@@ -476,13 +479,6 @@ def _discover_local_models(api_url: str = "http://localhost:1234", api_type: str
     else:
         logger.debug("Unknown api_type '%s'. Cannot discover models.", api_type)
         return []
-
-    # If no models available, try to auto-load first available model
-    if not models:
-        loaded_model = _auto_load_model(api_url, api_type)
-        if loaded_model:
-            models = [loaded_model]
-            logger.info("Auto-loaded model '%s' on %s", loaded_model, api_type)
 
     if models:
         _local_models_cache = models
