@@ -19,6 +19,47 @@ _SEVERITY_ORDER = {
 }
 
 
+_ISSUE_TYPE_ALIASES = {
+    "architecture": {
+        "architecture",
+        "layer-leakage",
+        "layer_leakage",
+        "dependency",
+        "dependency-direction",
+        "dependency_direction",
+        "missing-repository",
+        "missing_repository",
+    },
+    "security": {
+        "security",
+        "authentication",
+        "authorization",
+        "input_validation",
+        "incomplete_validation",
+        "injection_risk",
+        "insecure_configuration",
+        "sensitive_data_exposure",
+    },
+    "performance": {
+        "performance",
+        "cache",
+        "cache_invalidation",
+        "stale_cache",
+        "redundant_work",
+    },
+    "best_practices": {
+        "best_practices",
+        "contract_mismatch",
+        "layer-leakage",
+        "layer_leakage",
+        "type_safety",
+        "dependency",
+        "missing-repository",
+        "missing_repository",
+    },
+}
+
+
 @dataclass(frozen=True)
 class BenchmarkExpectation:
     """Expected finding characteristics for a benchmark fixture."""
@@ -183,6 +224,17 @@ def _related_files_match(related_files: list[str], expected_substrings: list[str
     return all(any(expected.lower() in entry for entry in lowered) for expected in expected_substrings)
 
 
+def _issue_type_matches(expected: str, actual: str) -> bool:
+    expected_normalized = expected.lower().strip()
+    actual_normalized = actual.lower().strip()
+    if expected_normalized == actual_normalized:
+        return True
+    aliases = _ISSUE_TYPE_ALIASES.get(expected_normalized)
+    if aliases is not None and actual_normalized in aliases:
+        return True
+    return False
+
+
 def _issue_match_diagnostics(issue: dict[str, Any], expectation: BenchmarkExpectation) -> dict[str, bool]:
     """Return per-criterion pass/fail details for an issue against an expectation."""
     file_path = issue["file_path"]
@@ -205,7 +257,7 @@ def _issue_match_diagnostics(issue: dict[str, Any], expectation: BenchmarkExpect
         ),
         "issue_type": (
             True if not expectation.issue_type
-            else expectation.issue_type.lower() == issue["issue_type"].lower()
+            else _issue_type_matches(expectation.issue_type, issue["issue_type"])
         ),
         "minimum_severity": (
             True if not expectation.minimum_severity

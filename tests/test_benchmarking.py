@@ -112,6 +112,38 @@ def test_evaluate_fixture_reports_failed_checks_for_best_candidate(tmp_path):
     assert expectation.failed_checks == ["issue_type"]
 
 
+def test_evaluate_fixture_accepts_semantic_issue_type_aliases(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "field-rename-contract" / "fixture.json"
+    )
+    report_path = tmp_path / "field-rename-contract.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "issues_found": [
+                    {
+                        "issue_id": "issue-0010",
+                        "file_path": "src/handlers.py",
+                        "issue_type": "contract_mismatch",
+                        "severity": "high",
+                        "description": "Handler still reads display_name after serializer renamed the field to full_name.",
+                        "context_scope": "cross_file",
+                        "related_files": ["src/serializers.py"],
+                        "systemic_impact": "Breaks callers expecting display_name in downstream payloads.",
+                        "evidence_basis": "Serializer now emits full_name while handler still accesses display_name.",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.expectation_results[0].matched_issue_id == "issue-0010"
+
+
 def test_cli_single_fixture_returns_success_for_matching_report(tmp_path, capsys):
     report_path = tmp_path / "single.json"
     report_path.write_text(

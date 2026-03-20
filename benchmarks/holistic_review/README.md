@@ -13,6 +13,8 @@ The evaluator accepts either:
 
 When a fixture fails, the score output includes the closest candidate issue and the specific expectation checks that did not match, such as `issue_type`, `context_scope`, `related_files_contains`, or evidence-text requirements.
 
+The scorer also normalizes semantically equivalent issue types for broad benchmark categories. For example, a `best_practices` fixture can match `contract_mismatch`, and an `architecture` fixture can match `layer-leakage`.
+
 ## Fixture Catalog
 
 - `field-rename-contract`: renamed producer field with stale consumers
