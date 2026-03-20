@@ -41,6 +41,26 @@ Typical examples:
 - GUI workflow change -> update [GUI Guide](gui.md)
 - new review type or changed semantics -> update [Review Types Reference](review-types.md)
 
+## Refreshing Docs Assets
+
+Some documentation assets are generated from the live application state rather than maintained by hand.
+
+Current refreshable assets:
+- GUI screenshots in `docs/images/`
+
+Refresh workflow:
+
+```powershell
+./tools/capture_gui_screenshots.ps1
+```
+
+This script launches the GUI in test mode, captures the maintained screenshot states, and rewrites the checked-in PNG assets.
+
+Before committing refreshed assets:
+- verify the screenshots still match the current GUI behavior
+- confirm the affected docs pages still reference the correct image names
+- include the script or docs update in the same change if the capture flow changed
+
 If the change is release-relevant, also update:
 - [Release Notes](../RELEASE_NOTES.md)
 - [Release Process](release-process.md)

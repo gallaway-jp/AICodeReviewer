@@ -114,7 +114,7 @@ Examples:
 
 ## Repository Status
 
-The documentation is being actively restructured around curated Markdown guides instead of generated HTML API pages. The code and tests are the source of truth for product behavior.
+The documentation now uses curated Markdown guides instead of generated HTML API pages. The code and tests are the source of truth for product behavior.
 
 ## License
 

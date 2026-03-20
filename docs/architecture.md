@@ -206,7 +206,7 @@ Key design points:
 
 The GUI is composed around mixins:
 - review tab behavior
-- results and AI-fix behavior
+- results and AI Fix behavior
 - settings mapping and persistence
 - backend health checks and model refreshes
 
