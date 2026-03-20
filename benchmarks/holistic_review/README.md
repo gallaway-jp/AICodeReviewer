@@ -11,6 +11,8 @@ The evaluator accepts either:
 - a raw review report JSON containing `issues_found`
 - a tool-mode `review` envelope containing a nested `report`
 
+When a fixture fails, the score output includes the closest candidate issue and the specific expectation checks that did not match, such as `issue_type`, `context_scope`, `related_files_contains`, or evidence-text requirements.
+
 ## Fixture Catalog
 
 - `field-rename-contract`: renamed producer field with stale consumers

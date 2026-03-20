@@ -60,6 +60,9 @@ class ExpectationEvaluation:
     matched_issue_id: str | None = None
     matched_file_path: str | None = None
     reason: str | None = None
+    failed_checks: list[str] = field(default_factory=list)
+    best_candidate_issue_id: str | None = None
+    best_candidate_file_path: str | None = None
 
 
 @dataclass(frozen=True)
@@ -180,24 +183,9 @@ def _related_files_match(related_files: list[str], expected_substrings: list[str
     return all(any(expected.lower() in entry for entry in lowered) for expected in expected_substrings)
 
 
-def _issue_matches(issue: dict[str, Any], expectation: BenchmarkExpectation) -> bool:
+def _issue_match_diagnostics(issue: dict[str, Any], expectation: BenchmarkExpectation) -> dict[str, bool]:
+    """Return per-criterion pass/fail details for an issue against an expectation."""
     file_path = issue["file_path"]
-    if expectation.file_path_contains and expectation.file_path_contains.lower() not in file_path.lower():
-        return False
-    if expectation.file_path_contains_any and not any(
-        entry.lower() in file_path.lower() for entry in expectation.file_path_contains_any
-    ):
-        return False
-    if expectation.issue_type and expectation.issue_type.lower() != issue["issue_type"].lower():
-        return False
-    if expectation.minimum_severity and not _severity_meets(issue["severity"], expectation.minimum_severity):
-        return False
-    if expectation.context_scope and expectation.context_scope.lower() != issue["context_scope"].lower():
-        return False
-    if expectation.related_files_contains and not _related_files_match(
-        issue["related_files"], expectation.related_files_contains,
-    ):
-        return False
     combined_text = "\n".join(
         [
             issue["description"],
@@ -206,13 +194,87 @@ def _issue_matches(issue: dict[str, Any], expectation: BenchmarkExpectation) -> 
             issue["evidence_basis"],
         ]
     )
-    if expectation.description_keywords and not _contains_all(combined_text, expectation.description_keywords):
-        return False
-    if expectation.systemic_impact_contains and expectation.systemic_impact_contains.lower() not in issue["systemic_impact"].lower():
-        return False
-    if expectation.evidence_basis_contains and expectation.evidence_basis_contains.lower() not in issue["evidence_basis"].lower():
-        return False
-    return True
+    return {
+        "file_path_contains": (
+            True if not expectation.file_path_contains
+            else expectation.file_path_contains.lower() in file_path.lower()
+        ),
+        "file_path_contains_any": (
+            True if not expectation.file_path_contains_any
+            else any(entry.lower() in file_path.lower() for entry in expectation.file_path_contains_any)
+        ),
+        "issue_type": (
+            True if not expectation.issue_type
+            else expectation.issue_type.lower() == issue["issue_type"].lower()
+        ),
+        "minimum_severity": (
+            True if not expectation.minimum_severity
+            else _severity_meets(issue["severity"], expectation.minimum_severity)
+        ),
+        "context_scope": (
+            True if not expectation.context_scope
+            else expectation.context_scope.lower() == issue["context_scope"].lower()
+        ),
+        "related_files_contains": (
+            True if not expectation.related_files_contains
+            else _related_files_match(issue["related_files"], expectation.related_files_contains)
+        ),
+        "description_keywords": (
+            True if not expectation.description_keywords
+            else _contains_all(combined_text, expectation.description_keywords)
+        ),
+        "systemic_impact_contains": (
+            True if not expectation.systemic_impact_contains
+            else expectation.systemic_impact_contains.lower() in issue["systemic_impact"].lower()
+        ),
+        "evidence_basis_contains": (
+            True if not expectation.evidence_basis_contains
+            else expectation.evidence_basis_contains.lower() in issue["evidence_basis"].lower()
+        ),
+    }
+
+
+def _issue_matches(issue: dict[str, Any], expectation: BenchmarkExpectation) -> bool:
+    return all(_issue_match_diagnostics(issue, expectation).values())
+
+
+def _best_candidate_match(
+    issues: Sequence[dict[str, Any]],
+    expectation: BenchmarkExpectation,
+    used_indices: set[int],
+) -> tuple[int | None, list[str]]:
+    """Return the closest unmatched issue index and the checks it failed."""
+    best_index: int | None = None
+    best_failures: list[str] = []
+    best_score = -1
+    best_issue_type_match = False
+    best_context_scope_match = False
+
+    for index, issue in enumerate(issues):
+        if index in used_indices:
+            continue
+        diagnostics = _issue_match_diagnostics(issue, expectation)
+        passed_count = sum(1 for passed in diagnostics.values() if passed)
+        failures = [name for name, passed in diagnostics.items() if not passed]
+        issue_type_match = diagnostics.get("issue_type", True)
+        context_scope_match = diagnostics.get("context_scope", True)
+        if (
+            passed_count > best_score
+            or (passed_count == best_score and issue_type_match and not best_issue_type_match)
+            or (
+                passed_count == best_score
+                and issue_type_match == best_issue_type_match
+                and context_scope_match
+                and not best_context_scope_match
+            )
+        ):
+            best_index = index
+            best_failures = failures
+            best_score = passed_count
+            best_issue_type_match = issue_type_match
+            best_context_scope_match = context_scope_match
+
+    return best_index, best_failures
 
 
 def evaluate_fixture(fixture: BenchmarkFixture, report: dict[str, Any], report_path: Path | None = None) -> FixtureEvaluation:
@@ -236,11 +298,16 @@ def evaluate_fixture(fixture: BenchmarkFixture, report: dict[str, Any], report_p
                 break
 
         if matched_index is None:
+            best_index, failed_checks = _best_candidate_match(issues, expectation, used_indices)
+            best_issue = issues[best_index] if best_index is not None else None
             expectation_results.append(
                 ExpectationEvaluation(
                     expectation_id=expectation.id,
                     matched=False,
                     reason="No issue matched the expected holistic finding",
+                    failed_checks=failed_checks,
+                    best_candidate_issue_id=(best_issue["issue_id"] or None) if best_issue else None,
+                    best_candidate_file_path=(best_issue["file_path"] or None) if best_issue else None,
                 )
             )
             continue

@@ -77,6 +77,41 @@ def test_evaluate_fixture_directory_marks_missing_reports(tmp_path):
     assert all(result.missing_report is True for result in results)
 
 
+def test_evaluate_fixture_reports_failed_checks_for_best_candidate(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "auth-guard-regression" / "fixture.json"
+    )
+    report_path = tmp_path / "auth-guard-regression.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "issues_found": [
+                    {
+                        "issue_id": "issue-0007",
+                        "file_path": "src/admin.py",
+                        "issue_type": "dependency",
+                        "severity": "high",
+                        "description": "The admin endpoint bypasses the admin guard by skipping require_admin and accepts any authenticated user.",
+                        "context_scope": "cross_file",
+                        "related_files": ["src/auth.py"],
+                        "systemic_impact": "Privilege checks are inconsistent across admin routes.",
+                        "evidence_basis": "admin.py stopped calling require_admin before returning sensitive data.",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is False
+    expectation = result.expectation_results[0]
+    assert expectation.best_candidate_issue_id == "issue-0007"
+    assert expectation.best_candidate_file_path == "src/admin.py"
+    assert expectation.failed_checks == ["issue_type"]
+
+
 def test_cli_single_fixture_returns_success_for_matching_report(tmp_path, capsys):
     report_path = tmp_path / "single.json"
     report_path.write_text(
