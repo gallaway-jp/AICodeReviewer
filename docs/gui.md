@@ -26,7 +26,7 @@ The screenshots below are generated from the real test-mode GUI with:
 
 ## Tabs
 
-## Review Tab
+### Review Tab
 
 Use the Review tab to set up a run.
 
@@ -46,7 +46,7 @@ Additional controls:
 - elapsed timer
 - backend health checks from the status area
 
-## Results Tab
+### Results Tab
 
 Use the Results tab to inspect and act on findings.
 
@@ -59,7 +59,7 @@ Capabilities:
 - review changes for resolved items
 - finalize reports
 
-## Settings Tab
+### Settings Tab
 
 Use the Settings tab to manage persistent configuration.
 
@@ -71,7 +71,7 @@ Capabilities:
 - output format selection
 - model selection fields where supported
 
-## Output Log Tab
+### Output Log Tab
 
 Use the Output Log tab to inspect runtime messages.
 
