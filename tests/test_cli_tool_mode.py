@@ -135,6 +135,78 @@ def test_tool_review_outputs_report_and_issue_ids(monkeypatch, capsys):
     assert payload["issues"][0]["issue_id"] == "issue-0001"
 
 
+def test_tool_review_without_output_does_not_write_report_file(monkeypatch, capsys):
+    report_issue = ReviewIssue(
+        file_path="src/example.py",
+        line_number=12,
+        issue_type="security",
+        severity="high",
+        description="Unsafe subprocess usage",
+        code_snippet="subprocess.run(cmd, shell=True)",
+        ai_feedback="Avoid shell=True for untrusted input.",
+    )
+
+    report = ReviewReport(
+        project_path="./proj",
+        review_type="security",
+        scope="project",
+        total_files_scanned=1,
+        issues_found=[report_issue],
+        generated_at=datetime(2026, 3, 20, 10, 0, 0),
+        language="en",
+        review_types=["security"],
+        quality_score=90,
+        programmers=["dev"],
+        reviewers=["rev"],
+        backend="bedrock",
+    )
+    generate_called = False
+
+    class FakeRunner:
+        def __init__(self, client, *, scan_fn, backend_name):
+            self.client = client
+            self.scan_fn = scan_fn
+            self.backend_name = backend_name
+            self._last_run_state = {}
+
+        def run(self, **kwargs):
+            self._last_run_state = {
+                "status": "issues_found",
+                "files_scanned": 1,
+                "target_paths": ["src/example.py"],
+            }
+            return [report_issue]
+
+        def build_report(self, issues=None):
+            return report
+
+        def generate_report(self, issues=None, output_file=None):
+            nonlocal generate_called
+            generate_called = True
+            return output_file or "review_report_20260320_100000.json"
+
+    monkeypatch.setattr(cli, "create_backend", lambda _name: MagicMock())
+    monkeypatch.setattr(cli, "AppRunner", FakeRunner)
+
+    exit_code = run_main_with_args([
+        "review",
+        "./proj",
+        "--type",
+        "security",
+        "--programmers",
+        "dev",
+        "--reviewers",
+        "rev",
+    ])
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert exit_code == 0
+    assert generate_called is False
+    assert payload["status"] == "completed"
+    assert payload["report_path"] is None
+    assert payload["report"]["project_path"] == "./proj"
+
+
 def test_tool_review_cancel_file_returns_cancelled_exit(monkeypatch, capsys, tmp_path):
     cancel_file = tmp_path / "cancel.flag"
     cancel_file.write_text("stop", encoding="utf-8")
@@ -407,3 +479,197 @@ def test_tool_apply_fixes_reports_no_applicable_fixes(capsys, tmp_path):
     assert payload["status"] == "no_applicable_fixes"
 
 
+def test_tool_resume_normalizes_review_artifact(capsys, tmp_path):
+    report_path = tmp_path / "report.json"
+    report = ReviewReport(
+        project_path=str(tmp_path),
+        review_type="security",
+        scope="project",
+        total_files_scanned=2,
+        issues_found=[
+            ReviewIssue(
+                file_path=str(tmp_path / "example.py"),
+                issue_type="security",
+                severity="high",
+                description="Unsafe pattern",
+                code_snippet="bad()",
+                ai_feedback="Use safe().",
+                issue_id="issue-0001",
+            ),
+            ReviewIssue(
+                file_path=str(tmp_path / "other.py"),
+                issue_type="performance",
+                severity="medium",
+                description="Slow loop",
+                code_snippet="for x in data",
+                ai_feedback="Use batching.",
+                issue_id="issue-0002",
+                status="ignored",
+            ),
+        ],
+        generated_at=datetime(2026, 3, 20, 10, 0, 0),
+        language="en",
+        review_types=["security", "performance"],
+        backend="bedrock",
+    )
+    report_path.write_text(json.dumps(report.to_dict()), encoding="utf-8")
+
+    exit_code = run_main_with_args([
+        "resume",
+        "--artifact-file",
+        str(report_path),
+        "--issue-id",
+        "issue-0001",
+    ])
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert exit_code == 0
+    assert payload["artifact_type"] == "review-report"
+    assert payload["workflow_stage"] == "reviewed"
+    assert payload["next_command"] == "fix-plan"
+    assert payload["pending_issue_ids"] == ["issue-0001"]
+    assert payload["issue_count"] == 1
+
+
+def test_tool_resume_normalizes_review_dry_run_envelope(capsys, tmp_path):
+    artifact_path = tmp_path / "review-dry-run.json"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "command": "review",
+                "backend": "bedrock",
+                "dry_run": True,
+                "review_types": ["security"],
+                "scope": "project",
+                "path": "./proj",
+                "status": "dry_run",
+                "files_scanned": 1,
+                "target_paths": ["./proj/file.py"],
+                "issue_count": 0,
+                "issues": [],
+                "report": None,
+                "report_path": None,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = run_main_with_args([
+        "resume",
+        "--artifact-file",
+        str(artifact_path),
+    ])
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert exit_code == 0
+    assert payload["artifact_type"] == "review"
+    assert payload["workflow_stage"] == "dry-run"
+    assert payload["next_command"] is None
+    assert payload["can_resume"] is False
+    assert payload["report"] is None
+    assert payload["files_scanned"] == 1
+    assert payload["target_paths"] == ["./proj/file.py"]
+
+
+def test_tool_resume_normalizes_fix_plan_artifact(capsys, tmp_path):
+    plan_path = tmp_path / "fix-plan.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "command": "fix-plan",
+                "backend": "local",
+                "report_file": "report.json",
+                "fixes": [
+                    {
+                        "issue_id": "issue-0001",
+                        "file_path": "a.py",
+                        "status": "generated",
+                        "proposed_content": "fixed\n",
+                    },
+                    {
+                        "issue_id": "issue-0002",
+                        "file_path": "b.py",
+                        "status": "failed",
+                        "proposed_content": None,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = run_main_with_args([
+        "resume",
+        "--artifact-file",
+        str(plan_path),
+    ])
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert exit_code == 0
+    assert payload["artifact_type"] == "fix-plan"
+    assert payload["workflow_stage"] == "fix-planned"
+    assert payload["next_command"] == "apply-fixes"
+    assert payload["generated_issue_ids"] == ["issue-0001"]
+    assert payload["failed_issue_ids"] == ["issue-0002"]
+
+
+def test_tool_resume_normalizes_apply_results_artifact(capsys, tmp_path):
+    results_path = tmp_path / "apply-results.json"
+    results_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "command": "apply-fixes",
+                "plan_file": "fix-plan.json",
+                "results": [
+                    {
+                        "issue_id": "issue-0001",
+                        "file_path": "a.py",
+                        "status": "applied",
+                        "backup_path": "a.py.backup",
+                    },
+                    {
+                        "issue_id": "issue-0002",
+                        "file_path": "b.py",
+                        "status": "failed",
+                        "error": "boom",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = run_main_with_args([
+        "resume",
+        "--artifact-file",
+        str(results_path),
+        "--issue-id",
+        "issue-0002",
+    ])
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert exit_code == 0
+    assert payload["artifact_type"] == "apply-fixes"
+    assert payload["workflow_stage"] == "fixes-applied"
+    assert payload["next_command"] is None
+    assert payload["can_resume"] is False
+    assert payload["failed_issue_ids"] == ["issue-0002"]
+    assert payload["result_count"] == 1
+
+
+def test_tool_resume_rejects_unknown_artifact(capsys, tmp_path):
+    artifact_path = tmp_path / "unknown.json"
+    artifact_path.write_text(json.dumps({"hello": "world"}), encoding="utf-8")
+
+    exit_code = run_main_with_args([
+        "resume",
+        "--artifact-file",
+        str(artifact_path),
+    ])
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert exit_code == 1
+    assert payload["status"] == "error"

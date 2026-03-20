@@ -34,7 +34,7 @@ from aicodereviewer.i18n import t, set_locale
 logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 1
-TOOL_COMMANDS = {"review", "health", "fix-plan", "apply-fixes"}
+TOOL_COMMANDS = {"review", "health", "fix-plan", "apply-fixes", "resume"}
 EXIT_OK = 0
 EXIT_FAILURE = 1
 EXIT_CANCELLED = 3
@@ -322,6 +322,14 @@ def _build_tool_parser() -> argparse.ArgumentParser:
     apply_fixes_parser.add_argument("--issue-id", action="append", dest="issue_ids", default=[])
     apply_fixes_parser.add_argument("--json-out", metavar="FILE")
 
+    resume_parser = subparsers.add_parser(
+        "resume",
+        help="Normalize an existing tool artifact into resumable workflow state",
+    )
+    resume_parser.add_argument("--artifact-file", required=True, metavar="FILE")
+    resume_parser.add_argument("--issue-id", action="append", dest="issue_ids", default=[])
+    resume_parser.add_argument("--json-out", metavar="FILE")
+
     return parser
 
 
@@ -376,6 +384,8 @@ def _run_tool_command(
         return _run_fix_plan_tool_mode(args)
     if args.command == "apply-fixes":
         return _run_apply_fixes_tool_mode(args)
+    if args.command == "resume":
+        return _run_resume_tool_mode(args)
     raise ValueError(f"Unsupported tool command: {args.command}")
 
 
@@ -495,6 +505,126 @@ def _select_issue_ids(issues: list[ReviewIssue], selected_ids: list[str]) -> lis
         return issues
     selected = {issue_id for issue_id in selected_ids}
     return [issue for issue in issues if issue.issue_id in selected]
+
+
+def _normalize_review_resume_state(
+    artifact: dict[str, Any],
+    selected_ids: list[str],
+) -> dict[str, Any]:
+    """Build canonical resume state from a review report or review envelope."""
+    raw_report = artifact.get("report", artifact)
+    if raw_report is None:
+        return {
+            "workflow_stage": "dry-run" if artifact.get("status") == "dry_run" else "reviewed",
+            "next_command": None,
+            "can_resume": False,
+            "project_path": artifact.get("path"),
+            "backend": artifact.get("backend"),
+            "language": artifact.get("language"),
+            "review_types": list(cast(list[str], artifact.get("review_types", []))),
+            "issue_count": 0,
+            "issues": [],
+            "pending_issue_ids": [],
+            "selected_issue_ids": selected_ids,
+            "report": None,
+            "files_scanned": artifact.get("files_scanned", 0),
+            "target_paths": list(cast(list[str], artifact.get("target_paths", []))),
+        }
+
+    report = ReviewReport.from_dict(cast(dict[str, Any], raw_report))
+    issues = list(report.issues_found)
+    selected_issues = _select_issue_ids(issues, selected_ids)
+    issue_payloads = [_serialize_issue(issue) for issue in selected_issues]
+    pending_ids = [issue["issue_id"] for issue in issue_payloads if issue.get("status") == "pending"]
+
+    return {
+        "workflow_stage": "reviewed",
+        "next_command": "fix-plan",
+        "can_resume": True,
+        "project_path": report.project_path,
+        "backend": report.backend,
+        "language": report.language,
+        "review_types": list(report.review_types) if report.review_types else [report.review_type],
+        "issue_count": len(issue_payloads),
+        "issues": issue_payloads,
+        "pending_issue_ids": pending_ids,
+        "selected_issue_ids": selected_ids,
+        "report": report.to_dict(),
+    }
+
+
+def _normalize_fix_plan_resume_state(
+    artifact: dict[str, Any],
+    selected_ids: list[str],
+) -> dict[str, Any]:
+    """Build canonical resume state from a fix-plan artifact."""
+    fixes_raw = artifact.get("fixes", [])
+    if not isinstance(fixes_raw, list):
+        raise ValueError("Fix-plan artifact must contain a 'fixes' list")
+
+    selected_set = set(selected_ids)
+    fixes: list[dict[str, Any]] = []
+    for item in cast(list[Any], fixes_raw):
+        if not isinstance(item, dict):
+            continue
+        fix_item = cast(dict[str, Any], item)
+        issue_id = fix_item.get("issue_id")
+        if selected_set and issue_id not in selected_set:
+            continue
+        fixes.append(dict(fix_item))
+
+    generated_ids = [str(fix.get("issue_id", "")) for fix in fixes if fix.get("status") == "generated"]
+    failed_ids = [str(fix.get("issue_id", "")) for fix in fixes if fix.get("status") == "failed"]
+
+    return {
+        "workflow_stage": "fix-planned",
+        "next_command": "apply-fixes" if generated_ids else None,
+        "can_resume": bool(generated_ids),
+        "backend": artifact.get("backend"),
+        "report_file": artifact.get("report_file"),
+        "issue_count": len(fixes),
+        "fix_count": len(fixes),
+        "fixes": fixes,
+        "generated_issue_ids": generated_ids,
+        "failed_issue_ids": failed_ids,
+        "selected_issue_ids": selected_ids,
+    }
+
+
+def _normalize_apply_results_resume_state(
+    artifact: dict[str, Any],
+    selected_ids: list[str],
+) -> dict[str, Any]:
+    """Build canonical resume state from an apply-fixes artifact."""
+    results_raw = artifact.get("results", [])
+    if not isinstance(results_raw, list):
+        raise ValueError("Apply-fixes artifact must contain a 'results' list")
+
+    selected_set = set(selected_ids)
+    results: list[dict[str, Any]] = []
+    for item in cast(list[Any], results_raw):
+        if not isinstance(item, dict):
+            continue
+        result_item = cast(dict[str, Any], item)
+        issue_id = result_item.get("issue_id")
+        if selected_set and issue_id not in selected_set:
+            continue
+        results.append(dict(result_item))
+
+    applied_ids = [str(result.get("issue_id", "")) for result in results if result.get("status") == "applied"]
+    failed_ids = [str(result.get("issue_id", "")) for result in results if result.get("status") == "failed"]
+
+    return {
+        "workflow_stage": "fixes-applied",
+        "next_command": None,
+        "can_resume": False,
+        "plan_file": artifact.get("plan_file"),
+        "result_count": len(results),
+        "results": results,
+        "applied_issue_ids": applied_ids,
+        "failed_issue_ids": failed_ids,
+        "selected_issue_ids": selected_ids,
+    }
 
 
 def _serialize_health_report(report: HealthReport) -> dict[str, Any]:
@@ -835,15 +965,6 @@ def _run_apply_fixes_tool_mode(args: argparse.Namespace) -> int:
         return EXIT_FAILURE
 
 
-def _apply_fix_to_file(file_path: str, fixed_content: str) -> str:
-    """Write fixed content to disk after creating a .backup copy."""
-    backup_path = f"{file_path}.backup"
-    shutil.copy2(file_path, backup_path)
-    with open(file_path, "w", encoding="utf-8") as fh:
-        fh.write(fixed_content)
-    return backup_path
-
-
 def _run_health_tool_mode(args: argparse.Namespace) -> int:
     """Run backend health checks and emit a structured JSON envelope."""
     backend_name = _apply_runtime_overrides(args)
@@ -871,6 +992,50 @@ def _run_health_tool_mode(args: argparse.Namespace) -> int:
             "status": "error",
             "error": {"message": str(exc)},
         }
+        _write_json_result(payload, args.json_out)
+        return EXIT_FAILURE
+
+
+def _run_resume_tool_mode(args: argparse.Namespace) -> int:
+    """Normalize an artifact into resumable tool-mode workflow state."""
+    selected_ids = _flatten_issue_ids(args.issue_ids)
+    payload: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "command": "resume",
+        "artifact_file": args.artifact_file,
+        "selected_issue_ids": selected_ids,
+        "success": False,
+        "exit_code": EXIT_FAILURE,
+    }
+
+    try:
+        artifact = _load_json_artifact(args.artifact_file)
+        artifact_type = _artifact_kind(artifact)
+
+        if artifact_type in {"review", "review-report"}:
+            state = _normalize_review_resume_state(artifact, selected_ids)
+        elif artifact_type == "fix-plan":
+            state = _normalize_fix_plan_resume_state(artifact, selected_ids)
+        elif artifact_type == "apply-fixes":
+            state = _normalize_apply_results_resume_state(artifact, selected_ids)
+        else:
+            raise ValueError(f"Unsupported artifact type for resume: {artifact_type}")
+
+        payload.update({
+            "status": "completed",
+            "success": True,
+            "exit_code": EXIT_OK,
+            "artifact_type": artifact_type,
+            **state,
+        })
+        _write_json_result(payload, args.json_out)
+        return EXIT_OK
+    except Exception as exc:
+        logger.error("Tool resume failed: %s", exc)
+        payload.update({
+            "status": "error",
+            "error": {"message": str(exc)},
+        })
         _write_json_result(payload, args.json_out)
         return EXIT_FAILURE
 
