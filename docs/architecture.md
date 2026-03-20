@@ -140,6 +140,44 @@ sequenceDiagram
 	end
 ```
 
+## Report And Session Sequence
+
+```mermaid
+sequenceDiagram
+	participant User
+	participant Results as GUI Results Tab
+	participant Runner as AppRunner
+	participant Session as session.json
+	participant Models as ReviewIssue / ReviewReport
+	participant Reporter as reporter.py
+	participant Files as JSON / TXT / MD outputs
+
+	alt save in-progress GUI session
+		User->>Results: Save Session
+		Results->>Models: dataclasses.asdict(issue) for each issue
+		Results->>Session: write saved_at + issue payloads
+		Session-->>User: reusable session snapshot
+	else load prior GUI session
+		User->>Results: Load Session
+		Results->>Session: read selected JSON file
+		Results->>Models: rebuild ReviewIssue objects
+		Results-->>User: repopulated issue cards
+	else finalize report
+		User->>Results: Finalize
+		Results->>Runner: generate_report(current issues)
+		Runner->>Models: build ReviewReport + quality score
+		Runner->>Reporter: generate_review_report(report)
+		Reporter->>Files: write enabled output formats
+		Files-->>User: saved report paths and summary
+	end
+```
+
+## Report Persistence Notes
+
+- GUI session save/load stores issue state only, not backend clients or pending scan inputs.
+- Final report generation uses the in-memory issue list currently shown in the GUI, so status changes, skips, and AI-fix outcomes are reflected in the exported report.
+- Output file formats are controlled by the `output.formats` config value and may emit JSON, TXT, and Markdown in one finalize action.
+
 ## Main Components
 
 | Area | Responsibility |
