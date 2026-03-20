@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TextIO
 
 from .models import ReviewReport
@@ -19,6 +20,33 @@ from .config import config
 __all__ = ["ReportStatistics", "generate_review_report"]
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_enabled_formats(raw_formats: str) -> list[str]:
+    formats = [fmt.strip().lower() for fmt in raw_formats.split(",") if fmt.strip()]
+    return formats or ["json", "txt"]
+
+
+def _build_output_paths(output_file: str) -> dict[str, str]:
+    output_path = Path(output_file)
+    requested_suffix = output_path.suffix.lower()
+    requested_format = {
+        ".json": "json",
+        ".txt": "txt",
+        ".md": "md",
+    }.get(requested_suffix)
+
+    stem_path = output_path.with_suffix("") if requested_format else output_path
+    paths = {
+        "json": str(output_path if requested_format == "json" else stem_path.with_suffix(".json")),
+        "txt": str(
+            output_path
+            if requested_format == "txt"
+            else (stem_path.parent / f"{stem_path.name}_summary.txt" if requested_format == "json" else stem_path.with_suffix(".txt"))
+        ),
+        "md": str(output_path if requested_format == "md" else stem_path.with_suffix(".md")),
+    }
+    return paths
 
 
 @dataclass
@@ -59,37 +87,37 @@ def generate_review_report(
     if not output_file:
         ts = report.generated_at.strftime("%Y%m%d_%H%M%S")
         output_file = f"review_report_{ts}.json"
-    
+
     # Get enabled formats from config (default: json,txt)
-    enabled_formats_str = config.get("output", "formats", "json,txt").strip()
-    enabled_formats = set(enabled_formats_str.split(",")) if enabled_formats_str else {"json", "txt"}
-    
+    enabled_formats = _parse_enabled_formats(config.get("output", "formats", "json,txt"))
+    output_paths = _build_output_paths(output_file)
+
     generated_files: list[str] = []
-    
+
     # Generate JSON format
     if "json" in enabled_formats:
-        json_file = output_file if output_file.endswith(".json") else output_file.replace(".txt", ".json").replace(".md", ".json")
+        json_file = output_paths["json"]
         with open(json_file, "w", encoding="utf-8") as fh:
             json.dump(report.to_dict(), fh, indent=2, ensure_ascii=False)
         logger.info("JSON report saved to %s", json_file)
         generated_files.append(json_file)
-    
+
     # Generate TXT format
     if "txt" in enabled_formats:
-        txt_file = output_file.replace(".json", "_summary.txt") if ".json" in output_file else output_file.replace(".md", "_summary.txt")
+        txt_file = output_paths["txt"]
         with open(txt_file, "w", encoding="utf-8") as fh:
             _write_summary(fh, report)
         logger.info("Summary saved to %s", txt_file)
         generated_files.append(txt_file)
-    
+
     # Generate Markdown format
     if "md" in enabled_formats:
-        md_file = output_file.replace(".json", ".md")
+        md_file = output_paths["md"]
         with open(md_file, "w", encoding="utf-8") as fh:
             _write_markdown(fh, report)
         logger.info("Markdown report saved to %s", md_file)
         generated_files.append(md_file)
-    
+
     # Return the first generated file (or the original output_file as fallback)
     return generated_files[0] if generated_files else output_file  # type: ignore[return-value]
 

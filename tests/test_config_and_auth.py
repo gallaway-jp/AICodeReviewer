@@ -5,9 +5,11 @@ Updated for v2.0: Config has new sections (backend, kiro, copilot),
 auth module is English-first with get/set/clear profile functions.
 """
 import time
+from unittest.mock import MagicMock
 from unittest.mock import patch
 
 from aicodereviewer.config import Config
+import aicodereviewer.auth as auth
 from aicodereviewer.auth import get_system_language, set_profile_name
 from aicodereviewer.performance import PerformanceMonitor
 
@@ -67,6 +69,89 @@ def test_set_profile_name_uses_keyring_without_prompt():
 
     assert profile == 'test-profile'
     mock_set_password.assert_called_once_with('AICodeReviewer', 'aws_profile', 'test-profile')
+
+
+def test_get_profile_name_noninteractive_requires_stored_profile():
+    with patch('aicodereviewer.auth.keyring.get_password', return_value=None):
+        try:
+            auth.get_profile_name(interactive=False)
+            assert False, 'Expected RuntimeError'
+        except RuntimeError as exc:
+            assert 'No AWS profile is stored' in str(exc)
+
+
+def test_create_aws_session_noninteractive_uses_stored_profile_without_prompt(monkeypatch):
+    fake_session = MagicMock()
+    fake_session.client.return_value.get_caller_identity.return_value = {'Account': '123'}
+
+    with patch('aicodereviewer.auth.keyring.get_password', return_value='saved-profile'), \
+         patch('boto3.Session', return_value=fake_session) as mock_session, \
+         patch('builtins.input', side_effect=AssertionError('input should not be called')):
+        session, description = auth.create_aws_session('us-east-1')
+
+    assert session is fake_session
+    assert description == 'Profile (saved-profile)'
+    mock_session.assert_called_once_with(profile_name='saved-profile', region_name='us-east-1')
+
+
+def test_create_aws_session_uses_env_secret_for_direct_credentials(monkeypatch):
+    fake_session = MagicMock()
+    fake_session.client.return_value.get_caller_identity.return_value = {'Account': '123'}
+    cfg = auth.config
+    original_access_key = cfg.get('aws', 'access_key_id', '')
+    original_region = cfg.get('aws', 'region', 'us-east-1')
+    original_sso_session = cfg.get('aws', 'sso_session', '')
+    original_session_token = cfg.get('aws', 'session_token', '')
+    cfg.set_value('aws', 'access_key_id', 'AKIAEXAMPLE')
+    cfg.set_value('aws', 'region', 'us-east-1')
+    cfg.set_value('aws', 'sso_session', '')
+    cfg.set_value('aws', 'session_token', 'token-123')
+
+    try:
+        with patch.dict('os.environ', {'AWS_SECRET_ACCESS_KEY': 'secret-123'}, clear=False), \
+             patch('boto3.Session', return_value=fake_session) as mock_session, \
+             patch('builtins.input', side_effect=AssertionError('input should not be called')):
+            session, description = auth.create_aws_session('us-east-1')
+    finally:
+        cfg.set_value('aws', 'access_key_id', original_access_key)
+        cfg.set_value('aws', 'region', original_region)
+        cfg.set_value('aws', 'sso_session', original_sso_session)
+        cfg.set_value('aws', 'session_token', original_session_token)
+
+    assert session is fake_session
+    assert description == 'Direct credentials (AKIAEXAM…)'
+    mock_session.assert_called_once_with(
+        aws_access_key_id='AKIAEXAMPLE',
+        aws_secret_access_key='secret-123',
+        aws_session_token='token-123',
+        region_name='us-east-1',
+    )
+
+
+def test_create_aws_session_ignores_unsupported_sso_session_and_falls_back(monkeypatch):
+    fake_session = MagicMock()
+    fake_session.client.return_value.get_caller_identity.return_value = {'Account': '123'}
+    cfg = auth.config
+    original_access_key = cfg.get('aws', 'access_key_id', '')
+    original_region = cfg.get('aws', 'region', 'us-east-1')
+    original_sso_session = cfg.get('aws', 'sso_session', '')
+    cfg.set_value('aws', 'access_key_id', '')
+    cfg.set_value('aws', 'region', 'us-east-1')
+    cfg.set_value('aws', 'sso_session', 'my-sso-session')
+
+    try:
+        with patch('aicodereviewer.auth.keyring.get_password', return_value='saved-profile'), \
+             patch('boto3.Session', return_value=fake_session) as mock_session, \
+             patch('builtins.input', side_effect=AssertionError('input should not be called')):
+            session, description = auth.create_aws_session('us-east-1')
+    finally:
+        cfg.set_value('aws', 'access_key_id', original_access_key)
+        cfg.set_value('aws', 'region', original_region)
+        cfg.set_value('aws', 'sso_session', original_sso_session)
+
+    assert session is fake_session
+    assert description == 'Profile (saved-profile)'
+    mock_session.assert_called_once_with(profile_name='saved-profile', region_name='us-east-1')
 
 
 # ── PerformanceMonitor ─────────────────────────────────────────────────────

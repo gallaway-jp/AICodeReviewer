@@ -159,6 +159,23 @@ class TestParseDiffFile:
         result = parse_diff_file(diff_content)
         assert result == []
 
+    def test_parse_diff_keeps_added_lines_that_look_like_headers(self):
+        """Added content starting with header-like tokens should not end the hunk."""
+        diff_content = """--- a/test.py
++++ b/test.py
+@@ -1 +1,3 @@
++++counter
++@@marker
+ context
+"""
+        result = parse_diff_file(diff_content)
+
+        assert len(result) == 1
+        assert result[0]['filename'] == 'test.py'
+        assert '++counter' in result[0]['content']
+        assert '@@marker' in result[0]['content']
+        assert 'context' in result[0]['content']
+
 
 class TestGetDiffFromCommits:
     """Test git/svn diff generation functionality"""

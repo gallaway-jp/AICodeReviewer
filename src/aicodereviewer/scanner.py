@@ -218,15 +218,15 @@ def parse_diff_file(diff_content: str) -> List[Dict[str, str]]:
             in_hunk = False
             continue
 
-        if line.startswith('@@'):
+        if line.startswith('@@ '):
             # Enter a hunk for the current file
             in_hunk = True
             continue
 
         if current_file and in_hunk:
-            if line.startswith(('+++', '---', '@@')):
+            if line.startswith(('+++ ', '--- ', '@@ ')):
                 # Header or next hunk marker
-                if line.startswith('@@'):
+                if line.startswith('@@ '):
                     in_hunk = True
                 else:
                     in_hunk = False

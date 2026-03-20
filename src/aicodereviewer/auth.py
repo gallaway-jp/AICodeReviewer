@@ -38,10 +38,14 @@ SERVICE_NAME = "AICodeReviewer"
 
 # ── profile management ─────────────────────────────────────────────────────
 
-def get_profile_name() -> str:
-    """Retrieve stored AWS profile or prompt the user for initial setup."""
+def get_profile_name(interactive: bool = True) -> str:
+    """Retrieve stored AWS profile or, when allowed, prompt for initial setup."""
     profile = keyring.get_password(SERVICE_NAME, "aws_profile")
     if not profile:
+        if not interactive:
+            raise RuntimeError(
+                "No AWS profile is stored. Run '--set-profile <name>' or configure AWS credentials before using the Bedrock backend."
+            )
         print(t("auth.setup_header"))
         print(t("auth.setup_prompt"))
         print(t("auth.setup_hint"))
@@ -129,14 +133,16 @@ def get_system_language() -> str:
 
 # ── AWS session creation ──────────────────────────────────────────────────
 
-def create_aws_session(region: str = "us-east-1") -> Tuple["boto3.Session", str]:
+def create_aws_session(region: str = "us-east-1", *, interactive: bool = False) -> Tuple["boto3.Session", str]:
     """
     Create an AWS session trying multiple auth strategies.
 
     Priority:
-        1. SSO session (``[aws] sso_session``)
-        2. Direct credentials (``[aws] access_key_id``)
-        3. Profile-based (system keyring)
+        1. Direct credentials (``[aws] access_key_id`` + env secret)
+        2. Profile-based (system keyring)
+
+    Runtime use is non-interactive by default so GUI and automation flows
+    cannot block on stdin.
 
     Returns:
         ``(session, description)`` tuple.
@@ -147,21 +153,21 @@ def create_aws_session(region: str = "us-east-1") -> Tuple["boto3.Session", str]
 
     config_region = config.get("aws", "region") or region
 
-    # 1. SSO
+    # Unsupported configuration: sso_session names cannot be passed directly to boto3.Session.
     sso_session = (config.get("aws", "sso_session", "") or "").strip()
     if sso_session:
-        try:
-            sess = boto3.Session(sso_session=sso_session, region=config_region)  # type: ignore
-            sess.client("sts").get_caller_identity()  # type: ignore
-            return sess, f"SSO ({sso_session})"
-        except Exception as exc:
-            logger.warning("SSO auth failed (%s), trying next method …", exc)
+        logger.warning(
+            "Configured AWS sso_session '%s' cannot be used directly by runtime auth; falling back to direct credentials or stored profile.",
+            sso_session,
+        )
 
-    # 2. Direct credentials
+    # 1. Direct credentials
     access_key = (config.get("aws", "access_key_id", "") or "").strip()
     if access_key:
         session_token = (config.get("aws", "session_token", "") or "").strip()
-        secret = input(t("auth.secret_key_prompt")).strip()
+        secret = (os.environ.get("AWS_SECRET_ACCESS_KEY") or "").strip()
+        if not secret and interactive:
+            secret = input(t("auth.secret_key_prompt")).strip()
         if secret:
             try:
                 sess = boto3.Session(
@@ -174,9 +180,13 @@ def create_aws_session(region: str = "us-east-1") -> Tuple["boto3.Session", str]
                 return sess, f"Direct credentials ({access_key[:8]}…)"
             except (NoCredentialsError, PartialCredentialsError) as exc:
                 logger.warning("Credential auth failed (%s), trying profile …", exc)
+        elif not interactive:
+            logger.warning(
+                "AWS access_key_id is configured but no AWS_SECRET_ACCESS_KEY environment variable is available; falling back to stored profile."
+            )
 
-    # 3. Profile
-    profile = get_profile_name()
+    # 2. Profile
+    profile = get_profile_name(interactive=interactive)
     try:
         sess = boto3.Session(profile_name=profile, region_name=config_region)
         sess.client("sts").get_caller_identity()  # type: ignore

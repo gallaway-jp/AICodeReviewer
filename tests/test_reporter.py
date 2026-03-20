@@ -10,6 +10,7 @@ import json
 import tempfile
 from datetime import datetime
 from pathlib import Path
+from aicodereviewer.config import config
 from aicodereviewer.reporter import generate_review_report
 from aicodereviewer.models import ReviewIssue, ReviewReport
 
@@ -138,3 +139,45 @@ class TestGenerateReviewReport:
                 content = f.read()
 
             assert "Quality Score: 85/100" in content
+
+    def test_generate_review_report_preserves_requested_text_path(self):
+        """A text output path should not be overwritten by markdown generation."""
+        report = self.create_test_report()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_file = Path(temp_dir) / "test_report.txt"
+            original_formats = config.get('output', 'formats', 'json,txt')
+            config.set_value('output', 'formats', 'txt,md')
+
+            try:
+                result_file = generate_review_report(report, str(output_file))
+            finally:
+                config.set_value('output', 'formats', original_formats)
+
+            md_file = output_file.with_suffix('.md')
+            assert result_file == str(output_file)
+            assert output_file.exists()
+            assert md_file.exists()
+
+            txt_content = output_file.read_text(encoding='utf-8')
+            md_content = md_file.read_text(encoding='utf-8')
+            assert 'AI Code Review Report' in txt_content
+            assert '# AI Code Review Report' in md_content
+
+    def test_generate_review_report_trims_configured_formats(self):
+        """Whitespace in output.formats should not suppress valid formats."""
+        report = self.create_test_report()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_file = Path(temp_dir) / "test_report.json"
+            original_formats = config.get('output', 'formats', 'json,txt')
+            config.set_value('output', 'formats', 'json, txt, md')
+
+            try:
+                generate_review_report(report, str(output_file))
+            finally:
+                config.set_value('output', 'formats', original_formats)
+
+            assert output_file.exists()
+            assert (output_file.parent / 'test_report_summary.txt').exists()
+            assert output_file.with_suffix('.md').exists()

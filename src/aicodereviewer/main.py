@@ -14,6 +14,7 @@ Supports:
 import argparse
 import logging
 import sys
+from typing import Sequence
 
 from aicodereviewer.auth import get_system_language, set_profile_name, clear_profile
 from aicodereviewer.backends import create_backend
@@ -24,6 +25,31 @@ from aicodereviewer.orchestration import AppRunner
 from aicodereviewer.i18n import t, set_locale
 
 logger = logging.getLogger(__name__)
+
+
+def _print_console(text: str, end: str = "\n") -> None:
+    """Write console output using replacement for unsupported characters."""
+    stream = sys.stdout
+    encoding = getattr(stream, "encoding", None) or "utf-8"
+    payload = f"{text}{end}"
+
+    try:
+        if hasattr(stream, "buffer"):
+            stream.buffer.write(payload.encode(encoding, errors="replace"))
+            stream.flush()
+        else:
+            stream.write(payload.encode(encoding, errors="replace").decode(encoding, errors="replace"))
+            stream.flush()
+    except Exception:
+        print(payload, end="")
+
+
+def _determine_target_lang(argv: Sequence[str]) -> str:
+    """Resolve locale before building the full parser so help is localized."""
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--lang", choices=["en", "ja", "default"], default="default")
+    args, _ = parser.parse_known_args(list(argv))
+    return args.lang if args.lang != "default" else get_system_language()
 
 
 def _build_epilog() -> str:
@@ -50,7 +76,12 @@ def _build_epilog() -> str:
     return "\n".join(lines)
 
 
-def main():
+def main(argv: Sequence[str] | None = None) -> int:
+    argv = list(argv) if argv is not None else sys.argv[1:]
+
+    target_lang = _determine_target_lang(argv)
+    set_locale(target_lang)
+
     parser = argparse.ArgumentParser(
         description=t("cli.desc"),
         formatter_class=argparse.RawTextHelpFormatter,
@@ -108,32 +139,26 @@ def main():
     parser.add_argument("--check-connection", action="store_true",
                         help=t("cli.help_check_connection"))
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     # ── logging setup ──────────────────────────────────────────────────────
     _setup_logging()
 
-    # ── language / locale ──────────────────────────────────────────────────
-    target_lang = args.lang if args.lang != "default" else get_system_language()
-    set_locale(target_lang)
-
     # ── GUI shortcut ───────────────────────────────────────────────────────
     if args.gui:
-        _launch_gui()
-        return
+        return _launch_gui()
 
     # ── profile commands ───────────────────────────────────────────────────
     if args.set_profile:
         set_profile_name(args.set_profile)
-        return
+        return 0
     if args.clear_profile:
         clear_profile()
-        return
+        return 0
 
     # ── connection check ───────────────────────────────────────────────────
     if args.check_connection:
-        _check_connection(args.backend)
-        return
+        return _check_connection(args.backend)
 
     # ── parse review types ─────────────────────────────────────────────────
     review_types = _parse_review_types(args.review_types)
@@ -142,7 +167,7 @@ def main():
     _validate_args(parser, args, review_types)
 
     # ── run ────────────────────────────────────────────────────────────────
-    _run_review(args, review_types, target_lang)
+    return _run_review(args, review_types, target_lang)
 
 
 def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace, review_types: list) -> None:
@@ -162,13 +187,17 @@ def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace, re
         parser.error("--spec-file required when using specification type")
 
 
-def _run_review(args: argparse.Namespace, review_types: list, target_lang: str) -> None:
+def _run_review(args: argparse.Namespace, review_types: list, target_lang: str) -> int:
     """Create the backend, load the spec file if needed, and execute the review."""
     backend_name = args.backend or "bedrock"
 
     client = None
     if not args.dry_run:
-        client = create_backend(backend_name)
+        try:
+            client = create_backend(backend_name)
+        except Exception as exc:
+            logger.error("Failed to create backend '%s': %s", backend_name, exc)
+            return 1
 
     spec_content = None
     if args.spec_file and not args.dry_run:
@@ -177,14 +206,14 @@ def _run_review(args: argparse.Namespace, review_types: list, target_lang: str) 
                 spec_content = fh.read()
         except FileNotFoundError:
             logger.error(t("cli.spec_not_found", path=args.spec_file))
-            return
+            return 1
         except Exception as exc:
             logger.error(t("cli.spec_read_error", error=exc))
-            return
+            return 1
 
     if client is None and not args.dry_run:
         logger.error("Failed to create backend '%s'; cannot run review.", backend_name)
-        return
+        return 1
 
     runner = AppRunner(client, scan_fn=scan_project_with_scope, backend_name=backend_name)
     runner.run(
@@ -200,6 +229,7 @@ def _run_review(args: argparse.Namespace, review_types: list, target_lang: str) 
         dry_run=args.dry_run,
         output_file=args.output,
     )
+    return 0
 
 
 # ── helpers ────────────────────────────────────────────────────────────────
@@ -224,12 +254,12 @@ def _parse_review_types(raw: str) -> list:
     return result or ["best_practices"]
 
 
-def _check_connection(backend_name: str | None):
+def _check_connection(backend_name: str | None) -> int:
     """Test connectivity for the selected backend with diagnostic output."""
     from aicodereviewer.config import config as _cfg
 
     backend_name = backend_name or _cfg.get("backend", "type", "bedrock")
-    print(t("conn.checking", backend=backend_name))
+    _print_console(t("conn.checking", backend=backend_name))
 
     try:
         client = create_backend(backend_name)
@@ -239,35 +269,37 @@ def _check_connection(backend_name: str | None):
         logger.error("%s", exc)
 
     if ok:
-        print(t("conn.success"))
+        _print_console(t("conn.success"))
         # Show extra details per backend
         if backend_name == "bedrock":
             model = _cfg.get("model", "model_id", "")
             region = _cfg.get("aws", "region", "")
-            print(t("conn.details_model", model=model))
-            print(t("conn.details_region", region=region))
+            _print_console(t("conn.details_model", model=model))
+            _print_console(t("conn.details_region", region=region))
         elif backend_name == "local":
             url = _cfg.get("local_llm", "api_url", "")
             model = _cfg.get("local_llm", "model", "")
-            print(t("conn.details_url", url=url))
-            print(t("conn.details_model", model=model))
+            _print_console(t("conn.details_url", url=url))
+            _print_console(t("conn.details_model", model=model))
+        return 0
     else:
-        print(t("conn.failure"))
+        _print_console(t("conn.failure"))
         # Provide helpful hints
         if backend_name == "bedrock":
-            print(t("conn.hint_bedrock_sso"))
-            print(t("conn.hint_bedrock_profile"))
-            print(t("conn.hint_bedrock_model"))
+            _print_console(t("conn.hint_bedrock_sso"))
+            _print_console(t("conn.hint_bedrock_profile"))
+            _print_console(t("conn.hint_bedrock_model"))
         elif backend_name == "kiro":
-            print(t("conn.hint_kiro_wsl"))
-            print(t("conn.hint_kiro_cli"))
+            _print_console(t("conn.hint_kiro_wsl"))
+            _print_console(t("conn.hint_kiro_cli"))
         elif backend_name == "copilot":
-            print(t("conn.hint_copilot_install"))
-            print(t("conn.hint_copilot_auth"))
+            _print_console(t("conn.hint_copilot_install"))
+            _print_console(t("conn.hint_copilot_auth"))
         elif backend_name == "local":
-            print(t("conn.hint_local_url"))
-            print(t("conn.hint_local_model"))
-            print(t("conn.hint_local_api_type"))
+            _print_console(t("conn.hint_local_url"))
+            _print_console(t("conn.hint_local_model"))
+            _print_console(t("conn.hint_local_api_type"))
+        return 1
 
 
 def _setup_logging():
@@ -298,15 +330,16 @@ def _setup_logging():
         pass
 
 
-def _launch_gui():
+def _launch_gui() -> int:
     """Import and start the CustomTkinter GUI."""
     try:
         from aicodereviewer.gui.app import launch
         launch()
+        return 0
     except ImportError as exc:
         logger.error("%s\n%s", t("cli.gui_missing"), exc)
-        sys.exit(1)
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
