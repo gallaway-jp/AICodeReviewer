@@ -8,6 +8,22 @@ The GUI exposes the same core review system as the CLI through a four-tab deskto
 aicodereviewer --gui
 ```
 
+The screenshots below are generated from the real test-mode GUI with:
+
+```powershell
+./tools/capture_gui_screenshots.ps1
+```
+
+## Screenshots
+
+### Results Tab
+
+![Results tab screenshot](images/gui-results-tab.png)
+
+### AI Fix Mode
+
+![AI Fix mode screenshot](images/gui-ai-fix-mode.png)
+
 ## Tabs
 
 ## Review Tab
@@ -75,6 +91,39 @@ Capabilities:
 6. Start the review.
 7. Use the Results tab to inspect, filter, fix, save sessions, and finalize.
 8. Use the Output Log tab if anything looks wrong or you need runtime detail.
+
+## GUI Workflow Diagram
+
+```mermaid
+flowchart TD
+	Launch[Launch GUI] --> Review[Review Tab]
+	Review --> Scope[Choose project or diff scope]
+	Scope --> Types[Select review types]
+	Types --> Backend[Choose backend]
+	Backend --> Meta[Enter programmer and reviewer metadata]
+	Meta --> Run{Dry run or full review?}
+	Run -->|Dry run| Log[Output Log Tab]
+	Run -->|Full review| Results[Results Tab]
+	Results --> Filter[Filter issues by severity, status, type]
+	Results --> Fix[AI Fix mode / preview / edit]
+	Results --> Session[Save or load session]
+	Results --> Finalize[Finalize report]
+	Backend --> Health[Check setup / health]
+	Health --> Log
+```
+
+## GUI State Relationships
+
+```mermaid
+flowchart LR
+	ReviewTab[Review Tab] --> ResultsTab[Results Tab]
+	ReviewTab --> LogTab[Output Log Tab]
+	SettingsTab[Settings Tab] --> ReviewTab
+	SettingsTab --> ResultsTab
+	HealthChecks[Health / Model Refresh] --> ReviewTab
+	HealthChecks --> SettingsTab
+	ResultsTab --> LogTab
+```
 
 ## Testing and Manual Validation
 

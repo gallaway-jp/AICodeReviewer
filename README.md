@@ -73,6 +73,10 @@ aicodereviewer --check-connection --backend bedrock
 aicodereviewer --check-connection --backend local
 ```
 
+## GUI Preview
+
+![AICodeReviewer GUI Results tab](docs/images/gui-results-tab.png)
+
 ## Documentation
 
 Start with [docs/README.md](docs/README.md).

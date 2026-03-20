@@ -29,6 +29,117 @@ flowchart TD
 	CONFIG --> REPORT
 ```
 
+## Component Diagram
+
+```mermaid
+flowchart LR
+	subgraph Entry[Entry Points]
+		CLI[CLI\nmain.py]
+		GUI[GUI\napp.py + mixins]
+	end
+
+	subgraph Core[Core Review Pipeline]
+		SCAN[scanner.py]
+		ORCH[orchestration.py]
+		REVIEW[reviewer.py]
+		INTERACTIVE[interactive.py]
+		REPORT[reporter.py]
+		MODELS[models.py]
+	end
+
+	subgraph Infra[Infrastructure]
+		CONFIG[config.py]
+		BACKENDS[backends/*]
+		AUTH[auth.py]
+		BACKUP[backup.py]
+	end
+
+	CLI --> ORCH
+	GUI --> ORCH
+	ORCH --> SCAN
+	ORCH --> REVIEW
+	REVIEW --> BACKENDS
+	REVIEW --> MODELS
+	INTERACTIVE --> MODELS
+	ORCH --> INTERACTIVE
+	ORCH --> REPORT
+	REPORT --> MODELS
+	CONFIG --> CLI
+	CONFIG --> GUI
+	CONFIG --> BACKENDS
+	CONFIG --> REVIEW
+	AUTH --> CLI
+	AUTH --> BACKENDS
+	BACKUP --> ORCH
+```
+
+## CLI Sequence
+
+```mermaid
+sequenceDiagram
+	participant User
+	participant CLI as main.py
+	participant Config as config.py
+	participant Backend as create_backend()
+	participant Runner as AppRunner
+	participant Scanner as scanner.py
+	participant Reviewer as reviewer.py
+	participant Interactive as interactive.py
+	participant Reporter as reporter.py
+
+	User->>CLI: run command
+	CLI->>Config: load settings / locale
+	CLI->>Backend: create backend when needed
+	CLI->>Runner: construct runner
+	Runner->>Scanner: discover files for scope
+	alt dry run
+		Runner-->>User: list files and exit
+	else full review
+		Runner->>Reviewer: collect review issues
+		Reviewer->>Backend: request model responses
+		Runner->>Interactive: resolve / ignore / fix flow
+		Runner->>Reporter: write reports
+		Reporter-->>User: output paths and summary
+	end
+```
+
+## Reviewer Pipeline Sequence
+
+```mermaid
+sequenceDiagram
+	participant User
+	participant Entry as CLI or GUI
+	participant Runner as AppRunner
+	participant Scanner as scanner.py
+	participant Reviewer as collect_review_issues()
+	participant Backend as AIBackend
+	participant Parser as response_parser.py
+	participant Results as Interactive CLI or GUI Results
+	participant Fixer as fixer.py / AI Fix UI
+
+	User->>Entry: start review
+	Entry->>Runner: run(review_types, scope, backend)
+	Runner->>Scanner: resolve target files
+	Runner->>Reviewer: review discovered files
+	Reviewer->>Backend: get_review(...) per batch or file
+	Backend-->>Reviewer: raw model response
+	Reviewer->>Parser: parse_review_response(...)
+	Parser-->>Reviewer: ReviewIssue objects
+	Reviewer-->>Runner: normalized issues
+	Runner-->>Results: show issue list
+
+	alt reviewer resolves or skips
+		Results-->>Runner: update issue status only
+	else reviewer requests AI Fix
+		Results->>Fixer: apply_ai_fix(issue, client, review_type)
+		Fixer->>Backend: get_fix(...) or fix-style review prompt
+		Backend-->>Fixer: proposed file contents
+		Fixer-->>Results: diff / preview payload
+		Results-->>User: inspect changes and confirm
+		User-->>Results: apply or cancel
+	end
+```
+
 ## Main Components
 
 | Area | Responsibility |
@@ -62,6 +173,17 @@ The GUI is composed around mixins:
 - backend health checks and model refreshes
 
 This keeps the main application shell smaller while preserving a unified window and shared state.
+
+## GUI Internal Roles
+
+| Module | Responsibility |
+|---|---|
+| `gui/app.py` | top-level window, tabs, log plumbing, common status UI |
+| `gui/review_mixin.py` | review setup, validation, execution start, dry-run flow |
+| `gui/results_mixin.py` | issue cards, filtering, AI fix mode, sessions, finalization |
+| `gui/settings_mixin.py` | config editing and persistence |
+| `gui/health_mixin.py` | backend health checks and model refresh behavior |
+| `gui/widgets.py` | shared widgets, tooltips, log handler |
 
 ## Documentation Rule
 
