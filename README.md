@@ -79,6 +79,12 @@ aicodereviewer --check-connection --backend local
 
 ## Documentation
 
+- Documentation is the source of truth for supported user-facing behavior, workflows, configuration, and operational expectations.
+- Code and tests implement and verify that documented contract.
+- For internal implementation details not yet covered by the docs, code and tests remain authoritative.
+
+See [docs/README.md](D:/Development/Python/AICodeReviewer/docs/README.md) for the maintained documentation set.
+
 Start with [docs/README.md](docs/README.md).
 
 Core guides:

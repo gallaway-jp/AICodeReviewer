@@ -23,7 +23,9 @@ The goal of this docs set is simple:
 
 ## Documentation Principles
 
-- The code and tests are the source of truth.
+- Documentation is the source of truth for supported user-facing behavior, workflows, configuration, and operational expectations.
+- Code and tests must implement and verify the documented contract.
+- For internal implementation details not yet covered by the docs, code and tests remain authoritative.
 - Root `README.md` stays short and task-oriented.
 - Deep reference material lives in `docs/`.
 - `examples/` is for hands-on walkthroughs and sample-project usage.
