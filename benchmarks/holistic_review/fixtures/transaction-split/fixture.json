@@ -1,0 +1,22 @@
+{
+  "id": "transaction-split",
+  "title": "Transaction Boundary Split",
+  "description": "A service now performs multi-step writes without the repository transaction wrapper it previously depended on.",
+  "scope": "project",
+  "review_types": ["best_practices"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "transaction-boundary-loss",
+      "description_keywords": ["transaction", "partial"],
+      "file_path_contains_any": ["service.py", "repository.py"],
+      "issue_type": "best_practices",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["repository.py"],
+      "systemic_impact_contains": "partial",
+      "evidence_basis_contains": "commit"
+    }
+  ]
+}

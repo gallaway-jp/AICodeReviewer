@@ -1,0 +1,22 @@
+{
+  "id": "auth-guard-regression",
+  "title": "Authorization Guard Regression",
+  "description": "An admin endpoint stopped using the stricter guard even though the auth module still exposes it.",
+  "scope": "project",
+  "review_types": ["security"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "missing-admin-guard",
+      "description_keywords": ["admin", "guard"],
+      "file_path_contains_any": ["admin.py", "auth.py"],
+      "issue_type": "security",
+      "minimum_severity": "high",
+      "context_scope": "cross_file",
+      "related_files_contains": ["auth.py"],
+      "systemic_impact_contains": "privilege",
+      "evidence_basis_contains": "require_admin"
+    }
+  ]
+}

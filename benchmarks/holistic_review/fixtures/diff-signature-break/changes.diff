@@ -1,0 +1,9 @@
+--- a/src/user_service.py
++++ b/src/user_service.py
+@@ -1,4 +1,5 @@
+-def fetch_user(user_id: str) -> dict:
++def fetch_user(user_id: str, tenant_id: str) -> dict:
+     return {
+         "user_id": user_id,
++        "tenant_id": tenant_id,
+     }

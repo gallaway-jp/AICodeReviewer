@@ -1,0 +1,23 @@
+{
+  "id": "diff-signature-break",
+  "title": "Diff Signature Break With Stale Call Sites",
+  "description": "A changed function signature now requires a tenant id, but existing callers still pass the old argument set.",
+  "scope": "diff",
+  "review_types": ["best_practices"],
+  "project_dir": "project",
+  "diff_file": "changes.diff",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "signature-break-finding",
+      "description_keywords": ["tenant_id", "caller"],
+      "file_path_contains_any": ["user_service.py", "controller.py"],
+      "issue_type": "best_practices",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["controller.py"],
+      "systemic_impact_contains": "call",
+      "evidence_basis_contains": "tenant_id"
+    }
+  ]
+}

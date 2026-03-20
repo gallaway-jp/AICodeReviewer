@@ -1,0 +1,22 @@
+{
+  "id": "validation-drift",
+  "title": "Validation Drift Across Layers",
+  "description": "The API endpoint forwards a new required field, but the validation layer no longer enforces it consistently.",
+  "scope": "project",
+  "review_types": ["security"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "validation-drift-finding",
+      "description_keywords": ["email", "validate"],
+      "file_path_contains_any": ["api.py", "validation.py"],
+      "issue_type": "security",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["validation.py"],
+      "systemic_impact_contains": "unvalidated",
+      "evidence_basis_contains": "email"
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "id": "architectural-layer-leak",
+  "title": "Architectural Layer Leak",
+  "description": "A presentation-oriented module now opens database connections directly instead of going through the service layer.",
+  "scope": "project",
+  "review_types": ["architecture"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "layer-leak-finding",
+      "description_keywords": ["controller", "database"],
+      "file_path_contains_any": ["controller.py", "db.py"],
+      "issue_type": "architecture",
+      "minimum_severity": "medium",
+      "context_scope": "project",
+      "related_files_contains": ["service.py"],
+      "systemic_impact_contains": "layer",
+      "evidence_basis_contains": "db"
+    }
+  ]
+}

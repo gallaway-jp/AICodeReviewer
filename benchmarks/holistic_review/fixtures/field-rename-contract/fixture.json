@@ -1,0 +1,22 @@
+{
+  "id": "field-rename-contract",
+  "title": "Field Rename Contract Drift",
+  "description": "A serializer renamed an outward-facing field but a downstream caller still reads the old key.",
+  "scope": "project",
+  "review_types": ["best_practices"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "renamed-field-contract",
+      "description_keywords": ["display_name", "full_name"],
+      "file_path_contains_any": ["handlers.py", "serializers.py"],
+      "issue_type": "best_practices",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["serializers.py"],
+      "systemic_impact_contains": "callers",
+      "evidence_basis_contains": "full_name"
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "id": "cache-invalidation-gap",
+  "title": "Cache Invalidation Gap",
+  "description": "The write path updates persistent state but leaves a reader cache untouched.",
+  "scope": "project",
+  "review_types": ["performance"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "missing-cache-invalidation",
+      "description_keywords": ["cache", "invalidate"],
+      "file_path_contains_any": ["profile_service.py", "cache.py"],
+      "issue_type": "performance",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["cache.py"],
+      "systemic_impact_contains": "stale",
+      "evidence_basis_contains": "user_profile"
+    }
+  ]
+}

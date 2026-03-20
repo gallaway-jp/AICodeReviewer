@@ -1,0 +1,22 @@
+{
+  "id": "partial-refactor-callers",
+  "title": "Partial Refactor Leaves Callers Behind",
+  "description": "A service refactor changed a return shape, but one caller still consumes the legacy field.",
+  "scope": "project",
+  "review_types": ["best_practices"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "stale-caller-contract",
+      "description_keywords": ["result", "value"],
+      "file_path_contains_any": ["service.py", "client.py"],
+      "issue_type": "best_practices",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["client.py"],
+      "systemic_impact_contains": "caller",
+      "evidence_basis_contains": "result"
+    }
+  ]
+}
