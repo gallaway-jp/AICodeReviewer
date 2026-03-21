@@ -68,6 +68,7 @@ def _make_mock_client(
 def _fake_copilot_module(client_instance: MagicMock) -> types.ModuleType:
     mod = types.ModuleType("copilot")
     mod.CopilotClient = MagicMock(return_value=client_instance)
+    mod.PermissionHandler = types.SimpleNamespace(approve_all="approve_all")
     return mod
 
 
@@ -188,6 +189,11 @@ class TestGetReview:
                 assert b.get_review("some code") == custom_reply
             finally:
                 b.close()
+
+    def test_create_session_receives_permission_handler(self, backend, mock_cli):
+        backend.get_review("x = 1")
+        session_config = mock_cli.create_session.await_args.args[0]
+        assert session_config["on_permission_request"] == "approve_all"
 
 
 # ---------------------------------------------------------------------------

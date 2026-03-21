@@ -244,7 +244,7 @@ class CopilotBackend(AIBackend):
         async with self._async_client_lock:
             if self._client is None:
                 # Late import keeps the SDK optional until first use.
-                from copilot import CopilotClient  # github-copilot-sdk
+                from copilot import CopilotClient, PermissionHandler  # github-copilot-sdk
 
                 options: dict = {
                     "cli_path": self.copilot_path,
@@ -260,6 +260,7 @@ class CopilotBackend(AIBackend):
                     options["github_token"] = github_token
 
                 self._client = CopilotClient(options)
+                self._permission_handler = PermissionHandler.approve_all
                 await self._client.start()
                 logger.debug("CopilotClient started (CLI process managed by SDK).")
         return self._client
@@ -277,6 +278,7 @@ class CopilotBackend(AIBackend):
         session_config: dict = {
             "streaming": True,
             "system_message": {"content": system_prompt},
+            "on_permission_request": getattr(self, "_permission_handler", None),
             # Single-shot requests don't need context compaction.
             "infinite_sessions": {"enabled": False},
         }
