@@ -96,6 +96,8 @@ class TestBuildSystemPromptFrameworks:
         assert "REVIEW METHOD:" in prompt
         assert "Only emit broader-impact findings when supported by concrete evidence" in prompt
         assert "Do not use generic phrases like \"batch code\"" in prompt
+        assert "For caller/callee drift, renamed fields, or signature changes" in prompt
+        assert "For guard, validation, cache, or transaction findings" in prompt
 
     def test_none_frameworks_no_supplement(self):
         prompt = AIBackend._build_system_prompt("best_practices", "en", detected_frameworks=None)
@@ -184,6 +186,7 @@ class TestUserPromptBuilders:
         assert "assess whether any issue suggests cross-file or project-level impact" in prompt
         assert "Only include broader-impact findings when the evidence is concrete" in prompt
         assert "make evidence_basis a short factual statement" in prompt
+        assert "caller/callee drift, stale cache/state handling, missing validation or auth checks, or loss of transaction boundaries" in prompt
         assert "CODE TO REVIEW:" in prompt
 
     def test_spec_prompt_requests_broader_impact_check(self):
@@ -208,6 +211,7 @@ class TestUserPromptBuilders:
         assert "contract mismatches" in prompt
         assert "Only report broader findings when they are supported by the files shown here" in prompt
         assert "name the supporting related file(s)" in prompt
+        assert "transaction-boundary issues" in prompt
         assert "=== FILE: src/a.py ===" in prompt
 
 

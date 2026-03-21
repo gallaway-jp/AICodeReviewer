@@ -304,6 +304,7 @@ class TestBuildDiffUserMessage:
         assert "only report that broader impact when it is supported by concrete evidence" in msg
         assert "Keep the primary finding anchored to the changed code" in msg
         assert "make evidence_basis a short factual statement" in msg
+        assert "breaks callers, weakens a guard, leaves stale state, or removes transaction safety" in msg
 
     def test_includes_commit_messages(self):
         entry = self._make_entry(with_commit=True)
@@ -393,6 +394,7 @@ class TestBuildMultiFileDiffUserMessage:
         assert "cross-file problems such as contract mismatches, partial refactors, broken call paths, or inconsistent validation/state handling" in msg
         assert "Only report broader findings when they are supported by concrete evidence" in msg
         assert "name the supporting related file(s)" in msg
+        assert "stale state, cache invalidation, or transaction-boundary loss" in msg
         assert "Keep each finding anchored to the changed code that exposes it" in msg
 
 
