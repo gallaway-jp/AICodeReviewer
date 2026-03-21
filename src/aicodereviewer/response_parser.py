@@ -28,6 +28,29 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+_PROJECT_SCOPE_CATEGORY_MARKERS = {
+    "architecture",
+    "layer-leak",
+    "layer-leakage",
+    "layer_leak",
+    "layer_leakage",
+    "dependency",
+    "missing-repository",
+    "missing_repository",
+    "incomplete-refactor",
+    "incomplete_refactor",
+}
+
+_PROJECT_SCOPE_TEXT_MARKERS = (
+    "architecture",
+    "architectural",
+    "layer",
+    "layering",
+    "dependency direction",
+    "separation of concerns",
+    "mvc",
+    "hexagonal",
+)
 
 # ── Severity normalisation ─────────────────────────────────────────────────
 
@@ -56,6 +79,30 @@ def _normalize_severity(severity_str: str) -> str:
     if not normalized:
         logger.debug("Unknown severity '%s', defaulting to 'medium'", severity_str)
         return "medium"
+    return normalized
+
+def _normalize_context_scope(
+    context_scope: str,
+    category: str,
+    related_files: List[str],
+    systemic_impact: Optional[str],
+    evidence_basis: Optional[str],
+) -> str:
+    """Promote obviously broader findings to the matching scope."""
+    normalized = context_scope
+    if normalized == "local" and related_files:
+        normalized = "cross_file"
+
+    category_normalized = category.strip().lower()
+    evidence_text = " ".join(
+        part for part in (systemic_impact, evidence_basis) if part
+    ).lower()
+    if normalized == "cross_file" and (
+        category_normalized in _PROJECT_SCOPE_CATEGORY_MARKERS
+        or any(marker in evidence_text for marker in _PROJECT_SCOPE_TEXT_MARKERS)
+    ):
+        normalized = "project"
+
     return normalized
 
 
@@ -236,6 +283,13 @@ def _json_to_issues(
             evidence_basis = finding.get("evidence_basis")
             if evidence_basis is not None:
                 evidence_basis = str(evidence_basis).strip() or None
+            context_scope = _normalize_context_scope(
+                context_scope,
+                category,
+                related_files,
+                systemic_impact,
+                evidence_basis,
+            )
 
             # Build human-readable description
             description = title

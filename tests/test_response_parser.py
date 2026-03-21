@@ -205,6 +205,47 @@ class TestJsonParse:
         assert issues[0].confidence is None
         assert issues[0].evidence_basis is None
 
+    def test_json_related_files_promote_local_scope_to_cross_file(self, file_entries):
+        response = json.dumps({
+            "files": [{
+                "filename": "src/app.py",
+                "findings": [{
+                    "severity": "high",
+                    "title": "Contract drift",
+                    "description": "The payload contract no longer matches the consumer.",
+                    "context_scope": "local",
+                    "related_files": ["src/consumer.py"],
+                    "systemic_impact": "Breaks the consumer contract.",
+                    "evidence_basis": "app.py returns full_name while consumer.py reads display_name.",
+                }],
+            }],
+        })
+        issues = _try_json_parse(response, file_entries, "regression")
+        assert len(issues) == 1
+        assert issues[0].context_scope == "cross_file"
+        assert "Context Scope: cross_file" in issues[0].ai_feedback
+
+    def test_json_architecture_metadata_promotes_cross_file_scope_to_project(self, file_entries):
+        response = json.dumps({
+            "files": [{
+                "filename": "src/controller.py",
+                "findings": [{
+                    "severity": "high",
+                    "category": "layer-leakage",
+                    "title": "Controller bypasses service layer",
+                    "description": "The controller talks directly to the database layer.",
+                    "context_scope": "cross_file",
+                    "related_files": ["src/service.py"],
+                    "systemic_impact": "Breaks architecture layering across the project.",
+                    "evidence_basis": "controller.py imports db.py directly instead of routing through service.py.",
+                }],
+            }],
+        })
+        issues = _try_json_parse(response, file_entries, "architecture")
+        assert len(issues) == 1
+        assert issues[0].context_scope == "project"
+        assert "Context Scope: project" in issues[0].ai_feedback
+
 
 # ── Strategy 2: Markdown-fenced JSON ──────────────────────────────────────
 

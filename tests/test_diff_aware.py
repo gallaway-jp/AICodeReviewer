@@ -303,6 +303,7 @@ class TestBuildDiffUserMessage:
         msg = AIBackend._build_diff_user_message(self._make_entry(), "security")
         assert "only report that broader impact when it is supported by concrete evidence" in msg
         assert "Keep the primary finding anchored to the changed code" in msg
+        assert "make evidence_basis a short factual statement" in msg
 
     def test_includes_commit_messages(self):
         entry = self._make_entry(with_commit=True)
@@ -391,6 +392,7 @@ class TestBuildMultiFileDiffUserMessage:
         msg = AIBackend._build_multi_file_diff_user_message(self._make_entries(), "security")
         assert "cross-file problems such as contract mismatches, partial refactors, broken call paths, or inconsistent validation/state handling" in msg
         assert "Only report broader findings when they are supported by concrete evidence" in msg
+        assert "name the supporting related file(s)" in msg
         assert "Keep each finding anchored to the changed code that exposes it" in msg
 
 

@@ -35,7 +35,7 @@ markdown code fences, preamble, or any text outside the JSON object.
                     "related_files": ["<path>", "..."],
                     "systemic_impact": "<brief broader impact>",
                     "confidence": "high|medium|low",
-                    "evidence_basis": "<batch code|project context|framework guidance|diff context|issue interaction>"
+                                        "evidence_basis": "<brief concrete evidence, e.g. serializers.py emits full_name while handlers.py reads display_name>"
         }
       ]
     }
@@ -48,8 +48,12 @@ Rules:
 - "line" is the 1-based line number (null if file-level).
 - Include ALL findings you discover — do not merge multiple issues.
 - Use "context_scope" = "local" unless the finding is clearly supported across files or at project level.
+- Use "context_scope" = "cross_file" for a specific mismatch, caller/callee break, or dependency problem spanning multiple files.
+- Use "context_scope" = "project" for architectural, layering, or cross-cutting contract findings that describe the project structure as a whole.
 - Keep "related_files" short (0-3 entries) and only include files supported by concrete evidence.
+- When "context_scope" is "cross_file" or "project", include the most relevant supporting file(s) in "related_files" whenever they are known.
 - Use systemic fields only when you can justify them from the provided code, prompt context, or framework guidance.
+- "evidence_basis" must be a short concrete statement naming the exact evidence, such as a field mismatch, missing guard, stale caller, dependency edge, or changed signature. Do not use generic phrases like "batch code", "project context", or "diff context" by themselves.
 """
 
 
@@ -544,8 +548,10 @@ class AIBackend(ABC):
             "1. Identify direct defects in the provided code first.\n"
             "2. Then assess whether any defect implies cross-file or project-level impact.\n"
             "3. Only emit broader-impact findings when supported by concrete evidence from the provided code, prompt context, framework guidance, or dependency hints.\n"
-            "4. Prefer fewer high-confidence systemic findings over speculative ones.\n"
-            "5. When a local defect suggests broader risk, preserve the local finding and use systemic metadata instead of duplicating the issue."
+            "4. Set context_scope to local, cross_file, or project based on the breadth of the actual evidence; use project only for genuinely architectural or cross-cutting impact.\n"
+            "5. When you provide systemic metadata, name the specific supporting files and write evidence_basis as a short factual explanation of the exact mismatch, dependency, signature change, or missing check.\n"
+            "6. Prefer fewer high-confidence systemic findings over speculative ones.\n"
+            "7. When a local defect suggests broader risk, preserve the local finding and use systemic metadata instead of duplicating the issue."
         )
 
         if lang == "ja":
@@ -572,11 +578,11 @@ class AIBackend(ABC):
                 "Compare the code against the specification and identify "
                 "deviations, missing implementations, or areas that don't "
                 "meet the requirements. After identifying direct mismatches, "
-                "assess whether any deviation implies broader cross-file or project-level impact based on the provided context. Only include broader findings when the evidence is concrete.\n\n"
+                "assess whether any deviation implies broader cross-file or project-level impact based on the provided context. Only include broader findings when the evidence is concrete. For broader findings, set context_scope deliberately, include the exact related file(s) when known, and make evidence_basis a short factual statement about the exact mismatch or missing contract.\n\n"
                 "Respond with the JSON format described in your instructions."
             )
         return (
-            "Review this code. After identifying direct issues, assess whether any issue suggests cross-file or project-level impact based on the provided project context, framework guidance, or implied dependencies. Only include broader-impact findings when the evidence is concrete.\n\n"
+            "Review this code. After identifying direct issues, assess whether any issue suggests cross-file or project-level impact based on the provided project context, framework guidance, or implied dependencies. Only include broader-impact findings when the evidence is concrete. For broader findings, set context_scope deliberately, include the exact related file(s) when known, and make evidence_basis a short factual statement about the exact mismatch, dependency, signature change, or missing check.\n\n"
             f"CODE TO REVIEW:\n{code_content}\n\n"
             "Respond with the JSON format described in your instructions."
         )
@@ -601,6 +607,7 @@ class AIBackend(ABC):
 
         parts.append(
             "Review each of the following files. Also look for issues that only become visible across files in this batch, such as contract mismatches, incomplete refactors, duplicated responsibility, dependency direction problems, and caller/callee inconsistencies. Only report broader findings when they are supported by the files shown here or by the provided project context. "
+            "For broader findings, set context_scope deliberately, name the supporting related file(s), and make evidence_basis a short factual statement about the exact cross-file mismatch or dependency. "
             "Respond with JSON following the schema in your instructions. "
             "Include a separate entry in the \"files\" array for each file, "
             "and a separate object in \"findings\" for each distinct issue.\n"
@@ -658,6 +665,7 @@ class AIBackend(ABC):
                 "FOCUS YOUR REVIEW ON THE CHANGED LINES.\n"
                 "Use surrounding context only to understand intent and impact.\n"
                 "If a changed-line issue indicates a likely broader regression, only report that broader impact when it is supported by concrete evidence from this diff, the surrounding context, the commit message, or the specification.\n"
+                "If you report broader impact, set context_scope deliberately, include the supporting related file(s) when known, and make evidence_basis a short factual statement about the exact signature, contract, or guard that changed.\n"
                 "Keep the primary finding anchored to the changed code.\n"
                 "Respond with the JSON format described in your instructions."
             )
@@ -699,6 +707,7 @@ class AIBackend(ABC):
             "FOCUS YOUR REVIEW ON THE CHANGED LINES.\n"
             "Use surrounding context only to understand intent and impact.\n"
             "If a changed-line issue indicates a likely broader regression, only report that broader impact when it is supported by concrete evidence from this diff, the surrounding context, the commit message, or the specification.\n"
+            "If you report broader impact, set context_scope deliberately, include the supporting related file(s) when known, and make evidence_basis a short factual statement about the exact signature, contract, or guard that changed.\n"
             "Keep the primary finding anchored to the changed code.\n"
             "Respond with the JSON format described in your instructions."
         )
@@ -736,6 +745,7 @@ class AIBackend(ABC):
             "Use surrounding context only to understand intent and impact. "
             "Also check whether the touched files reveal cross-file problems such as contract mismatches, partial refactors, broken call paths, or inconsistent validation/state handling. "
             "Only report broader findings when they are supported by concrete evidence in these diffs, the surrounding context, the commit message, or the specification. "
+            "For broader findings, set context_scope deliberately, name the supporting related file(s), and make evidence_basis a short factual statement about the exact changed contract, caller/callee mismatch, or missing guard. "
             "Keep each finding anchored to the changed code that exposes it.\n"
             "Respond with JSON following the schema in your instructions. "
             "Include a separate entry in the \"files\" array for each file.\n"

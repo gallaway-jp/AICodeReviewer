@@ -586,7 +586,9 @@ def architectural_review(
         f"Existing review findings ({len(all_issues)} total):\n"
         f"{findings_summary}\n\n"
         "Analyse the project at an architectural level.  Focus on cross-cutting "
-        "structural issues that are invisible when reviewing single files.\n"
+        "structural issues that are invisible when reviewing single files. "
+        "For architectural or dependency-direction findings that describe the structure of the project rather than a single file pair, use context_scope='project'. "
+        "When you report a broader finding, include the most relevant supporting files in related_files and make evidence_basis a short factual statement naming the exact layer violation, dependency edge, or missing architectural contract.\n"
         "Respond with the JSON schema described in your instructions."
     )
 
