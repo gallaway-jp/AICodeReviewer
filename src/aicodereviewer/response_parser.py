@@ -365,6 +365,47 @@ def _try_json_parse(
     return _json_to_issues(data, file_entries, review_type)
 
 
+def _iter_embedded_json_candidates(response: str) -> Sequence[Any]:
+    """Yield embedded JSON payloads decoded from arbitrary response text.
+
+    This recovers model outputs that contain valid structured JSON with extra
+    preamble or trailing commentary, without attempting broad JSON repair.
+    """
+    decoder = json.JSONDecoder()
+    seen_ranges: set[tuple[int, int]] = set()
+
+    for match in re.finditer(r"[\[{]", response):
+        start = match.start()
+        try:
+            payload, end = decoder.raw_decode(response[start:])
+        except json.JSONDecodeError:
+            continue
+
+        span = (start, start + end)
+        if span in seen_ranges:
+            continue
+        seen_ranges.add(span)
+        yield payload
+
+
+def _try_embedded_json_parse(
+    response: str,
+    file_entries: List[Dict[str, Any]],
+    review_type: str,
+) -> List[ReviewIssue]:
+    """Recover JSON findings embedded inside otherwise malformed text output."""
+    for payload in _iter_embedded_json_candidates(response):
+        data = payload
+        if isinstance(data, list):
+            data = {"files": [{"filename": "<combined>", "findings": data}]}
+        if not isinstance(data, dict):
+            continue
+        issues = _json_to_issues(data, file_entries, review_type)
+        if issues:
+            return issues
+    raise ValueError("No embedded JSON payload produced structured findings")
+
+
 # ── Strategy 2: markdown-fenced JSON ──────────────────────────────────────
 
 _JSON_FENCE_RE = re.compile(
@@ -698,6 +739,7 @@ def parse_review_response(
     strategies = [
         _try_json_parse,
         _try_markdown_json_parse,
+        _try_embedded_json_parse,
         _try_delimiter_parse,
         _try_heuristic_parse,
     ]

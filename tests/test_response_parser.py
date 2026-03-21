@@ -13,6 +13,7 @@ from aicodereviewer.response_parser import (
     _normalize_severity,
     _extract_line_number,
     _deduplicate_issues,
+    _try_embedded_json_parse,
     _try_json_parse,
     _try_markdown_json_parse,
     _try_delimiter_parse,
@@ -273,6 +274,50 @@ class TestMarkdownJsonParse:
     def test_no_fence(self, file_entries):
         with pytest.raises((ValueError, Exception)):
             _try_markdown_json_parse("No fences here", file_entries, "security")
+
+
+class TestEmbeddedJsonParse:
+    def test_recovers_json_with_preamble_and_trailing_text(self, file_entries):
+        response = (
+            "I found one issue. Structured output follows:\n"
+            + json.dumps({
+                "files": [{
+                    "filename": "src/app.py",
+                    "findings": [{
+                        "severity": "high",
+                        "category": "security",
+                        "title": "Missing guard",
+                        "description": "The route accepts requests without an admin check.",
+                        "context_scope": "cross_file",
+                        "related_files": ["src/auth.py"],
+                        "systemic_impact": "Non-admin users may reach privileged behavior.",
+                        "evidence_basis": "app.py calls require_login but not require_admin.",
+                    }],
+                }],
+            })
+            + "\nConfidence note: high."
+        )
+
+        issues = _try_embedded_json_parse(response, file_entries, "security")
+
+        assert len(issues) == 1
+        assert issues[0].file_path == "/project/src/app.py"
+        assert issues[0].context_scope == "cross_file"
+        assert issues[0].related_files == ["src/auth.py"]
+
+    def test_parse_review_response_uses_embedded_json_recovery(self, file_entries):
+        response = (
+            "Response payload:\n"
+            "{\"review_type\": \"best_practices\", \"files\": [{\"filename\": \"src/app.py\", \"findings\": [{\"severity\": \"medium\", \"category\": \"contract_mismatch\", \"title\": \"Caller drift\", \"description\": \"consumer.py still expects display_name after producer renamed the field.\", \"context_scope\": \"cross_file\", \"related_files\": [\"src/consumer.py\"], \"systemic_impact\": \"Downstream callers break at runtime.\", \"evidence_basis\": \"app.py now emits full_name while consumer.py reads display_name.\"}]}]}"
+            "\nAdditional explanation outside JSON."
+        )
+
+        issues = parse_review_response(response, file_entries, "best_practices")
+
+        assert len(issues) == 1
+        assert issues[0].issue_type == "contract_mismatch"
+        assert issues[0].context_scope == "cross_file"
+        assert issues[0].related_files == ["src/consumer.py"]
 
 
 # ── Strategy 3: Delimiter parse ───────────────────────────────────────────
