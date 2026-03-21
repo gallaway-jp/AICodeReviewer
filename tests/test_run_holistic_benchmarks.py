@@ -51,7 +51,10 @@ def test_runner_executes_selected_fixture_and_scores(monkeypatch, capsys, tmp_pa
         },
     )
 
+    captured_args = []
+
     def _fake_invoke_review_tool(args):
+        captured_args.append(args)
         output_path = Path(args[args.index("--json-out") + 1])
         output_path.write_text(
             json.dumps(
@@ -99,3 +102,5 @@ def test_runner_executes_selected_fixture_and_scores(monkeypatch, capsys, tmp_pa
     assert payload["status"] == "completed"
     assert payload["score_summary"]["fixtures_passed"] == 1
     assert payload["generated_reports"][0]["fixture_id"] == "auth-guard-regression"
+    assert "--lang" in captured_args[0]
+    assert captured_args[0][captured_args[0].index("--lang") + 1] == "en"

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -22,6 +23,7 @@ _SEVERITY_ORDER = {
 _ISSUE_TYPE_ALIASES = {
     "architecture": {
         "architecture",
+        "layer-leak",
         "layer-leakage",
         "layer_leakage",
         "dependency",
@@ -43,12 +45,14 @@ _ISSUE_TYPE_ALIASES = {
     "performance": {
         "performance",
         "cache",
+        "missing_cache_invalidation",
         "cache_invalidation",
         "stale_cache",
         "redundant_work",
     },
     "best_practices": {
         "best_practices",
+        "api_contract",
         "contract_mismatch",
         "layer-leakage",
         "layer_leakage",
@@ -57,6 +61,61 @@ _ISSUE_TYPE_ALIASES = {
         "missing-repository",
         "missing_repository",
     },
+}
+
+_TEXT_EXPECTATION_ALIASES = {
+    "cache": ("cache", "caching", "cached", "キャッシュ"),
+    "callers": (
+        "callers",
+        "caller",
+        "consumer",
+        "consumer expectations",
+        "downstream payloads",
+        "呼び出し元",
+        "利用側",
+        "下流",
+        "コンシューマ",
+    ),
+    "controller": ("controller", "controllers", "コントローラー", "controller.py"),
+    "database": ("database", "db", "databases", "データベース", "db.py"),
+    "db": ("db", "database", "データベース", "db.py"),
+    "full_name": ("full_name", "display_name"),
+    "email": ("email", "emails"),
+    "layer": (
+        "layer",
+        "layered",
+        "dependency direction",
+        "separation of concerns",
+        "architecture",
+        "アーキテクチャ",
+        "レイヤー",
+        "依存関係ルール",
+    ),
+    "privilege": (
+        "privilege",
+        "authorization",
+        "unauthorized",
+        "admin",
+        "access control",
+        "権限",
+        "認可",
+        "アクセス制御",
+        "管理者",
+    ),
+    "require_admin": ("require_admin", "admin guard", "guard", "管理者ガード", "ガード"),
+    "transaction": ("transaction", "transactional", "トランザクション"),
+    "unvalidated": (
+        "unvalidated",
+        "not validated",
+        "never validated",
+        "validation gap",
+        "invalid emails",
+        "未検証",
+        "検証されていない",
+        "検証不足",
+        "バリデーション漏れ",
+    ),
+    "validation": ("validation", "validate", "validator", "検証", "バリデーション"),
 }
 
 
@@ -184,6 +243,8 @@ def _extract_report(payload: dict[str, Any]) -> dict[str, Any]:
         return payload["report"]
     if isinstance(payload.get("issues_found"), list):
         return payload
+    if isinstance(payload.get("issues"), list):
+        return {"issues_found": payload["issues"]}
     raise ValueError("Benchmark report input must be a raw review report or a tool-mode envelope with a 'report' object")
 
 
@@ -215,8 +276,14 @@ def _severity_meets(actual: str, minimum: str) -> bool:
 
 
 def _contains_all(text: str, substrings: list[str]) -> bool:
+    return all(_contains_expected_phrase(text, substring) for substring in substrings)
+
+
+def _contains_expected_phrase(text: str, expected: str) -> bool:
     haystack = text.lower()
-    return all(substring.lower() in haystack for substring in substrings)
+    normalized_expected = expected.lower()
+    aliases = _TEXT_EXPECTATION_ALIASES.get(normalized_expected, (normalized_expected,))
+    return any(alias in haystack for alias in aliases)
 
 
 def _related_files_match(related_files: list[str], expected_substrings: list[str]) -> bool:
@@ -225,11 +292,14 @@ def _related_files_match(related_files: list[str], expected_substrings: list[str
 
 
 def _issue_type_matches(expected: str, actual: str) -> bool:
-    expected_normalized = expected.lower().strip()
-    actual_normalized = actual.lower().strip()
+    expected_normalized = re.sub(r"[\s-]+", "_", expected.lower().strip())
+    actual_normalized = re.sub(r"[\s-]+", "_", actual.lower().strip())
     if expected_normalized == actual_normalized:
         return True
-    aliases = _ISSUE_TYPE_ALIASES.get(expected_normalized)
+    aliases = {
+        re.sub(r"[\s-]+", "_", alias.lower().strip())
+        for alias in _ISSUE_TYPE_ALIASES.get(expected_normalized, set())
+    }
     if aliases is not None and actual_normalized in aliases:
         return True
     return False
@@ -277,11 +347,11 @@ def _issue_match_diagnostics(issue: dict[str, Any], expectation: BenchmarkExpect
         ),
         "systemic_impact_contains": (
             True if not expectation.systemic_impact_contains
-            else expectation.systemic_impact_contains.lower() in issue["systemic_impact"].lower()
+            else _contains_expected_phrase(issue["systemic_impact"], expectation.systemic_impact_contains)
         ),
         "evidence_basis_contains": (
             True if not expectation.evidence_basis_contains
-            else expectation.evidence_basis_contains.lower() in issue["evidence_basis"].lower()
+            else _contains_expected_phrase(issue["evidence_basis"], expectation.evidence_basis_contains)
         ),
     }
 

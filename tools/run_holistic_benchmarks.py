@@ -42,7 +42,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Backend override; defaults to configured backend",
     )
-    parser.add_argument("--lang", choices=["en", "ja", "default"], default="default")
+    parser.add_argument(
+        "--lang",
+        choices=["en", "ja", "default"],
+        default="en",
+        help="Language override for stable benchmark output; defaults to English.",
+    )
     parser.add_argument("--programmer", default="benchmark-bot")
     parser.add_argument("--reviewer", default="benchmark-bot")
     parser.add_argument("--fixture", action="append", dest="fixtures", default=[])

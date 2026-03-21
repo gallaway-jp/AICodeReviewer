@@ -35,6 +35,7 @@ d:/Development/Python/AICodeReviewer/.venv/Scripts/python.exe tools/run_holistic
 ```
 
 The runner uses the configured backend by default, performs a health check first, writes one tool-mode review envelope per fixture, and then scores the resulting directory.
+For reproducible benchmark scoring, the runner defaults to `--lang en`; override it explicitly if you want to measure another output language.
 
 Evaluate a directory of reports named by fixture id:
 

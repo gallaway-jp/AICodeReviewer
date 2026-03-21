@@ -144,6 +144,158 @@ def test_evaluate_fixture_accepts_semantic_issue_type_aliases(tmp_path):
     assert result.expectation_results[0].matched_issue_id == "issue-0010"
 
 
+def test_evaluate_fixture_accepts_issue_type_spacing_variants(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "diff-signature-break" / "fixture.json"
+    )
+    report_path = tmp_path / "diff-signature-break.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "issues_found": [
+                    {
+                        "issue_id": "issue-0010b",
+                        "file_path": "src/user_service.py",
+                        "issue_type": "API Contract",
+                        "severity": "high",
+                        "description": "tenant_id was added but callers were not updated.",
+                        "context_scope": "cross_file",
+                        "related_files": ["src/controller.py"],
+                        "systemic_impact": "Existing callers will fail at runtime.",
+                        "evidence_basis": "fetch_user now requires tenant_id but controller.py still uses the old call shape.",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.expectation_results[0].matched_issue_id == "issue-0010b"
+
+
+def test_evaluate_fixture_accepts_semantic_systemic_impact_aliases(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "field-rename-contract" / "fixture.json"
+    )
+    report_path = tmp_path / "field-rename-contract.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "issues_found": [
+                    {
+                        "issue_id": "issue-0011",
+                        "file_path": "src/handlers.py",
+                        "issue_type": "contract_mismatch",
+                        "severity": "high",
+                        "description": "Handler still reads display_name after serializer renamed the field to full_name.",
+                        "context_scope": "cross_file",
+                        "related_files": ["src/serializers.py"],
+                        "systemic_impact": "Downstream payload consumers continue reading the old field name.",
+                        "evidence_basis": "Serializer now emits full_name while handler still accesses display_name.",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.expectation_results[0].matched_issue_id == "issue-0011"
+
+
+def test_evaluate_fixture_accepts_semantic_evidence_basis_aliases(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "architectural-layer-leak" / "fixture.json"
+    )
+    report_path = tmp_path / "architectural-layer-leak.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "issues_found": [
+                    {
+                        "issue_id": "issue-0012",
+                        "file_path": "src/controller.py",
+                        "issue_type": "layer-leakage",
+                        "severity": "medium",
+                        "description": "Architecture violation in request flow.",
+                        "context_scope": "project",
+                        "related_files": ["src/service.py", "src/database.py"],
+                        "systemic_impact": "Dependency direction between layers becomes inconsistent.",
+                        "evidence_basis": "controller.py imports the database helper directly even though service.py already owns that access pattern.",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.expectation_results[0].matched_issue_id == "issue-0012"
+
+
+def test_evaluate_fixture_accepts_tool_mode_envelope_with_top_level_issues(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "diff-signature-break" / "fixture.json"
+    )
+    report_path = tmp_path / "diff-signature-break.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "no_issues",
+                "report": None,
+                "issues": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is False
+    assert result.missing_report is False
+    assert result.expectation_results[0].reason == "No issue matched the expected holistic finding"
+
+
+def test_evaluate_fixture_accepts_multilingual_semantic_matches(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "architectural-layer-leak" / "fixture.json"
+    )
+    report_path = tmp_path / "architectural-layer-leak.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "issues_found": [
+                    {
+                        "issue_id": "issue-0013",
+                        "file_path": "src/controller.py",
+                        "issue_type": "layer-leak",
+                        "severity": "high",
+                        "description": "コントローラーがデータベース関数を直接呼び出している。",
+                        "context_scope": "project",
+                        "related_files": ["src/service.py"],
+                        "systemic_impact": "レイヤー間の依存関係ルールが破られます。",
+                        "evidence_basis": "controller.py が db.py を直接インポートしており、service.py を経由していません。",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.expectation_results[0].matched_issue_id == "issue-0013"
+
+
 def test_cli_single_fixture_returns_success_for_matching_report(tmp_path, capsys):
     report_path = tmp_path / "single.json"
     report_path.write_text(
