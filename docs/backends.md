@@ -116,6 +116,7 @@ model = default
 api_key =
 timeout = 300
 max_tokens = 4096
+enable_web_search = true
 ```
 
 Typical local checks:
@@ -123,6 +124,13 @@ Typical local checks:
 ```bash
 aicodereviewer --check-connection --backend local
 ```
+
+Operational notes:
+- `enable_web_search` is on by default for the Local LLM backend.
+- When enabled, the backend appends small amounts of public, high-level review guidance to the prompt.
+- The search flow is privacy-constrained: it does not send source code or project-specific identifiers to the search provider.
+- For `performance` reviews, the reviewer also adds a narrow deterministic stale-cache finding when the Local LLM returns no cache/state issue even though the code clearly shows a cache read path and a separate write path for the same entity without invalidation.
+- For `best_practices` reviews, the reviewer also adds a narrow deterministic caller/return-shape finding when the Local LLM returns no contract-style issue even though one file returns a literal dict shape and another caller still reads a removed key from that result.
 
 ## Choosing a Backend
 

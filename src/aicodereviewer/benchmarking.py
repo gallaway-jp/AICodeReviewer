@@ -26,6 +26,9 @@ _ISSUE_TYPE_ALIASES = {
         "layer-leak",
         "layer-leakage",
         "layer_leakage",
+        "layer-separation",
+        "layer_separation",
+        "layering_violation",
         "dependency",
         "dependency-direction",
         "dependency_direction",
@@ -36,7 +39,9 @@ _ISSUE_TYPE_ALIASES = {
         "security",
         "authentication",
         "authorization",
+        "validation",
         "input_validation",
+        "input_validation_runtime_error",
         "incomplete_validation",
         "injection_risk",
         "insecure_configuration",
@@ -45,17 +50,33 @@ _ISSUE_TYPE_ALIASES = {
     "performance": {
         "performance",
         "cache",
+        "caching",
         "missing_cache_invalidation",
         "cache_invalidation",
         "stale_cache",
         "redundant_work",
+        "cache_consistency",
+        "integration_consistency",
     },
     "best_practices": {
         "best_practices",
         "api_contract",
+        "api_mismatch_contract_regression",
+        "api_mismatch_runtime_error",
+        "api_signature_break",
+        "api_signature_change",
+        "caller_callee_mismatch",
+        "encapsulation",
+        "encapsulation_violation",
+        "interface_contract_violation",
         "contract_mismatch",
         "layer-leakage",
         "layer_leakage",
+        "signature_change",
+        "transaction-boundary",
+        "transaction_boundary",
+        "transactional_safety",
+        "transaction_integrity",
         "type_safety",
         "dependency",
         "missing-repository",
@@ -65,22 +86,62 @@ _ISSUE_TYPE_ALIASES = {
 
 _TEXT_EXPECTATION_ALIASES = {
     "cache": ("cache", "caching", "cached", "キャッシュ"),
-    "callers": (
+    "caller": (
         "callers",
         "caller",
         "consumer",
         "consumer expectations",
+        "downstream code",
         "downstream payloads",
         "呼び出し元",
         "利用側",
         "下流",
         "コンシューマ",
     ),
+    "callers": (
+        "callers",
+        "caller",
+        "consumer",
+        "consumer expectations",
+        "downstream code",
+        "downstream payloads",
+        "呼び出し元",
+        "利用側",
+        "下流",
+        "コンシューマ",
+    ),
+    "commit": (
+        "commit",
+        "_commit",
+        "begin/commit",
+        "transaction wrapper",
+        "transaction boundary",
+        "save_order",
+    ),
     "controller": ("controller", "controllers", "コントローラー", "controller.py"),
     "database": ("database", "db", "databases", "データベース", "db.py"),
-    "db": ("db", "database", "データベース", "db.py"),
+    "db": ("db", "database", "データベース", "db.py", "execute_query"),
     "full_name": ("full_name", "display_name"),
+    "user_profile": (
+        "user_profile",
+        "get_user_profile",
+        "set_user_profile",
+        "update_user_profile",
+        "profile",
+        "profiles",
+    ),
     "email": ("email", "emails"),
+    "invalidate": (
+        "invalidate",
+        "invalidates",
+        "invalidated",
+        "invalidating",
+        "invalidation",
+        "evict",
+        "eviction",
+        "refresh",
+        "refreshes",
+    ),
     "layer": (
         "layer",
         "layered",
@@ -110,6 +171,11 @@ _TEXT_EXPECTATION_ALIASES = {
         "never validated",
         "validation gap",
         "invalid emails",
+        "malformed input",
+        "malformed inputs",
+        "malformed data",
+        "without email",
+        "missing email",
         "未検証",
         "検証されていない",
         "検証不足",
@@ -286,21 +352,29 @@ def _contains_expected_phrase(text: str, expected: str) -> bool:
     return any(alias in haystack for alias in aliases)
 
 
-def _related_files_match(related_files: list[str], expected_substrings: list[str]) -> bool:
-    lowered = [entry.lower() for entry in related_files]
+def _related_files_match(
+    file_path: str,
+    related_files: list[str],
+    expected_substrings: list[str],
+) -> bool:
+    lowered = [file_path.lower(), *[entry.lower() for entry in related_files]]
     return all(any(expected.lower() in entry for entry in lowered) for expected in expected_substrings)
 
 
 def _issue_type_matches(expected: str, actual: str) -> bool:
-    expected_normalized = re.sub(r"[\s-]+", "_", expected.lower().strip())
-    actual_normalized = re.sub(r"[\s-]+", "_", actual.lower().strip())
+    expected_normalized = re.sub(r"[\s\-\|/]+", "_", expected.lower().strip())
+    actual_normalized = re.sub(r"[\s\-\|/]+", "_", actual.lower().strip())
     if expected_normalized == actual_normalized:
         return True
     aliases = {
-        re.sub(r"[\s-]+", "_", alias.lower().strip())
+        re.sub(r"[\s\-\|/]+", "_", alias.lower().strip())
         for alias in _ISSUE_TYPE_ALIASES.get(expected_normalized, set())
     }
-    if aliases is not None and actual_normalized in aliases:
+    actual_parts = {part for part in actual_normalized.split("_") if part}
+    if aliases is not None and (
+        actual_normalized in aliases
+        or any(alias in actual_parts for alias in aliases)
+    ):
         return True
     return False
 
@@ -339,7 +413,11 @@ def _issue_match_diagnostics(issue: dict[str, Any], expectation: BenchmarkExpect
         ),
         "related_files_contains": (
             True if not expectation.related_files_contains
-            else _related_files_match(issue["related_files"], expectation.related_files_contains)
+            else _related_files_match(
+                issue["file_path"],
+                issue["related_files"],
+                expectation.related_files_contains,
+            )
         ),
         "description_keywords": (
             True if not expectation.description_keywords

@@ -301,6 +301,7 @@ def test_tool_health_applies_runtime_overrides(monkeypatch, capsys):
         "http://example.test:8080",
         "--local-model",
         "llama-test",
+        "--local-disable-web-search",
         "--timeout",
         "12",
     ])
@@ -310,8 +311,34 @@ def test_tool_health_applies_runtime_overrides(monkeypatch, capsys):
     assert ("backend", "type", "local") in set_calls
     assert ("local_llm", "api_url", "http://example.test:8080") in set_calls
     assert ("local_llm", "model", "llama-test") in set_calls
+    assert ("local_llm", "enable_web_search", "false") in set_calls
     assert ("performance", "api_timeout_seconds", "12.0") in set_calls
     assert ("local_llm", "timeout", "12.0") in set_calls
+
+
+def test_tool_health_can_enable_local_web_search(monkeypatch, capsys):
+    set_calls = []
+
+    def _record_set(section, key, value):
+        set_calls.append((section, key, value))
+
+    monkeypatch.setattr(cli.config, "set_value", _record_set)
+    monkeypatch.setattr(
+        cli,
+        "check_backend",
+        lambda _backend: HealthReport(backend="local", ready=True, checks=[], summary="ok"),
+    )
+
+    exit_code = run_main_with_args([
+        "health",
+        "--backend",
+        "local",
+        "--local-enable-web-search",
+    ])
+
+    json.loads(capsys.readouterr().out.strip())
+    assert exit_code == 0
+    assert ("local_llm", "enable_web_search", "true") in set_calls
 
 
 def test_tool_fix_plan_generates_fixes_from_report_artifact(monkeypatch, capsys, tmp_path):

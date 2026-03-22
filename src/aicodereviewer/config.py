@@ -39,6 +39,7 @@ _CONVERTERS: list[tuple[str, str, Any]] = [
     # Processing section
     ("processing",  "batch_size",        int),
     ("processing",  "enable_*",          _to_bool),
+    ("local_llm",   "enable_*",          _to_bool),
     # Logging section
     ("logging",     "enable_*",          _to_bool),
 ]
@@ -160,6 +161,7 @@ class Config:
         self._add("local_llm", "api_key", "")
         self._add("local_llm", "timeout", "300")
         self._add("local_llm", "max_tokens", "4096")
+        self._add("local_llm", "enable_web_search", "true")
 
         # ── gui ────────────────────────────────────────────────────────────
         self._add("gui", "theme", "system")

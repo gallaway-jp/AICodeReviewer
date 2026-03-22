@@ -45,7 +45,10 @@ enable_file_logging = false
 api_url = http://localhost:1234
 api_type = openai
 model = default
+api_key =
+timeout = 300
 max_tokens = 4096
+enable_web_search = true
 
 [output]
 formats = json,txt,md
@@ -122,12 +125,20 @@ Key settings:
 - `local_llm.api_key`
 - `local_llm.timeout`
 - `local_llm.max_tokens`
+- `local_llm.enable_web_search`
 
 Supported `api_type` values:
 - `lmstudio`
 - `ollama`
 - `openai`
 - `anthropic`
+
+Behavior notes:
+- `local_llm.enable_web_search` defaults to `true`.
+- When enabled, the Local LLM backend fetches a small amount of high-level public guidance for the active review type.
+- Source code and project identifiers are not sent to the search provider; only generic review and framework terms are used.
+- For `performance` reviews, obvious stale-cache read/write gaps can still produce a deterministic cross-file finding even when the Local LLM returns no cache/state issue, but that supplement does not run for other review types.
+- For `best_practices` reviews, obvious producer/caller return-shape drift can also produce a deterministic cross-file finding when the Local LLM returns no contract-style issue, but that supplement only runs for concrete imported-call dict-shape mismatches.
 
 ## GUI Settings
 

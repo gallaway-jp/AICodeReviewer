@@ -226,6 +226,63 @@ class TestJsonParse:
         assert issues[0].context_scope == "cross_file"
         assert "Context Scope: cross_file" in issues[0].ai_feedback
 
+    def test_json_evidence_text_can_infer_related_files_and_promote_scope(self, file_entries):
+        response = json.dumps({
+            "files": [{
+                "filename": "src/app.py",
+                "findings": [{
+                    "severity": "high",
+                    "title": "Caller drift",
+                    "description": "The payload contract no longer matches the consumer.",
+                    "context_scope": "local",
+                    "systemic_impact": "Downstream behavior diverges in src/utils.py.",
+                    "evidence_basis": "app.py now emits full_name while src/utils.py still reads display_name.",
+                }],
+            }],
+        })
+        issues = _try_json_parse(response, file_entries, "regression")
+        assert len(issues) == 1
+        assert issues[0].context_scope == "cross_file"
+        assert issues[0].related_files == ["src/utils.py"]
+        assert "Related Files: src/utils.py" in issues[0].ai_feedback
+
+    def test_json_cache_finding_can_promote_scope_from_related_cross_file_issue(self, file_entries):
+        response = json.dumps({
+            "files": [{
+                "filename": "src/app.py",
+                "findings": [
+                    {
+                        "issue_id": "issue-0001",
+                        "severity": "medium",
+                        "category": "missing_cache_invalidation",
+                        "title": "Missing invalidation",
+                        "description": "The cache update has no invalidation path.",
+                        "context_scope": "local",
+                        "evidence_basis": "set_user_profile writes cached user_profile data without invalidation.",
+                        "related_issues": [1],
+                    },
+                    {
+                        "issue_id": "issue-0002",
+                        "severity": "high",
+                        "category": "contract_mismatch",
+                        "title": "State split",
+                        "description": "The service writes through a different store.",
+                        "context_scope": "cross_file",
+                        "related_files": ["src/utils.py"],
+                        "evidence_basis": "app.py updates state while src/utils.py reads cached user_profile values.",
+                    },
+                ],
+            }],
+        })
+
+        issues = _try_json_parse(response, file_entries, "performance")
+
+        assert len(issues) == 2
+        assert issues[0].context_scope == "cross_file"
+        assert issues[0].related_files == ["src/utils.py"]
+        assert "Context Scope: cross_file" in issues[0].ai_feedback
+        assert "Related Files: src/utils.py" in issues[0].ai_feedback
+
     def test_json_architecture_metadata_promotes_cross_file_scope_to_project(self, file_entries):
         response = json.dumps({
             "files": [{
@@ -246,6 +303,29 @@ class TestJsonParse:
         assert len(issues) == 1
         assert issues[0].context_scope == "project"
         assert "Context Scope: project" in issues[0].ai_feedback
+
+    def test_json_storage_layer_phrase_does_not_promote_cross_file_scope_to_project(self, file_entries):
+        response = json.dumps({
+            "files": [{
+                "filename": "src/app.py",
+                "findings": [{
+                    "severity": "high",
+                    "category": "validation_drift",
+                    "title": "Email field not validated",
+                    "description": "The validator does not check email even though the API uses it.",
+                    "context_scope": "cross_file",
+                    "related_files": ["src/utils.py"],
+                    "systemic_impact": "Unvalidated email input reaches the storage layer and runtime use.",
+                    "evidence_basis": "app.py includes email while src/utils.py validates only username and password.",
+                }],
+            }],
+        })
+
+        issues = _try_json_parse(response, file_entries, "security")
+
+        assert len(issues) == 1
+        assert issues[0].context_scope == "cross_file"
+        assert "Context Scope: cross_file" in issues[0].ai_feedback
 
 
 # ── Strategy 2: Markdown-fenced JSON ──────────────────────────────────────

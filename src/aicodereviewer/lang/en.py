@@ -373,6 +373,7 @@ STRINGS: dict[str, str] = {
     "gui.settings.local_api_key":     "API Key",
     "gui.settings.local_timeout":     "Timeout (s)",
     "gui.settings.local_max_tokens":  "Max Tokens",
+    "gui.settings.local_enable_web_search": "Enable Web Search",
     "gui.settings.aws_sso_session":   "SSO Session",
     "gui.settings.aws_access_key":    "Access Key ID",
 
@@ -400,6 +401,7 @@ STRINGS: dict[str, str] = {
     "gui.tip.local_api_key":          "API key for the local server (some servers require a dummy key).",
     "gui.tip.local_timeout":          "Maximum seconds to wait for the local LLM to respond.",
     "gui.tip.local_max_tokens":       "Maximum tokens in the AI response.",
+    "gui.tip.local_enable_web_search": "Allow the Local LLM backend to fetch high-level web guidance for the active review type. Source code is not sent to the search provider.",
     "gui.tip.ui_theme":               "Change the colour scheme of the application.",
     "gui.tip.ui_language":            "Change the display language. Restart required.",
 

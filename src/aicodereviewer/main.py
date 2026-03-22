@@ -363,6 +363,20 @@ def _add_runtime_override_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--api-url", metavar="URL")
     parser.add_argument("--api-type", metavar="TYPE")
     parser.add_argument("--local-model", metavar="MODEL")
+    local_web_search_group = parser.add_mutually_exclusive_group()
+    local_web_search_group.add_argument(
+        "--local-enable-web-search",
+        dest="local_enable_web_search",
+        action="store_true",
+        default=None,
+        help="Enable Local LLM prompt enrichment with public web guidance for this invocation",
+    )
+    local_web_search_group.add_argument(
+        "--local-disable-web-search",
+        dest="local_enable_web_search",
+        action="store_false",
+        help="Disable Local LLM prompt enrichment with public web guidance for this invocation",
+    )
     parser.add_argument("--copilot-model", metavar="MODEL")
     parser.add_argument("--kiro-cli-command", metavar="CMD")
     parser.add_argument("--timeout", type=float, metavar="SECONDS")
@@ -405,6 +419,12 @@ def _apply_runtime_overrides(args: argparse.Namespace) -> str:
         config.set_value("local_llm", "api_type", args.api_type)
     if args.local_model:
         config.set_value("local_llm", "model", args.local_model)
+    if args.local_enable_web_search is not None:
+        config.set_value(
+            "local_llm",
+            "enable_web_search",
+            "true" if args.local_enable_web_search else "false",
+        )
     if args.copilot_model:
         config.set_value("copilot", "model", args.copilot_model)
     if args.kiro_cli_command:

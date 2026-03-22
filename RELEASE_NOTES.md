@@ -15,6 +15,31 @@ This changelog preserves historical release milestones. Repository metadata such
 
 ---
 
+## Unreleased
+
+Local LLM review-quality improvements focused on holistic, cross-file issue detection and reproducible benchmarking.
+
+### Added
+- Local LLM optional web-guidance support with `enable_web_search = true` by default in `[local_llm]`
+- GUI Local LLM settings toggle for web guidance
+- Tool-mode and benchmark-runner runtime overrides: `--local-enable-web-search` and `--local-disable-web-search`
+- Repeated holistic benchmark runs with stability summaries via `tools/run_holistic_benchmarks.py --runs N`
+- `tools/compare_review_reports.py` for issue-shape deltas between two review artifacts or tool-mode envelopes
+
+### Changed
+- Local LLM prompt enrichment now uses privacy-constrained, high-level public guidance without sending repository source code to the search provider
+- Holistic review prompts now ask more explicitly for downstream impact when validation drift allows unvalidated or incompletely validated input to reach runtime use
+- Benchmark matching now accepts broader semantic aliases for architecture, validation, cache/state consistency, caller/callee drift, transaction-boundary loss, and invalidation wording
+
+### Fixed
+- Local LLM combined and per-file reviews now retry once on transient backend errors before failing
+- Response parsing now preserves richer finding metadata, infers related files from evidence text, and promotes cache findings to cross-file scope when sibling findings prove broader context
+- Performance reviews now add a narrow deterministic stale-cache finding when the model misses an obvious cache read/write split with no invalidation
+- Best-practices reviews now add a narrow deterministic caller/return-shape finding when the model misses an obvious producer/caller dict-shape contract break
+- The broader Local LLM web-enabled holistic benchmark artifacts now reevaluate cleanly at `8/8` passed with `overall_score = 1.0`
+
+---
+
 ## v2.0.1
 
 Maintenance release focused on UX improvements and reliability fixes.

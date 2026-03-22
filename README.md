@@ -117,6 +117,9 @@ Examples:
 - Pass `--backend` explicitly in scripts and automation for predictable execution.
 - The GUI uses saved configuration and lets you switch backends interactively.
 - Local LLM support includes `lmstudio`, `ollama`, `openai`, and `anthropic` API modes.
+- The Local LLM settings section now includes an `Enable Web Search` toggle. When enabled, the local backend fetches high-level public guidance for the active review type without sending your source code to the search provider.
+- Performance reviews also include a narrow deterministic stale-cache supplement when the code clearly shows a cache read/write split and the Local LLM misses it entirely.
+- Best-practices reviews also include a narrow deterministic caller/return-shape supplement when the code clearly shows a producer changed its returned dict keys but a caller still reads a removed field and the Local LLM misses that contract break entirely.
 
 ## Repository Status
 

@@ -387,6 +387,7 @@ STRINGS: dict[str, str] = {
     "gui.settings.local_api_key":     "APIキー",
     "gui.settings.local_timeout":     "タイムアウト (秒)",
     "gui.settings.local_max_tokens":  "最大トークン数",
+    "gui.settings.local_enable_web_search": "Web検索を有効化",
     "gui.settings.aws_sso_session":   "SSOセッション",
     "gui.settings.aws_access_key":    "アクセスキーID",
 
@@ -414,6 +415,7 @@ STRINGS: dict[str, str] = {
     "gui.tip.local_api_key":          "ローカルサーバー用のAPIキー (ダミーキーが必要なサーバーもあります)。",
     "gui.tip.local_timeout":          "ローカルLLMの応答を待つ最大秒数。",
     "gui.tip.local_max_tokens":       "AI応答の最大トークン数。",
+    "gui.tip.local_enable_web_search": "ローカルLLMバックエンドが現在のレビュー種別に応じた高レベルのWebガイダンスを取得できるようにします。ソースコード自体は検索プロバイダーに送信しません。",
     "gui.tip.ui_theme":               "アプリケーションの配色を変更します。",
     "gui.tip.ui_language":            "表示言語を変更します。再起動が必要です。",
 

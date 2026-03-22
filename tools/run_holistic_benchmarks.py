@@ -52,15 +52,108 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--reviewer", default="benchmark-bot")
     parser.add_argument("--fixture", action="append", dest="fixtures", default=[])
     parser.add_argument("--json-out")
+    parser.add_argument(
+        "--runs",
+        type=int,
+        default=1,
+        help="Number of repeated benchmark runs to execute for stability measurement",
+    )
     parser.add_argument("--skip-health-check", action="store_true")
     parser.add_argument("--timeout", type=float)
     parser.add_argument("--model")
     parser.add_argument("--api-url")
     parser.add_argument("--api-type")
     parser.add_argument("--local-model")
+    local_web_search_group = parser.add_mutually_exclusive_group()
+    local_web_search_group.add_argument(
+        "--local-enable-web-search",
+        dest="local_enable_web_search",
+        action="store_true",
+        default=None,
+        help="Enable Local LLM web guidance for this benchmark invocation",
+    )
+    local_web_search_group.add_argument(
+        "--local-disable-web-search",
+        dest="local_enable_web_search",
+        action="store_false",
+        help="Disable Local LLM web guidance for this benchmark invocation",
+    )
     parser.add_argument("--copilot-model")
     parser.add_argument("--kiro-cli-command")
     return parser
+
+
+def _run_output_dir(base_output_dir: Path, run_index: int, total_runs: int) -> Path:
+    if total_runs == 1:
+        return base_output_dir
+    return base_output_dir / f"run-{run_index:03d}"
+
+
+def _stability_summary(run_results: Sequence[Sequence[Any]]) -> dict[str, Any]:
+    total_runs = len(run_results)
+    fixture_rows: dict[str, dict[str, Any]] = {}
+
+    for run_index, results in enumerate(run_results, start=1):
+        for result in results:
+            row = fixture_rows.setdefault(
+                result.fixture_id,
+                {
+                    "fixture_id": result.fixture_id,
+                    "title": result.title,
+                    "pass_count": 0,
+                    "scores": [],
+                    "runs": [],
+                },
+            )
+            row["pass_count"] += 1 if result.passed else 0
+            row["scores"].append(result.score)
+            row["runs"].append(
+                {
+                    "run_index": run_index,
+                    "passed": result.passed,
+                    "score": result.score,
+                    "report_path": result.report_path,
+                    "missing_report": result.missing_report,
+                    "failed_checks": [
+                        expectation.failed_checks
+                        for expectation in result.expectation_results
+                        if not expectation.matched and expectation.failed_checks
+                    ],
+                }
+            )
+
+    fixtures = []
+    mean_pass_rate = 0.0
+    mean_score = 0.0
+    for row in sorted(fixture_rows.values(), key=lambda entry: entry["fixture_id"]):
+        pass_rate = row["pass_count"] / total_runs if total_runs else 0.0
+        average_score = sum(row["scores"]) / len(row["scores"]) if row["scores"] else 0.0
+        mean_pass_rate += pass_rate
+        mean_score += average_score
+        fixtures.append(
+            {
+                "fixture_id": row["fixture_id"],
+                "title": row["title"],
+                "pass_count": row["pass_count"],
+                "fail_count": total_runs - row["pass_count"],
+                "pass_rate": round(pass_rate, 4),
+                "average_score": round(average_score, 4),
+                "all_runs_passed": row["pass_count"] == total_runs,
+                "any_run_passed": row["pass_count"] > 0,
+                "runs": row["runs"],
+            }
+        )
+
+    fixture_count = len(fixtures)
+    return {
+        "runs": total_runs,
+        "fixtures_evaluated": fixture_count,
+        "fixtures_all_runs_passed": sum(1 for fixture in fixtures if fixture["all_runs_passed"]),
+        "fixtures_any_run_passed": sum(1 for fixture in fixtures if fixture["any_run_passed"]),
+        "mean_pass_rate": round(mean_pass_rate / fixture_count, 4) if fixture_count else 0.0,
+        "mean_score": round(mean_score / fixture_count, 4) if fixture_count else 0.0,
+        "fixtures": fixtures,
+    }
 
 
 def _effective_backend(backend_override: str | None) -> str:
@@ -126,6 +219,10 @@ def _build_review_args(
         argv.extend(["--api-type", runner_args.api_type])
     if runner_args.local_model:
         argv.extend(["--local-model", runner_args.local_model])
+    if runner_args.local_enable_web_search is True:
+        argv.append("--local-enable-web-search")
+    elif runner_args.local_enable_web_search is False:
+        argv.append("--local-disable-web-search")
     if runner_args.copilot_model:
         argv.extend(["--copilot-model", runner_args.copilot_model])
     if runner_args.kiro_cli_command:
@@ -136,6 +233,8 @@ def _build_review_args(
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
+    if args.runs < 1:
+        parser.error("--runs must be at least 1")
 
     fixtures = discover_fixtures(Path(args.fixtures_root))
     if args.fixtures:
@@ -165,44 +264,71 @@ def main(argv: Sequence[str] | None = None) -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
     generated_reports: list[dict[str, Any]] = []
     command_failures = 0
+    per_run_results = []
+    run_summaries = []
 
-    for fixture in fixtures:
-        invocation = describe_fixture_invocation(fixture)
-        output_path = output_dir / f"{fixture.id}.json"
-        review_args = _build_review_args(invocation, output_path, args)
-        exit_code, payload = _invoke_review_tool(review_args)
-        generated_reports.append(
+    for run_index in range(1, args.runs + 1):
+        run_output_dir = _run_output_dir(output_dir, run_index, args.runs)
+        run_output_dir.mkdir(parents=True, exist_ok=True)
+        run_command_failures = 0
+
+        for fixture in fixtures:
+            invocation = describe_fixture_invocation(fixture)
+            output_path = run_output_dir / f"{fixture.id}.json"
+            review_args = _build_review_args(invocation, output_path, args)
+            exit_code, payload = _invoke_review_tool(review_args)
+            generated_reports.append(
+                {
+                    "run_index": run_index,
+                    "fixture_id": fixture.id,
+                    "exit_code": exit_code,
+                    "output_path": str(output_path),
+                    "status": payload.get("status"),
+                    "issue_count": payload.get("issue_count"),
+                    "success": payload.get("success", False),
+                }
+            )
+            if exit_code != 0:
+                command_failures += 1
+                run_command_failures += 1
+
+        score_results = evaluate_fixture_directory(fixtures, run_output_dir)
+        per_run_results.append(score_results)
+        run_summaries.append(
             {
-                "fixture_id": fixture.id,
-                "exit_code": exit_code,
-                "output_path": str(output_path),
-                "status": payload.get("status"),
-                "issue_count": payload.get("issue_count"),
-                "success": payload.get("success", False),
+                "run_index": run_index,
+                "output_dir": str(run_output_dir),
+                "command_failures": run_command_failures,
+                "score_summary": summarize_results(score_results),
             }
         )
-        if exit_code != 0:
-            command_failures += 1
 
-    score_results = evaluate_fixture_directory(fixtures, output_dir)
-    score_summary = summarize_results(score_results)
+    score_summary = run_summaries[-1]["score_summary"]
+    stability_summary = _stability_summary(per_run_results)
     summary_payload = {
         "backend": backend_name,
         "status": "completed" if command_failures == 0 else "partial_failure",
+        "runs": args.runs,
         "health": health,
         "generated_reports": generated_reports,
         "score_summary": score_summary,
+        "stability_summary": stability_summary,
     }
+    if args.runs > 1:
+        summary_payload["run_summaries"] = run_summaries
     rendered = json.dumps(summary_payload, indent=2)
     print(rendered)
 
     if args.summary_out:
-        Path(args.summary_out).write_text(json.dumps(score_summary, indent=2) + "\n", encoding="utf-8")
+        summary_output = stability_summary if args.runs > 1 else score_summary
+        Path(args.summary_out).write_text(json.dumps(summary_output, indent=2) + "\n", encoding="utf-8")
     if args.json_out:
         Path(args.json_out).write_text(rendered + "\n", encoding="utf-8")
 
     if command_failures > 0:
         return 1
+    if args.runs > 1:
+        return 0 if stability_summary["fixtures_all_runs_passed"] == len(fixtures) else 1
     return 0 if score_summary["fixtures_failed"] == 0 else 1
 
 

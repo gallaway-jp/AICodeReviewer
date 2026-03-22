@@ -674,6 +674,7 @@ def test_local_llm_settings_persist_across_app_restart(
     first_harness.set_entry(first_harness.app._setting_entries[("local_llm", "api_key")], "local-secret")
     first_harness.set_entry(first_harness.app._setting_entries[("local_llm", "timeout")], "360")
     first_harness.set_entry(first_harness.app._setting_entries[("local_llm", "max_tokens")], "8192")
+    first_harness.app._setting_entries[("local_llm", "enable_web_search")].set(False)
 
     first_harness.app._save_settings()
     first_harness.pump()
@@ -685,6 +686,7 @@ def test_local_llm_settings_persist_across_app_restart(
     assert config.get("local_llm", "api_key") == "local-secret"
     assert config.get("local_llm", "timeout") == "360"
     assert config.get("local_llm", "max_tokens") == "8192"
+    assert config.get("local_llm", "enable_web_search") is False
 
     _reset_config_to_path(config_path)
     second_harness = GuiTestHarness(app_factory())
@@ -697,6 +699,7 @@ def test_local_llm_settings_persist_across_app_restart(
     assert second_harness.app._setting_entries[("local_llm", "api_key")].get() == "local-secret"
     assert second_harness.app._setting_entries[("local_llm", "timeout")].get() == "360"
     assert second_harness.app._setting_entries[("local_llm", "max_tokens")].get() == "8192"
+    assert second_harness.app._setting_entries[("local_llm", "enable_web_search")].get() is False
 
 
 def test_runtime_tuning_settings_persist_across_app_restart(

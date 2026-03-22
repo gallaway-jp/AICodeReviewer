@@ -312,6 +312,9 @@ class SettingsTabMixin:
         _add_entry(t("gui.settings.local_max_tokens"), "local_llm", "max_tokens",
                    config.get("local_llm", "max_tokens", "4096"),
                    tooltip_key="gui.tip.local_max_tokens")
+        _add_checkbox(t("gui.settings.local_enable_web_search"), "local_llm", "enable_web_search",
+                  bool(config.get("local_llm", "enable_web_search", True)),
+                  tooltip_key="gui.tip.local_enable_web_search")
 
         # ── Performance section ────────────────────────────────────────────
         _section_header(t("gui.settings.section_perf"))

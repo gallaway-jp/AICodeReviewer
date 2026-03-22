@@ -187,6 +187,7 @@ class TestUserPromptBuilders:
         assert "Only include broader-impact findings when the evidence is concrete" in prompt
         assert "make evidence_basis a short factual statement" in prompt
         assert "caller/callee drift, stale cache/state handling, missing validation or auth checks, or loss of transaction boundaries" in prompt
+        assert "unvalidated or incompletely validated input can proceed past the validator" in prompt
         assert "CODE TO REVIEW:" in prompt
 
     def test_spec_prompt_requests_broader_impact_check(self):
@@ -212,6 +213,7 @@ class TestUserPromptBuilders:
         assert "Only report broader findings when they are supported by the files shown here" in prompt
         assert "name the supporting related file(s)" in prompt
         assert "transaction-boundary issues" in prompt
+        assert "unvalidated or incompletely validated input can proceed past the helper or validator" in prompt
         assert "=== FILE: src/a.py ===" in prompt
 
 

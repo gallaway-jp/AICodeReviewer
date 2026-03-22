@@ -305,6 +305,7 @@ class TestBuildDiffUserMessage:
         assert "Keep the primary finding anchored to the changed code" in msg
         assert "make evidence_basis a short factual statement" in msg
         assert "breaks callers, weakens a guard, leaves stale state, or removes transaction safety" in msg
+        assert "allows unvalidated or incompletely validated input to reach runtime use" in msg
 
     def test_includes_commit_messages(self):
         entry = self._make_entry(with_commit=True)
@@ -395,6 +396,7 @@ class TestBuildMultiFileDiffUserMessage:
         assert "Only report broader findings when they are supported by concrete evidence" in msg
         assert "name the supporting related file(s)" in msg
         assert "stale state, cache invalidation, or transaction-boundary loss" in msg
+        assert "unvalidated or incompletely validated input can proceed past the changed boundary and reach runtime use" in msg
         assert "Keep each finding anchored to the changed code that exposes it" in msg
 
 

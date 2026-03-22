@@ -15,10 +15,13 @@ Configuration (``config.ini`` ``[local_llm]`` section)::
     api_key   =                # optional – some servers require a dummy key
     timeout   = 300
     max_tokens = 4096
+    enable_web_search = true
 """
 import logging
+import re
 import time
-from typing import Any, Optional
+from html import unescape
+from typing import Any, Callable, Optional, cast
 from urllib.parse import urlsplit, urlunsplit
 
 import requests
@@ -27,6 +30,119 @@ from .base import AIBackend
 from aicodereviewer.config import config
 
 logger = logging.getLogger(__name__)
+
+_API_URL_SUFFIXES: dict[str, tuple[str, ...]] = {
+    "lmstudio": ("/api/v1", "/v1"),
+    "openai": ("/v1",),
+    "anthropic": ("/v1",),
+    "ollama": ("/api",),
+}
+
+_WEB_GUIDANCE_TOPIC_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "authentication authorization",
+        (
+            "auth",
+            "authorize",
+            "authorization",
+            "role",
+            "permission",
+            "jwt",
+            "token",
+            "session",
+            "login",
+            "current_user",
+            "requires_",
+            "depends(",
+        ),
+    ),
+    (
+        "input validation boundary enforcement",
+        (
+            "validate",
+            "validation",
+            "validator",
+            "schema",
+            "sanitize",
+            "sanit",
+            "serializer",
+            "pydantic",
+            "request.json",
+            "request.args",
+            "request.form",
+            "parse",
+        ),
+    ),
+    (
+        "injection prevention query construction",
+        (
+            "sql",
+            "query",
+            "cursor",
+            "execute(",
+            "executemany(",
+            "subprocess",
+            "shell=True",
+            "eval(",
+            "exec(",
+            "jinja",
+            "template",
+        ),
+    ),
+    (
+        "cache invalidation state consistency",
+        (
+            "cache",
+            "cached",
+            "redis",
+            "invalidate",
+            "stale",
+            "ttl",
+            "memo",
+            "etag",
+            "repository",
+            "commit",
+            "transaction",
+        ),
+    ),
+    (
+        "api contract serialization compatibility",
+        (
+            "response_model",
+            "serializer",
+            "payload",
+            "json",
+            "to_dict",
+            "from_dict",
+            "field",
+            "schema",
+            "dto",
+            "contract",
+        ),
+    ),
+    (
+        "session token crypto safety",
+        (
+            "bcrypt",
+            "hash",
+            "encrypt",
+            "decrypt",
+            "csrf",
+            "cookie",
+            "secret",
+            "hmac",
+            "signature",
+        ),
+    ),
+)
+
+_WEB_GUIDANCE_BASE_TERMS: dict[str, str] = {
+    "security": "best practices secure coding code review",
+    "best_practices": "best practices code review regression prevention",
+    "performance": "best practices performance review consistency",
+    "architecture": "best practices architecture review dependency direction",
+    "regression": "best practices refactor regression review",
+}
 
 
 class LocalLLMBackend(AIBackend):
@@ -54,6 +170,7 @@ class LocalLLMBackend(AIBackend):
         api_type: Optional[str] = None,
         model: Optional[str] = None,
         api_key: Optional[str] = None,
+        enable_web_search: Optional[bool] = None,
     ):
         self.api_type: str = str(
             api_type
@@ -70,6 +187,12 @@ class LocalLLMBackend(AIBackend):
         self.api_key: str = str(api_key or config.get("local_llm", "api_key", ""))
         self.timeout: int = int(config.get("local_llm", "timeout", "300") or "300")
         self.max_tokens: int = int(config.get("local_llm", "max_tokens", "4096") or "4096")
+        if enable_web_search is None:
+            self.enable_web_search = bool(
+                config.get("local_llm", "enable_web_search", True)
+            )
+        else:
+            self.enable_web_search = bool(enable_web_search)
 
         # Rate-limiting state
         self.last_request_time: float = 0.0
@@ -101,12 +224,7 @@ class LocalLLMBackend(AIBackend):
         parsed = urlsplit(stripped)
         path = parsed.path.rstrip("/")
 
-        suffixes = {
-            "lmstudio": ("/api/v1", "/v1"),
-            "openai": ("/v1",),
-            "anthropic": ("/v1",),
-            "ollama": ("/api",),
-        }.get(api_type, ())
+        suffixes = _API_URL_SUFFIXES.get(api_type, ())
 
         for suffix in suffixes:
             if path.lower().endswith(suffix):
@@ -188,8 +306,26 @@ class LocalLLMBackend(AIBackend):
         system_prompt = self._build_system_prompt(
             review_type, lang, self._project_context, self._detected_frameworks,
         )
-        user_message = self._build_user_message(code_content, review_type, spec_content)
-        return self._invoke(system_prompt, user_message)
+        if self._looks_like_prebuilt_review_prompt(code_content):
+            base_user_message = code_content
+        else:
+            base_user_message = self._build_user_message(code_content, review_type, spec_content)
+        user_message = self._augment_review_with_web_context(
+            base_user_message,
+            review_type,
+            code_content,
+        )
+        result = self._invoke(system_prompt, user_message)
+        if (
+            result.startswith("Error:")
+            and self.enable_web_search
+            and user_message != base_user_message
+        ):
+            logger.warning(
+                "Local LLM review failed with web guidance enabled; retrying once without web guidance"
+            )
+            return self._invoke(system_prompt, base_user_message)
+        return result
 
     def get_fix(
         self,
@@ -250,7 +386,7 @@ class LocalLLMBackend(AIBackend):
         list_url: str,
         list_parser: str,
         test_url: str,
-        test_payload_fn: Any,
+        test_payload_fn: Callable[[str], dict[str, Any]],
         headers: dict[str, str],
         label: str,
         require_inference: bool = True,
@@ -301,12 +437,36 @@ class LocalLLMBackend(AIBackend):
             return False
 
     @staticmethod
-    def _parse_model_list(data: dict, parser: str) -> list[str]:
+    def _parse_model_list(data: dict[str, Any], parser: str) -> list[str]:
         """Extract model identifiers from an API response."""
         if parser in ("openai", "lmstudio"):
-            return [m.get("id", "") for m in data.get("data", []) if m.get("id")]
+            items = data.get("data", [])
+            if not isinstance(items, list):
+                return []
+            typed_items = cast(list[Any], items)
+            model_ids: list[str] = []
+            for item in typed_items:
+                if not isinstance(item, dict):
+                    continue
+                item_dict = cast(dict[str, Any], item)
+                model_id = item_dict.get("id")
+                if isinstance(model_id, str) and model_id:
+                    model_ids.append(model_id)
+            return model_ids
         if parser == "ollama":
-            return [m.get("name", "") for m in data.get("models", []) if m.get("name")]
+            items = data.get("models", [])
+            if not isinstance(items, list):
+                return []
+            typed_items = cast(list[Any], items)
+            model_names: list[str] = []
+            for item in typed_items:
+                if not isinstance(item, dict):
+                    continue
+                item_dict = cast(dict[str, Any], item)
+                model_name = item_dict.get("name")
+                if isinstance(model_name, str) and model_name:
+                    model_names.append(model_name)
+            return model_names
         return []
 
     # ── LM Studio native API ───────────────────────────────────────────────
@@ -584,6 +744,288 @@ class LocalLLMBackend(AIBackend):
             texts = [block.get("text", "") for block in content if block.get("type") == "text"]
             return "\n".join(texts)
         return "Error: Empty response from local LLM."
+
+    def _augment_review_with_web_context(
+        self,
+        user_message: str,
+        review_type: str,
+        code_content: str,
+    ) -> str:
+        """Append optional web-derived guidance for local LLM reviews.
+
+        The web queries are intentionally high-level and never include source
+        code or identifiers from the user's project.
+        """
+        if not self.enable_web_search:
+            return user_message
+
+        topics = self._infer_web_guidance_topics(code_content, review_type)
+        if self._should_skip_web_guidance(
+            review_type,
+            topics,
+            code_content,
+            self._project_context,
+        ):
+            logger.debug(
+                "Skipping web guidance for %s review because the code already contains concrete cache/state evidence",
+                review_type,
+            )
+            return user_message
+        snippets = self._fetch_web_guidance(review_type, code_content)
+        if not snippets:
+            return user_message
+
+        lines = [
+            user_message,
+            "",
+            "EXTERNAL WEB GUIDANCE:",
+            "Use the following high-level reference notes only as supplemental guidance.",
+            "1. Identify the primary findings from the provided code and project context before considering these notes.",
+            "2. Use these notes only to validate, sharpen, or narrowly extend a code-grounded concern.",
+            "3. Do not replace a locally supported issue family with a different category unless the code evidence clearly supports that change.",
+            "4. Treat these notes as secondary evidence; prefer the provided code and project context when they conflict.",
+        ]
+        reminders = self._build_web_guidance_reminders(topics, code_content)
+        if reminders:
+            lines.append("TOPIC-SPECIFIC OUTPUT REMINDERS:")
+            lines.extend(f"- {reminder}" for reminder in reminders)
+        for index, snippet in enumerate(snippets, start=1):
+            lines.append(f"{index}. {snippet}")
+        return "\n".join(lines)
+
+    def _fetch_web_guidance(self, review_type: str, code_content: str) -> list[str]:
+        snippets: list[str] = []
+        seen: set[str] = set()
+        for query in self._build_web_search_queries(review_type, code_content):
+            try:
+                for snippet in self._search_duckduckgo_html(query):
+                    normalized = snippet.strip()
+                    if not normalized:
+                        continue
+                    dedupe_key = normalized.lower()
+                    if dedupe_key in seen:
+                        continue
+                    seen.add(dedupe_key)
+                    snippets.append(normalized)
+                    if len(snippets) >= 3:
+                        return snippets
+            except requests.RequestException as exc:
+                logger.debug("Web search guidance unavailable for query '%s': %s", query, exc)
+            except Exception as exc:
+                logger.debug("Failed to parse web guidance for query '%s': %s", query, exc)
+        return snippets
+
+    def _build_web_search_queries(self, review_type: str, code_content: str = "") -> list[str]:
+        analysis_text = self._extract_web_guidance_analysis_text(code_content)
+        base_term = _WEB_GUIDANCE_BASE_TERMS.get(
+            review_type,
+            f"{review_type.replace('_', ' ')} best practices code review",
+        )
+        frameworks = [framework for framework in (self._detected_frameworks or []) if framework]
+        framework_prefix = " ".join(frameworks[:2]).strip()
+        language_prefix = self._infer_guidance_language(analysis_text)
+        topic_terms = self._infer_web_guidance_topics(analysis_text, review_type)
+
+        queries: list[str] = []
+        for topic in topic_terms[:2]:
+            query_parts = [
+                language_prefix,
+                framework_prefix,
+                topic,
+                base_term,
+            ]
+            query = " ".join(part for part in query_parts if part).strip()
+            if query and query not in queries:
+                queries.append(query)
+
+        fallback_query = " ".join(
+            part for part in (language_prefix, framework_prefix, base_term) if part
+        ).strip()
+        if fallback_query and fallback_query not in queries:
+            queries.append(fallback_query)
+        return queries
+
+    def _infer_web_guidance_topics(self, code_content: str, review_type: str) -> list[str]:
+        lowered = self._extract_web_guidance_analysis_text(code_content).lower()
+        topics: list[str] = []
+
+        for topic, markers in _WEB_GUIDANCE_TOPIC_PATTERNS:
+            if any(self._web_guidance_marker_present(lowered, marker) for marker in markers):
+                topics.append(topic)
+
+        review_defaults = {
+            "security": "authentication authorization",
+            "best_practices": "api contract serialization compatibility",
+            "performance": "cache invalidation state consistency",
+            "architecture": "dependency direction layering",
+            "regression": "api contract serialization compatibility",
+        }
+        default_topic = review_defaults.get(review_type)
+        if default_topic and default_topic not in topics:
+            topics.insert(0, default_topic)
+
+        if not topics:
+            topics.append("code review defect prevention")
+
+        return topics
+
+    @staticmethod
+    def _extract_web_guidance_analysis_text(code_content: str) -> str:
+        text = code_content
+        code_marker = "CODE TO REVIEW:\n"
+        if code_marker in text:
+            text = text.split(code_marker, 1)[1]
+
+        for marker in ("=== FILE:", "CHANGED FILE:"):
+            if marker in text:
+                return text[text.index(marker):]
+
+        return text
+
+    @staticmethod
+    def _looks_like_prebuilt_review_prompt(code_content: str) -> bool:
+        return any(
+            marker in code_content
+            for marker in (
+                "=== FILE:",
+                "CHANGED FILE:",
+                "Review each of the following files.",
+                "Review each of the following changed files.",
+                "FOCUS YOUR REVIEW ON THE CHANGED LINES.",
+            )
+        )
+
+    @classmethod
+    def _build_web_guidance_reminders(cls, topics: list[str], code_content: str = "") -> list[str]:
+        reminders: list[str] = []
+        if any("cache invalidation state consistency" == topic for topic in topics):
+            reminders.append(
+                "For cache or state consistency findings, keep the finding cross-file when another file performs the write or read path, include the collaborating file, and describe the systemic impact as stale reads or stale state reaching callers when supported by the code."
+            )
+            reminders.append(
+                "For performance reviews, prioritize cache invalidation, stale state, cache coherence, or redundant state-handling defects. Do not report generic input validation or auth issues unless they directly cause cache inconsistency, stale reads, or unnecessary recomputation."
+            )
+            identifier_hints = cls._infer_cache_identifier_hints(code_content)
+            if identifier_hints:
+                reminders.append(
+                    "For stale-cache findings, keep issue_type aligned to performance/cache and anchor evidence_basis to concrete code identifiers such as "
+                    f"{', '.join(identifier_hints[:5])}. Prefer the shared entity token when present, and do not justify the finding with project context alone."
+                )
+        if any("input validation boundary enforcement" == topic for topic in topics):
+            reminders.append(
+                "For validation findings, include systemic_impact that explicitly says unvalidated or incompletely validated input proceeds beyond the boundary and reaches runtime use or storage."
+            )
+        if any("authentication authorization" == topic for topic in topics):
+            reminders.append(
+                "For auth findings, keep the primary issue grounded in the missing guard or permission check shown by the code, and describe which callers or routes remain exposed."
+            )
+        return reminders
+
+    @classmethod
+    def _infer_cache_identifier_hints(cls, code_content: str) -> list[str]:
+        analysis_text = cls._extract_web_guidance_analysis_text(code_content)
+        hints: list[str] = []
+
+        entity_counts: dict[str, int] = {}
+        for match in re.finditer(r"\b(?:get|set|update|invalidate|delete|save|load|fetch)_([a-z0-9_]+)\b", analysis_text):
+            entity = match.group(1)
+            entity_counts[entity] = entity_counts.get(entity, 0) + 1
+
+        for entity, count in entity_counts.items():
+            if count >= 2 and entity not in hints:
+                hints.append(entity)
+
+        for match in re.finditer(r"\b[A-Za-z_][A-Za-z0-9_]*cache[A-Za-z0-9_]*\b", analysis_text, flags=re.IGNORECASE):
+            identifier = match.group(0)
+            if identifier not in hints:
+                hints.append(identifier)
+
+        for match in re.finditer(r"^\s*def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", analysis_text, flags=re.MULTILINE):
+            identifier = match.group(1)
+            if "cache" in identifier.lower() or re.match(r"^(get|set|update|invalidate|delete|save|load|fetch)_", identifier):
+                if identifier not in hints:
+                    hints.append(identifier)
+
+        return hints
+
+    @classmethod
+    def _should_skip_web_guidance(
+        cls,
+        review_type: str,
+        topics: list[str],
+        code_content: str,
+        project_context: str | None = None,
+    ) -> bool:
+        if review_type != "performance":
+            return False
+        if "cache invalidation state consistency" not in topics:
+            return False
+
+        identifier_hints = cls._infer_cache_identifier_hints(code_content)
+        has_shared_entity = any(
+            "_" in hint
+            and "cache" not in hint.lower()
+            and not re.match(r"^(get|set|update|invalidate|delete|save|load|fetch)_", hint)
+            for hint in identifier_hints
+        )
+        has_cache_symbol = any("cache" in hint.lower() for hint in identifier_hints)
+        if has_shared_entity and has_cache_symbol:
+            return True
+
+        lowered_analysis = cls._extract_web_guidance_analysis_text(code_content).lower()
+        lowered_project_context = (project_context or "").lower()
+        has_project_cache_context = "cache" in lowered_project_context
+        has_write_path = any(
+            marker in lowered_analysis
+            for marker in ("store[", "store [", "update_", "save_", "write_", "set_")
+        )
+        return has_project_cache_context and has_write_path
+
+    @staticmethod
+    def _web_guidance_marker_present(lowered_content: str, marker: str) -> bool:
+        if any(char in marker for char in "(._="):
+            return marker in lowered_content
+        return re.search(rf"\b{re.escape(marker)}(?:\b|_)", lowered_content) is not None
+
+    @staticmethod
+    def _infer_guidance_language(code_content: str) -> str:
+        lowered = code_content.lower()
+        if any(marker in lowered for marker in ("def ", "import ", "from ", "self", "async def ")):
+            return "python"
+        if any(marker in lowered for marker in ("function ", "const ", "let ", "=>", "console.")):
+            return "javascript"
+        if any(marker in lowered for marker in ("public class ", "private ", "using ", "namespace ")):
+            return "csharp"
+        return ""
+
+    def _search_duckduckgo_html(self, query: str) -> list[str]:
+        response = requests.get(
+            "https://html.duckduckgo.com/html/",
+            params={"q": query},
+            headers={
+                "User-Agent": "AICodeReviewer/1.0 (+https://example.local)",
+                "Accept-Language": "en-US,en;q=0.8",
+            },
+            timeout=min(self.timeout, 10),
+        )
+        response.raise_for_status()
+
+        snippets: list[str] = []
+        for raw in re.findall(r'<a[^>]*class="result__snippet"[^>]*>(.*?)</a>|<div[^>]*class="result__snippet"[^>]*>(.*?)</div>', response.text, flags=re.IGNORECASE | re.DOTALL):
+            snippet_html = next((part for part in raw if part), "")
+            snippet = self._strip_html(snippet_html)
+            if snippet:
+                snippets.append(snippet)
+            if len(snippets) >= 3:
+                break
+        return snippets
+
+    @staticmethod
+    def _strip_html(value: str) -> str:
+        text = re.sub(r"<[^>]+>", " ", value)
+        text = unescape(text)
+        text = re.sub(r"\s+", " ", text).strip()
+        return text
 
     # ── helpers ────────────────────────────────────────────────────────────
 

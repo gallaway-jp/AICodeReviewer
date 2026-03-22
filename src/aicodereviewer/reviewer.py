@@ -11,8 +11,9 @@ import logging
 import re
 import threading
 import time
+import ast
 from collections import OrderedDict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Union
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -41,6 +42,24 @@ CancelCheck = Callable[[], bool]
 FileInfo = Union[Path, Dict[str, Any]]
 
 logger = logging.getLogger(__name__)
+
+_REVIEW_RETRY_ATTEMPTS = 2
+_CACHE_ISSUE_TYPES = frozenset({
+    "cache_invalidation",
+    "missing_cache_invalidation",
+    "cache_consistency",
+    "caching",
+    "stale_cache",
+})
+_RETURN_SHAPE_ISSUE_TYPES = frozenset({
+    "api_contract",
+    "api_mismatch_contract_regression",
+    "api_mismatch_runtime_error",
+    "api_signature_break",
+    "caller_callee_mismatch",
+    "contract_mismatch",
+    "interface_contract_violation",
+})
 
 
 # ── file content cache ─────────────────────────────────────────────────────
@@ -784,6 +803,30 @@ def collect_review_issues(
             if progress_callback:
                 progress_callback(done, total_work, f"[{type_label}]")
 
+    supplemental_issues = _supplement_stale_cache_findings(
+        target_files,
+        combined_type,
+        issues,
+    )
+    if supplemental_issues:
+        issues.extend(supplemental_issues)
+        logger.info(
+            "Added %d deterministic stale-cache finding(s) after AI review",
+            len(supplemental_issues),
+        )
+    return_shape_issues = _supplement_return_shape_mismatch_findings(
+        target_files,
+        combined_type,
+        issues,
+    )
+    if return_shape_issues:
+        issues.extend(return_shape_issues)
+        logger.info(
+            "Added %d deterministic return-shape finding(s) after AI review",
+            len(return_shape_issues),
+        )
+    _normalize_cache_issue_context(issues)
+
     logger.info(
         "Review session: %d API call(s), %d succeeded, %d failed, %d issue(s)",
         session.total_api_calls,
@@ -804,6 +847,7 @@ def collect_review_issues(
                 total_work, total_work, f"[{type_label}] interaction analysis…",
             )
         issues, _interaction_summary = analyze_interactions(issues, client, lang)
+        _normalize_cache_issue_context(issues)
         session.record_call()
 
     # ── Optional cross-file architectural review (third AI pass) ─────────
@@ -821,9 +865,334 @@ def collect_review_issues(
             target_files, issues, client, lang,
         )
         issues.extend(arch_issues)
+        _normalize_cache_issue_context(issues)
         session.record_call()
 
     return issues
+
+
+def _load_target_file_entries(target_files: Sequence[FileInfo]) -> List[Dict[str, str]]:
+    entries: List[Dict[str, str]] = []
+    for file_info in target_files:
+        if isinstance(file_info, dict):
+            file_path = str(file_info["path"])
+            content = str(file_info.get("content") or "")
+            name = str(file_info.get("filename") or Path(file_path).name)
+        else:
+            file_path = str(file_info)
+            content = _read_file_content(file_info)
+            name = Path(file_path).name
+        if not content:
+            continue
+        entries.append({
+            "path": file_path,
+            "name": name,
+            "content": content,
+        })
+    return entries
+
+
+def _extract_cache_entities(content: str) -> Dict[str, List[str]]:
+    entities: Dict[str, List[str]] = {}
+    if "cache" not in content.lower() and "_CACHE" not in content:
+        return entities
+
+    for match in re.finditer(r"\b(get|set)_([a-z0-9_]+)\b", content):
+        entity = match.group(2)
+        entities.setdefault(entity, []).append(match.group(0))
+    return entities
+
+
+def _extract_write_entities(content: str) -> Dict[str, List[str]]:
+    entities: Dict[str, List[str]] = {}
+    if not re.search(r"\b(store|repo|repository|db|database)\s*\[", content):
+        return entities
+
+    for match in re.finditer(r"\b(update|save|write|set)_([a-z0-9_]+)\b", content):
+        entity = match.group(2)
+        entities.setdefault(entity, []).append(match.group(0))
+    return entities
+
+
+def _supplement_stale_cache_findings(
+    target_files: Sequence[FileInfo],
+    review_type: str,
+    issues: Sequence[ReviewIssue],
+) -> List[ReviewIssue]:
+    if "performance" not in review_type.split("+"):
+        return []
+    if any(issue.issue_type.lower() in _CACHE_ISSUE_TYPES for issue in issues):
+        return []
+
+    entries = _load_target_file_entries(target_files)
+    if len(entries) < 2:
+        return []
+
+    supplements: List[ReviewIssue] = []
+    seen_pairs: set[tuple[str, str, str]] = set()
+
+    for cache_entry in entries:
+        cache_content = cache_entry["content"]
+        cache_entities = _extract_cache_entities(cache_content)
+        if not cache_entities:
+            continue
+        for writer_entry in entries:
+            if writer_entry["path"] == cache_entry["path"]:
+                continue
+            writer_content = writer_entry["content"]
+            if any(token in writer_content.lower() for token in ("invalidate", "clear_cache", "evict", "ttl")):
+                continue
+            write_entities = _extract_write_entities(writer_content)
+            if not write_entities:
+                continue
+
+            for entity, writer_functions in write_entities.items():
+                if entity not in cache_entities:
+                    continue
+                pair_key = (entity, cache_entry["path"], writer_entry["path"])
+                if pair_key in seen_pairs:
+                    continue
+                seen_pairs.add(pair_key)
+
+                cache_functions = cache_entities[entity]
+                writer_function = writer_functions[0]
+                cache_refs = ", ".join(cache_functions[:2])
+                evidence_basis = (
+                    f"{writer_function} updates {entity} state while {cache_refs} in "
+                    f"{cache_entry['name']} continue serving cached {entity} data without invalidation."
+                )
+                systemic_impact = (
+                    f"Stale {entity} reads may reach callers because {writer_entry['name']} updates the backing store "
+                    f"without invalidating cached {entity} entries in {cache_entry['name']}."
+                )
+                ai_feedback = "\n\n".join([
+                    "**Missing cache invalidation across write and read paths**",
+                    f"{writer_entry['name']} updates {entity} state, but {cache_entry['name']} exposes cache accessors for the same entity without any invalidation path.",
+                    f"Code: {writer_function}(...) / {cache_refs}(...)",
+                    "Suggestion: Invalidate or refresh the cached entity on the write path, or route writes through the same cache management layer.",
+                    "Context Scope: cross_file",
+                    f"Related Files: {cache_entry['path']}",
+                    f"Systemic Impact: {systemic_impact}",
+                    "Confidence: medium",
+                    f"Evidence Basis: {evidence_basis}",
+                ])
+                supplements.append(ReviewIssue(
+                    file_path=writer_entry["path"],
+                    line_number=1,
+                    issue_type="missing_cache_invalidation",
+                    severity="medium",
+                    description="Missing cache invalidation across write and read paths",
+                    code_snippet=writer_content[:200] + ("…" if len(writer_content) > 200 else ""),
+                    ai_feedback=ai_feedback,
+                    context_scope="cross_file",
+                    related_files=[cache_entry["path"]],
+                    systemic_impact=systemic_impact,
+                    confidence="medium",
+                    evidence_basis=evidence_basis,
+                ))
+
+    return supplements
+
+
+def _normalize_cache_issue_context(issues: Sequence[ReviewIssue]) -> None:
+    for issue in issues:
+        if issue.issue_type.lower() not in _CACHE_ISSUE_TYPES:
+            continue
+
+        sibling_paths: List[str] = []
+        for related_index in issue.related_issues:
+            if related_index < 0 or related_index >= len(issues):
+                continue
+            sibling = issues[related_index]
+            if sibling.context_scope == "local":
+                continue
+            if sibling.file_path != issue.file_path and sibling.file_path not in sibling_paths:
+                sibling_paths.append(sibling.file_path)
+            for related_path in sibling.related_files:
+                if related_path != issue.file_path and related_path not in sibling_paths:
+                    sibling_paths.append(related_path)
+
+        if sibling_paths:
+            issue.context_scope = "cross_file"
+            for sibling_path in sibling_paths:
+                if sibling_path not in issue.related_files:
+                    issue.related_files.append(sibling_path)
+
+        if issue.context_scope == "cross_file" and not issue.systemic_impact:
+            collaborator = Path(issue.related_files[0]).name if issue.related_files else "a related write path"
+            issue.systemic_impact = (
+                f"Stale cached data may reach callers because {collaborator} can update the backing state without invalidating cached entries."
+            )
+
+        feedback_parts = [part for part in [issue.ai_feedback] if part]
+        if issue.context_scope != "local" and "Context Scope:" not in issue.ai_feedback:
+            feedback_parts.append(f"Context Scope: {issue.context_scope}")
+        if issue.related_files and "Related Files:" not in issue.ai_feedback:
+            feedback_parts.append(f"Related Files: {', '.join(issue.related_files)}")
+        if issue.systemic_impact and "Systemic Impact:" not in issue.ai_feedback:
+            feedback_parts.append(f"Systemic Impact: {issue.systemic_impact}")
+        if feedback_parts:
+            issue.ai_feedback = "\n\n".join(feedback_parts)
+
+
+def _extract_return_shapes(content: str) -> Dict[str, tuple[set[str], int]]:
+    shapes: Dict[str, tuple[set[str], int]] = {}
+    try:
+        tree = ast.parse(content)
+    except SyntaxError:
+        return shapes
+
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+
+        keys: set[str] = set()
+        for child in ast.walk(node):
+            if not isinstance(child, ast.Return):
+                continue
+            if not isinstance(child.value, ast.Dict):
+                continue
+            literal_keys = {
+                key.value
+                for key in child.value.keys
+                if isinstance(key, ast.Constant) and isinstance(key.value, str)
+            }
+            keys.update(literal_keys)
+
+        if keys:
+            shapes[node.name] = (keys, node.lineno)
+
+    return shapes
+
+
+def _extract_imported_call_result_accesses(
+    content: str,
+) -> List[tuple[str, str, str, int]]:
+    accesses: List[tuple[str, str, str, int]] = []
+    try:
+        tree = ast.parse(content)
+    except SyntaxError:
+        return accesses
+
+    imported_functions: Dict[str, tuple[str, str]] = {}
+    assignments: Dict[str, tuple[str, str, int]] = {}
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            module_tail = node.module.split(".")[-1]
+            for alias in node.names:
+                local_name = alias.asname or alias.name
+                imported_functions[local_name] = (module_tail, alias.name)
+        elif isinstance(node, ast.Assign):
+            if len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
+                continue
+            if not isinstance(node.value, ast.Call) or not isinstance(node.value.func, ast.Name):
+                continue
+            call_name = node.value.func.id
+            import_target = imported_functions.get(call_name)
+            if import_target is None:
+                continue
+            assignments[node.targets[0].id] = (import_target[0], import_target[1], node.lineno)
+        elif isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name):
+            slice_node = node.slice
+            if not isinstance(slice_node, ast.Constant) or not isinstance(slice_node.value, str):
+                continue
+            assignment = assignments.get(node.value.id)
+            if assignment is None:
+                continue
+            accesses.append((assignment[0], assignment[1], slice_node.value, node.lineno))
+
+    return accesses
+
+
+def _supplement_return_shape_mismatch_findings(
+    target_files: Sequence[FileInfo],
+    review_type: str,
+    issues: Sequence[ReviewIssue],
+) -> List[ReviewIssue]:
+    if "best_practices" not in review_type.split("+"):
+        return []
+    if any(issue.issue_type.lower() in _RETURN_SHAPE_ISSUE_TYPES for issue in issues):
+        return []
+
+    entries = _load_target_file_entries(target_files)
+    if len(entries) < 2:
+        return []
+
+    entries_by_stem: Dict[str, List[Dict[str, str]]] = {}
+    return_shapes_by_path: Dict[str, Dict[str, tuple[set[str], int]]] = {}
+    for entry in entries:
+        entry_stem = Path(entry["path"]).stem
+        entries_by_stem.setdefault(entry_stem, []).append(entry)
+        return_shapes_by_path[entry["path"]] = _extract_return_shapes(entry["content"])
+
+    supplements: List[ReviewIssue] = []
+    seen_keys: set[tuple[str, str, str, str]] = set()
+
+    for consumer_entry in entries:
+        call_accesses = _extract_imported_call_result_accesses(consumer_entry["content"])
+        if not call_accesses:
+            continue
+
+        for module_stem, function_name, accessed_key, line_number in call_accesses:
+            producer_entries = entries_by_stem.get(module_stem, [])
+            for producer_entry in producer_entries:
+                if producer_entry["path"] == consumer_entry["path"]:
+                    continue
+                return_shapes = return_shapes_by_path.get(producer_entry["path"], {})
+                return_shape = return_shapes.get(function_name)
+                if return_shape is None:
+                    continue
+                available_keys, _producer_line = return_shape
+                if accessed_key in available_keys:
+                    continue
+
+                seen_key = (
+                    consumer_entry["path"],
+                    producer_entry["path"],
+                    function_name,
+                    accessed_key,
+                )
+                if seen_key in seen_keys:
+                    continue
+                seen_keys.add(seen_key)
+
+                available_keys_text = ", ".join(sorted(available_keys)) or "no documented keys"
+                systemic_impact = (
+                    f"Callers can fail at runtime because {consumer_entry['name']} still expects '{accessed_key}' "
+                    f"while {producer_entry['name']} now returns {available_keys_text}."
+                )
+                evidence_basis = (
+                    f"{producer_entry['name']}.{function_name} returns keys {available_keys_text}, but "
+                    f"{consumer_entry['name']} reads response['{accessed_key}']."
+                )
+                ai_feedback = "\n\n".join([
+                    "**Caller still expects a stale response field after a refactor**",
+                    f"{consumer_entry['name']} reads '{accessed_key}' from the result of {function_name}(), but {producer_entry['name']} returns {available_keys_text} instead.",
+                    f"Code: response['{accessed_key}'] / {function_name}(...) -> {{{available_keys_text}}}",
+                    "Suggestion: Update callers to use the new response field, or restore a compatibility layer until all callers are migrated.",
+                    "Context Scope: cross_file",
+                    f"Related Files: {producer_entry['path']}",
+                    f"Systemic Impact: {systemic_impact}",
+                    "Confidence: medium",
+                    f"Evidence Basis: {evidence_basis}",
+                ])
+                supplements.append(ReviewIssue(
+                    file_path=consumer_entry["path"],
+                    line_number=line_number,
+                    issue_type="api_mismatch_runtime_error",
+                    severity="high",
+                    description="Caller still expects a stale response field after a refactor",
+                    code_snippet=consumer_entry["content"][:200] + ("…" if len(consumer_entry["content"]) > 200 else ""),
+                    ai_feedback=ai_feedback,
+                    context_scope="cross_file",
+                    related_files=[producer_entry["path"]],
+                    systemic_impact=systemic_impact,
+                    confidence="medium",
+                    evidence_basis=evidence_basis,
+                ))
+
+    return supplements
 
 
 # ── batch helper ───────────────────────────────────────────────────────────
@@ -898,12 +1267,20 @@ def _process_files_individually(
                 diff_msg = AIBackend._build_diff_user_message(  # noqa: SLF001
                     file_info, review_type, spec_content
                 )
-                feedback = client.get_review(
-                    diff_msg, review_type=review_type, lang=lang, spec_content=spec_content
+                feedback = _request_review_with_retry(
+                    client,
+                    diff_msg,
+                    review_type,
+                    lang,
+                    spec_content,
                 )
             else:
-                feedback = client.get_review(
-                    code, review_type=review_type, lang=lang, spec_content=spec_content
+                feedback = _request_review_with_retry(
+                    client,
+                    code,
+                    review_type,
+                    lang,
+                    spec_content,
                 )
             if feedback and not feedback.startswith("Error:"):
                 parsed = parse_single_file_response(
@@ -1001,8 +1378,12 @@ def _process_combined_batch(
         )  # type: ignore[reportPrivateUsage]
 
     try:
-        feedback = client.get_review(
-            combined_code, review_type=review_type, lang=lang, spec_content=spec_content
+        feedback = _request_review_with_retry(
+            client,
+            combined_code,
+            review_type,
+            lang,
+            spec_content,
         )
     except Exception as exc:
         # Check if this was a cancellation – if so, return empty instead of falling back
@@ -1025,6 +1406,65 @@ def _process_combined_batch(
         feedback, file_entries, review_type, target_files,
         client, lang, spec_content, cancel_check,
     )
+
+
+def _request_review_with_retry(
+    client: AIBackend,
+    code_content: str,
+    review_type: str,
+    lang: str,
+    spec_content: Optional[str],
+    attempts: int = _REVIEW_RETRY_ATTEMPTS,
+) -> str:
+    """Request a review and retry once when the backend returns a transient error."""
+    last_feedback = ""
+    last_exception: Exception | None = None
+
+    for attempt in range(1, max(1, attempts) + 1):
+        try:
+            feedback = client.get_review(
+                code_content,
+                review_type=review_type,
+                lang=lang,
+                spec_content=spec_content,
+            )
+        except Exception as exc:
+            last_exception = exc
+            if attempt >= attempts:
+                raise
+            logger.warning(
+                "Review request failed on attempt %d/%d: %s",
+                attempt,
+                attempts,
+                exc,
+            )
+            continue
+
+        last_feedback = feedback or ""
+        if not _is_retryable_review_error(last_feedback) or attempt >= attempts:
+            return last_feedback
+
+        logger.warning(
+            "Review request returned retryable error on attempt %d/%d: %s",
+            attempt,
+            attempts,
+            last_feedback[:120],
+        )
+
+    if last_exception is not None:
+        raise last_exception
+    return last_feedback
+
+
+def _is_retryable_review_error(feedback: str) -> bool:
+    if not feedback.startswith("Error:"):
+        return False
+    lowered = feedback.lower()
+    if "cancelled" in lowered:
+        return False
+    if "too large" in lowered:
+        return False
+    return True
 
 
 def _merge_combined_with_fallback(

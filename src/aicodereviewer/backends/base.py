@@ -55,7 +55,7 @@ Rules:
 - Use systemic fields only when you can justify them from the provided code, prompt context, or framework guidance.
 - "evidence_basis" must be a short concrete statement naming the exact evidence, such as a field mismatch, missing guard, stale caller, dependency edge, or changed signature. Do not use generic phrases like "batch code", "project context", or "diff context" by themselves.
 - For producer/consumer or caller/callee mismatches, name both sides in related_files when known and make systemic_impact explain what breaks for downstream callers or consumers.
-- For missing guards or validation drift, name the supporting route, validator, or auth helper file and make systemic_impact explain the resulting exposure or inconsistent boundary enforcement.
+- For missing guards or validation drift, name the supporting route, validator, or auth helper file and make systemic_impact explain the resulting exposure, unvalidated input reaching runtime use, or inconsistent boundary enforcement.
 - For stale cache, state split, or transaction boundary issues, include the collaborating cache/repository/service file in related_files and make systemic_impact describe stale reads, partial writes, or loss of atomicity.
 """
 
@@ -555,7 +555,7 @@ class AIBackend(ABC):
             "4. Set context_scope to local, cross_file, or project based on the breadth of the actual evidence; use project only for genuinely architectural or cross-cutting impact.\n"
             "5. When you provide systemic metadata, name the specific supporting files and write evidence_basis as a short factual explanation of the exact mismatch, dependency, signature change, or missing check.\n"
             "6. For caller/callee drift, renamed fields, or signature changes, include the other side in related_files and make systemic_impact explain what breaks for callers or consumers.\n"
-            "7. For guard, validation, cache, or transaction findings, include the supporting auth/helper/cache/repository file when known and make systemic_impact describe the resulting exposure, stale state, or partial-write risk.\n"
+            "7. For guard, validation, cache, or transaction findings, include the supporting auth/helper/cache/repository file when known and make systemic_impact describe the resulting exposure, unvalidated or incompletely validated input reaching runtime use, stale state, or partial-write risk.\n"
             "8. Prefer fewer high-confidence systemic findings over speculative ones.\n"
             "9. When a local defect suggests broader risk, preserve the local finding and use systemic metadata instead of duplicating the issue."
         )
@@ -588,7 +588,7 @@ class AIBackend(ABC):
                 "Respond with the JSON format described in your instructions."
             )
         return (
-            "Review this code. After identifying direct issues, assess whether any issue suggests cross-file or project-level impact based on the provided project context, framework guidance, or implied dependencies. Only include broader-impact findings when the evidence is concrete. For broader findings, set context_scope deliberately, include the exact related file(s) when known, and make evidence_basis a short factual statement about the exact mismatch, dependency, signature change, or missing check. When the evidence shows caller/callee drift, stale cache/state handling, missing validation or auth checks, or loss of transaction boundaries, name the supporting file and describe the downstream impact concretely.\n\n"
+            "Review this code. After identifying direct issues, assess whether any issue suggests cross-file or project-level impact based on the provided project context, framework guidance, or implied dependencies. Only include broader-impact findings when the evidence is concrete. For broader findings, set context_scope deliberately, include the exact related file(s) when known, and make evidence_basis a short factual statement about the exact mismatch, dependency, signature change, or missing check. When the evidence shows caller/callee drift, stale cache/state handling, missing validation or auth checks, or loss of transaction boundaries, name the supporting file and describe the downstream impact concretely. For validation drift, explicitly say when unvalidated or incompletely validated input can proceed past the validator and reach runtime use.\n\n"
             f"CODE TO REVIEW:\n{code_content}\n\n"
             "Respond with the JSON format described in your instructions."
         )
@@ -613,7 +613,7 @@ class AIBackend(ABC):
 
         parts.append(
             "Review each of the following files. Also look for issues that only become visible across files in this batch, such as contract mismatches, incomplete refactors, duplicated responsibility, dependency direction problems, and caller/callee inconsistencies. Only report broader findings when they are supported by the files shown here or by the provided project context. "
-            "For broader findings, set context_scope deliberately, name the supporting related file(s), and make evidence_basis a short factual statement about the exact cross-file mismatch or dependency. For caller/callee drift, stale cache/state handling, missing guards or validation, and transaction-boundary issues, include the collaborating file when known and describe the downstream impact concretely. "
+            "For broader findings, set context_scope deliberately, name the supporting related file(s), and make evidence_basis a short factual statement about the exact cross-file mismatch or dependency. For caller/callee drift, stale cache/state handling, missing guards or validation, and transaction-boundary issues, include the collaborating file when known and describe the downstream impact concretely. For validation drift, explicitly say when unvalidated or incompletely validated input can proceed past the helper or validator and reach runtime use. "
             "Respond with JSON following the schema in your instructions. "
             "Include a separate entry in the \"files\" array for each file, "
             "and a separate object in \"findings\" for each distinct issue.\n"
@@ -671,7 +671,7 @@ class AIBackend(ABC):
                 "FOCUS YOUR REVIEW ON THE CHANGED LINES.\n"
                 "Use surrounding context only to understand intent and impact.\n"
                 "If a changed-line issue indicates a likely broader regression, only report that broader impact when it is supported by concrete evidence from this diff, the surrounding context, the commit message, or the specification.\n"
-                "If you report broader impact, set context_scope deliberately, include the supporting related file(s) when known, and make evidence_basis a short factual statement about the exact signature, contract, or guard that changed. When the change breaks callers, weakens a guard, leaves stale state, or removes transaction safety, name the supporting file and describe that downstream impact directly.\n"
+                "If you report broader impact, set context_scope deliberately, include the supporting related file(s) when known, and make evidence_basis a short factual statement about the exact signature, contract, or guard that changed. When the change breaks callers, weakens a guard, leaves stale state, or removes transaction safety, name the supporting file and describe that downstream impact directly. For validation drift, explicitly say when the changed code allows unvalidated or incompletely validated input to reach runtime use.\n"
                 "Keep the primary finding anchored to the changed code.\n"
                 "Respond with the JSON format described in your instructions."
             )
@@ -713,7 +713,7 @@ class AIBackend(ABC):
             "FOCUS YOUR REVIEW ON THE CHANGED LINES.\n"
             "Use surrounding context only to understand intent and impact.\n"
             "If a changed-line issue indicates a likely broader regression, only report that broader impact when it is supported by concrete evidence from this diff, the surrounding context, the commit message, or the specification.\n"
-            "If you report broader impact, set context_scope deliberately, include the supporting related file(s) when known, and make evidence_basis a short factual statement about the exact signature, contract, or guard that changed. When the change breaks callers, weakens a guard, leaves stale state, or removes transaction safety, name the supporting file and describe that downstream impact directly.\n"
+            "If you report broader impact, set context_scope deliberately, include the supporting related file(s) when known, and make evidence_basis a short factual statement about the exact signature, contract, or guard that changed. When the change breaks callers, weakens a guard, leaves stale state, or removes transaction safety, name the supporting file and describe that downstream impact directly. For validation drift, explicitly say when the changed code allows unvalidated or incompletely validated input to reach runtime use.\n"
             "Keep the primary finding anchored to the changed code.\n"
             "Respond with the JSON format described in your instructions."
         )
@@ -751,7 +751,7 @@ class AIBackend(ABC):
             "Use surrounding context only to understand intent and impact. "
             "Also check whether the touched files reveal cross-file problems such as contract mismatches, partial refactors, broken call paths, or inconsistent validation/state handling. "
             "Only report broader findings when they are supported by concrete evidence in these diffs, the surrounding context, the commit message, or the specification. "
-            "For broader findings, set context_scope deliberately, name the supporting related file(s), and make evidence_basis a short factual statement about the exact changed contract, caller/callee mismatch, or missing guard. For stale state, cache invalidation, or transaction-boundary loss, include the collaborating file when known and describe the downstream impact directly. "
+            "For broader findings, set context_scope deliberately, name the supporting related file(s), and make evidence_basis a short factual statement about the exact changed contract, caller/callee mismatch, or missing guard. For stale state, cache invalidation, or transaction-boundary loss, include the collaborating file when known and describe the downstream impact directly. For validation drift, explicitly say when unvalidated or incompletely validated input can proceed past the changed boundary and reach runtime use. "
             "Keep each finding anchored to the changed code that exposes it.\n"
             "Respond with JSON following the schema in your instructions. "
             "Include a separate entry in the \"files\" array for each file.\n"

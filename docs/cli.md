@@ -150,9 +150,13 @@ Runtime overrides:
 - `--api-url URL`
 - `--api-type TYPE`
 - `--local-model MODEL`
+- `--local-enable-web-search`
+- `--local-disable-web-search`
 - `--copilot-model MODEL`
 - `--kiro-cli-command CMD`
 - `--timeout SECONDS`
+
+The Local LLM web-search flags are useful for benchmarking and automation because they let you compare prompt enrichment on and off without editing `config.ini`.
 
 ### health
 

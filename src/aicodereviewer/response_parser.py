@@ -18,6 +18,7 @@ import json
 import logging
 import re
 from difflib import SequenceMatcher
+from pathlib import PurePath
 from typing import Any, Dict, List, Optional, Sequence, cast
 
 from .models import ReviewIssue
@@ -44,8 +45,11 @@ _PROJECT_SCOPE_CATEGORY_MARKERS = {
 _PROJECT_SCOPE_TEXT_MARKERS = (
     "architecture",
     "architectural",
-    "layer",
     "layering",
+    "layer violation",
+    "service layer",
+    "presentation layer",
+    "data layer",
     "dependency direction",
     "separation of concerns",
     "mvc",
@@ -104,6 +108,45 @@ def _normalize_context_scope(
         normalized = "project"
 
     return normalized
+
+
+def _infer_related_files_from_text(
+    current_filename: str,
+    file_entries: List[Dict[str, Any]],
+    texts: Sequence[str | None],
+) -> List[str]:
+    """Infer related files when evidence text explicitly names another file."""
+    haystack = "\n".join(part for part in texts if part).lower()
+    if not haystack:
+        return []
+
+    current_name = current_filename.lower()
+    inferred: List[str] = []
+    seen: set[str] = set()
+
+    for entry in file_entries:
+        entry_name = str(entry.get("name") or entry.get("path") or "").strip()
+        if not entry_name:
+            continue
+        entry_name_lower = entry_name.lower()
+        if entry_name_lower == current_name:
+            continue
+
+        candidates = {
+            entry_name_lower,
+            PurePath(entry_name_lower).name,
+        }
+        entry_path = str(entry.get("path") or "").strip().lower()
+        if entry_path:
+            candidates.add(entry_path)
+            candidates.add(PurePath(entry_path).name)
+
+        if any(candidate and candidate in haystack for candidate in candidates):
+            if entry_name not in seen:
+                inferred.append(entry_name)
+                seen.add(entry_name)
+
+    return inferred
 
 
 # ── Line-number extraction ─────────────────────────────────────────────────
@@ -283,6 +326,14 @@ def _json_to_issues(
             evidence_basis = finding.get("evidence_basis")
             if evidence_basis is not None:
                 evidence_basis = str(evidence_basis).strip() or None
+            inferred_related_files = _infer_related_files_from_text(
+                str(entry.get("name") or filename),
+                file_entries,
+                [title, desc, systemic_impact, evidence_basis],
+            )
+            for inferred_path in inferred_related_files:
+                if inferred_path not in related_files:
+                    related_files.append(inferred_path)
             context_scope = _normalize_context_scope(
                 context_scope,
                 category,
@@ -342,9 +393,66 @@ def _json_to_issues(
                 systemic_impact=systemic_impact,
                 confidence=confidence,
                 evidence_basis=evidence_basis,
+                issue_id=(str(finding.get("issue_id")).strip() or None) if finding.get("issue_id") else None,
+                related_issues=[
+                    int(index)
+                    for index in (finding.get("related_issues") or [])
+                    if isinstance(index, int)
+                ] if isinstance(finding.get("related_issues"), list) else [],
+                interaction_summary=(
+                    str(finding.get("interaction_summary")).strip() or None
+                ) if finding.get("interaction_summary") is not None else None,
             ))
 
+    _promote_cache_findings_from_related_context(issues)
     return issues
+
+
+def _promote_cache_findings_from_related_context(issues: List[ReviewIssue]) -> None:
+    """Promote local cache findings when sibling findings prove cross-file context."""
+    cache_issue_types = {
+        "cache_invalidation",
+        "missing_cache_invalidation",
+        "cache_consistency",
+        "caching",
+        "stale_cache",
+    }
+
+    for issue in issues:
+        if issue.context_scope != "local":
+            continue
+        if issue.issue_type.lower() not in cache_issue_types:
+            continue
+        if not issue.related_issues:
+            continue
+
+        sibling_paths: list[str] = []
+        for related_index in issue.related_issues:
+            if related_index < 0 or related_index >= len(issues):
+                continue
+            sibling = issues[related_index]
+            if sibling.context_scope == "local":
+                continue
+            if sibling.file_path != issue.file_path and sibling.file_path not in sibling_paths:
+                sibling_paths.append(sibling.file_path)
+            for related_file in sibling.related_files:
+                if related_file != issue.file_path and related_file not in sibling_paths:
+                    sibling_paths.append(related_file)
+
+        if not sibling_paths:
+            continue
+
+        issue.context_scope = "cross_file"
+        for sibling_path in sibling_paths:
+            if sibling_path not in issue.related_files:
+                issue.related_files.append(sibling_path)
+
+        feedback_parts = [issue.ai_feedback] if issue.ai_feedback else []
+        if "Context Scope:" not in issue.ai_feedback:
+            feedback_parts.append("Context Scope: cross_file")
+        if issue.related_files and "Related Files:" not in issue.ai_feedback:
+            feedback_parts.append(f"Related Files: {', '.join(issue.related_files)}")
+        issue.ai_feedback = "\n\n".join(part for part in feedback_parts if part)
 
 
 # ── Strategy 1: raw JSON ──────────────────────────────────────────────────
