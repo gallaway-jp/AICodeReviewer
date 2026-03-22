@@ -67,7 +67,7 @@ def main() -> None:
     from aicodereviewer.i18n import t
 
     app = App(testing_mode=True)
-    app.geometry("1280x900+60+40")
+    app.geometry("1500x980+60+40")
     app.attributes("-topmost", True)
 
     sample_issues = create_sample_issues()

@@ -69,6 +69,12 @@ _NUMERIC_SETTINGS: dict[tuple[str, str], tuple[str, type, float]] = {
 class ResultsTabMixin:
     """Mixin supplying Results-tab construction and all issue-card logic."""
 
+    _CARD_ACTION_ROW = 3
+    _CARD_SKIP_ROW = 4
+    _SECTION_SURFACE = ("#f5f7fb", "#262a31")
+    _SECTION_BORDER = ("#d8e1ee", "#3a404b")
+    _MUTED_TEXT = ("gray40", "gray65")
+
     # ══════════════════════════════════════════════════════════════════════
     #  RESULTS TAB  – full-page issue cards
     # ══════════════════════════════════════════════════════════════════════
@@ -76,24 +82,98 @@ class ResultsTabMixin:
     def _build_results_tab(self):
         tab = self.tabs.add(t("gui.tab.results"))
         tab.grid_columnconfigure(0, weight=1)
-        tab.grid_rowconfigure(3, weight=1)
+        tab.grid_rowconfigure(6, weight=1)
 
         self.results_summary = ctk.CTkLabel(tab, text=t("gui.results.no_results"),
                                              anchor="w",
-                                             font=ctk.CTkFont(weight="bold"))
+                                             font=ctk.CTkFont(size=18, weight="bold"))
         self.results_summary.grid(row=0, column=0, sticky="ew",
-                                   padx=8, pady=(6, 0))
+                                   padx=8, pady=(8, 0))
+
+        self.results_subsummary = ctk.CTkLabel(
+            tab,
+            text="",
+            anchor="w",
+            justify="left",
+            text_color=("gray35", "gray70"),
+            font=ctk.CTkFont(size=12),
+        )
+        self.results_subsummary.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 6))
+        self.results_subsummary.grid_remove()
+
+        self._overview_frame = ctk.CTkFrame(tab, fg_color="transparent")
+        self._overview_frame.grid(row=2, column=0, sticky="ew", padx=8, pady=(0, 6))
+        for column in range(4):
+            self._overview_frame.grid_columnconfigure(column, weight=1)
+
+        self._overview_cards: Dict[str, Any] = {}
+        for column, (key, title) in enumerate((
+            ("issues", t("gui.results.metric_issues")),
+            ("pending", t("gui.results.metric_pending")),
+            ("attention", t("gui.results.metric_attention")),
+            ("backend", t("gui.results.metric_backend")),
+        )):
+            card = ctk.CTkFrame(self._overview_frame, fg_color=self._SECTION_SURFACE, border_width=1, border_color=self._SECTION_BORDER)
+            card.grid(row=0, column=column, sticky="ew", padx=(0 if column == 0 else 4, 0), pady=0)
+            value_lbl = ctk.CTkLabel(card, text="--", anchor="w", font=ctk.CTkFont(size=22, weight="bold"))
+            value_lbl.pack(anchor="w", padx=12, pady=(10, 0))
+            title_lbl = ctk.CTkLabel(
+                card,
+                text=title,
+                anchor="w",
+                text_color=self._MUTED_TEXT,
+                font=ctk.CTkFont(size=11),
+            )
+            title_lbl.pack(anchor="w", padx=12, pady=(2, 10))
+            self._overview_cards[key] = value_lbl
+        self._overview_frame.grid_remove()
+
+        self._quick_filter_bar = ctk.CTkFrame(tab, fg_color="transparent")
+        self._quick_filter_bar.grid(row=3, column=0, sticky="ew", padx=8, pady=(0, 4))
+        self._quick_filter_bar.grid_columnconfigure(6, weight=1)
+        ctk.CTkLabel(
+            self._quick_filter_bar,
+            text=t("gui.results.quick_filter_label"),
+            text_color=self._MUTED_TEXT,
+            font=ctk.CTkFont(size=11, weight="bold"),
+        ).grid(row=0, column=0, padx=(0, 6), sticky="w")
+
+        self._quick_filter_mode = "all"
+        self._quick_filter_buttons: Dict[str, Any] = {}
+        quick_filters = (
+            ("all", t("gui.results.quick_filter_all")),
+            ("pending", t("gui.results.quick_filter_pending")),
+            ("critical", t("gui.results.quick_filter_critical")),
+            ("attention", t("gui.results.quick_filter_attention")),
+            ("cross_file", t("gui.results.quick_filter_cross_file")),
+            ("fix_failed", t("gui.results.quick_filter_fix_failed")),
+        )
+        for column, (mode, label) in enumerate(quick_filters, start=1):
+            button = ctk.CTkButton(
+                self._quick_filter_bar,
+                text=label,
+                width=96,
+                height=28,
+                font=ctk.CTkFont(size=11),
+                fg_color=("#e5edf9", "#303744"),
+                hover_color=("#d7e4f7", "#3a4352"),
+                text_color=("gray15", "gray92"),
+                command=lambda selected_mode=mode: self._set_quick_filter(selected_mode),
+            )
+            button.grid(row=0, column=column, padx=(0, 6), sticky="w")
+            self._quick_filter_buttons[mode] = button
+        self._quick_filter_bar.grid_remove()
 
         # ── Severity breakdown bar ─────────────────────────────────────────
         self.results_severity_bar = ctk.CTkLabel(
             tab, text="", anchor="w",
             font=ctk.CTkFont(size=12))
-        self.results_severity_bar.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 2))
+        self.results_severity_bar.grid(row=4, column=0, sticky="ew", padx=8, pady=(0, 2))
         self.results_severity_bar.grid_remove()
 
         # ── Filter bar ────────────────────────────────────────────────────
         self._filter_bar = ctk.CTkFrame(tab, fg_color="transparent")
-        self._filter_bar.grid(row=2, column=0, sticky="ew", padx=8, pady=(0, 2))
+        self._filter_bar.grid(row=5, column=0, sticky="ew", padx=8, pady=(0, 2))
         self._filter_bar.grid_columnconfigure(7, weight=1)
 
         ctk.CTkLabel(self._filter_bar,
@@ -104,7 +184,7 @@ class ResultsTabMixin:
             self._filter_bar, variable=self._filter_sev_var, width=110,
             values=[t("gui.results.filter_all"),
                     "Critical", "High", "Medium", "Low", "Info"],
-            command=lambda _: self._apply_filters())
+            command=lambda _: self._on_filter_controls_changed())
         self._filter_severity_menu.grid(row=0, column=1, padx=(0, 8))
 
         ctk.CTkLabel(self._filter_bar,
@@ -116,7 +196,7 @@ class ResultsTabMixin:
             values=[t("gui.results.filter_all"),
                     "Pending", "Resolved", "Ignored",
                     "Skipped", "Fixed", "AI Fixed", "Fix Failed"],
-            command=lambda _: self._apply_filters())
+            command=lambda _: self._on_filter_controls_changed())
         self._filter_status_menu.grid(row=0, column=3, padx=(0, 8))
 
         ctk.CTkLabel(self._filter_bar,
@@ -126,7 +206,7 @@ class ResultsTabMixin:
         self._filter_type_menu = ctk.CTkOptionMenu(
             self._filter_bar, variable=self._filter_type_var, width=150,
             values=[t("gui.results.filter_all_types")],
-            command=lambda _: self._apply_filters())
+            command=lambda _: self._on_filter_controls_changed())
         self._filter_type_menu.grid(row=0, column=5, padx=(0, 8))
 
         ctk.CTkButton(
@@ -143,43 +223,52 @@ class ResultsTabMixin:
         self._filter_bar.grid_remove()
 
         self.results_frame = ctk.CTkScrollableFrame(tab)
-        self.results_frame.grid(row=3, column=0, sticky="nsew",
+        self.results_frame.grid(row=6, column=0, sticky="nsew",
                                  padx=8, pady=(0, 4))
         self.results_frame.grid_columnconfigure(0, weight=1)
 
         # Bottom action buttons
         btn_frame = ctk.CTkFrame(tab, fg_color="transparent")
-        btn_frame.grid(row=4, column=0, sticky="ew", padx=8, pady=(0, 6))
+        btn_frame.grid(row=7, column=0, sticky="ew", padx=8, pady=(0, 6))
+
+        self.results_action_hint = ctk.CTkLabel(
+            btn_frame,
+            text=t("gui.results.next_action_hint"),
+            anchor="w",
+            text_color=self._MUTED_TEXT,
+            font=ctk.CTkFont(size=11),
+        )
+        self.results_action_hint.grid(row=0, column=0, padx=(0, 12), sticky="w")
 
         self.ai_fix_mode_btn = ctk.CTkButton(
             btn_frame, text=t("gui.results.ai_fix_mode"),
             fg_color="#7c3aed", hover_color="#6d28d9",
             state="disabled", command=self._enter_ai_fix_mode)
-        self.ai_fix_mode_btn.grid(row=0, column=0, padx=6)
+        self.ai_fix_mode_btn.grid(row=0, column=1, padx=6)
 
         self.review_changes_btn = ctk.CTkButton(
             btn_frame, text=t("gui.results.review_changes"),
             fg_color="#2563eb", hover_color="#1d4ed8",
             state="disabled", command=self._review_changes)
-        self.review_changes_btn.grid(row=0, column=1, padx=6)
+        self.review_changes_btn.grid(row=0, column=2, padx=6)
 
         self.finalize_btn = ctk.CTkButton(
             btn_frame, text=t("gui.results.finalize"),
             fg_color="green", hover_color="#228B22",
             state="disabled", command=self._finalize_report)
-        self.finalize_btn.grid(row=0, column=2, padx=6)
+        self.finalize_btn.grid(row=0, column=3, padx=6)
 
         self.save_session_btn = ctk.CTkButton(
             btn_frame, text=t("gui.results.save_session"),
             fg_color="#0e7490", hover_color="#0c6983",
             width=110, state="disabled", command=self._save_session)
-        self.save_session_btn.grid(row=0, column=3, padx=(18, 6))
+        self.save_session_btn.grid(row=0, column=4, padx=(18, 6))
 
         self.load_session_btn = ctk.CTkButton(
             btn_frame, text=t("gui.results.load_session"),
             fg_color="#374151", hover_color="#1f2937",
             width=110, command=self._load_session)
-        self.load_session_btn.grid(row=0, column=4, padx=6)
+        self.load_session_btn.grid(row=0, column=5, padx=6)
 
         # AI Fix mode buttons (hidden initially)
         self.start_ai_fix_btn = ctk.CTkButton(
@@ -214,25 +303,34 @@ class ResultsTabMixin:
 
         if not issues:
             self.results_summary.configure(text=t("gui.results.no_results"))
+            self.results_subsummary.grid_remove()
             self.review_changes_btn.configure(state="disabled")
             self.finalize_btn.configure(state="disabled")
             self.save_session_btn.configure(state="disabled")
+            self._overview_frame.grid_remove()
+            self._quick_filter_bar.grid_remove()
             self._filter_bar.grid_remove()
             self.results_severity_bar.grid_remove()
             self.tabs.set(t("gui.tab.results"))
             return
 
+        issue_types = sorted({
+            it
+            for iss in issues
+            for it in (iss.issue_type.split("+") if "+" in iss.issue_type else [iss.issue_type])
+        })
         self.results_summary.configure(
-            text=t("gui.results.summary",
-                   score="—",
-                   issues=len(issues),
-                   types=", ".join(set(
-                       it for iss in issues
-                       for it in (iss.issue_type.split("+")
-                                  if "+" in iss.issue_type
-                                  else [iss.issue_type])
-                   )),
-                   backend=self.backend_var.get()))
+            text=t("gui.results.summary_title", issues=len(issues)))
+        self.results_subsummary.configure(
+            text=t(
+                "gui.results.summary",
+                score="—",
+                issues=len(issues),
+                types=", ".join(issue_types),
+                backend=self.backend_var.get(),
+            )
+        )
+        self.results_subsummary.grid()
 
         sev_order = [("critical", "🔴"), ("high", "🟠"),
                      ("medium", "🟡"), ("low", "🔵"), ("info", "⚪")]
@@ -245,6 +343,10 @@ class ResultsTabMixin:
         ]
         self.results_severity_bar.configure(text="  ".join(parts))
         self.results_severity_bar.grid()
+        self._update_overview_cards(issues, counts)
+        self._overview_frame.grid()
+        self._quick_filter_bar.grid()
+        self._set_quick_filter("all", apply=False)
 
         self._issues_header = ctk.CTkLabel(
             self.results_frame, text=t("gui.results.issues_section"),
@@ -281,6 +383,34 @@ class ResultsTabMixin:
         self._filter_status_var.set(t("gui.results.filter_all"))
         self._filter_bar.grid()
 
+    def _update_overview_cards(self, issues: List[ReviewIssue], counts: Dict[str, int]) -> None:
+        pending_count = sum(1 for issue in issues if issue.status == "pending")
+        attention_count = counts.get("critical", 0) + counts.get("high", 0)
+        self._overview_cards["issues"].configure(text=str(len(issues)))
+        self._overview_cards["pending"].configure(text=str(pending_count))
+        self._overview_cards["attention"].configure(text=str(attention_count))
+        self._overview_cards["backend"].configure(text=self.backend_var.get().capitalize())
+
+    def _set_quick_filter(self, mode: str, *, apply: bool = True) -> None:
+        self._quick_filter_mode = mode
+        active_fg = "#2563eb"
+        inactive_fg = ("#e5edf9", "#303744")
+        active_hover = "#1d4ed8"
+        inactive_hover = ("#d7e4f7", "#3a4352")
+        for button_mode, button in self._quick_filter_buttons.items():
+            selected = button_mode == mode
+            button.configure(
+                fg_color=active_fg if selected else inactive_fg,
+                hover_color=active_hover if selected else inactive_hover,
+                text_color="#ffffff" if selected else ("gray15", "gray92"),
+            )
+        if apply:
+            self._apply_filters()
+
+    def _on_filter_controls_changed(self) -> None:
+        self._set_quick_filter("all", apply=False)
+        self._apply_filters()
+
     def _apply_filters(self) -> None:
         all_label = t("gui.results.filter_all")
         all_types_label = t("gui.results.filter_all_types")
@@ -304,6 +434,8 @@ class ResultsTabMixin:
         if type_sel != all_types_label:
             filter_type = getattr(self, "_filter_type_reverse_map", {}).get(type_sel, type_sel)
 
+        quick_mode = getattr(self, "_quick_filter_mode", "all")
+
         visible = 0
         total = len(self._issue_cards)
         for rec in self._issue_cards:
@@ -321,6 +453,17 @@ class ResultsTabMixin:
                 and (filter_status is None or issue.status == filter_status)
                 and (filter_type is None or filter_type in issue_types)
             )
+            if match and quick_mode != "all":
+                if quick_mode == "pending":
+                    match = issue.status == "pending"
+                elif quick_mode == "critical":
+                    match = issue.severity == "critical"
+                elif quick_mode == "attention":
+                    match = issue.severity in {"critical", "high"}
+                elif quick_mode == "cross_file":
+                    match = issue.context_scope in {"cross_file", "project"}
+                elif quick_mode == "fix_failed":
+                    match = issue.status == "fix_failed"
             if match:
                 rec["card"].grid()
                 visible += 1
@@ -337,7 +480,42 @@ class ResultsTabMixin:
         self._filter_sev_var.set(t("gui.results.filter_all"))
         self._filter_status_var.set(t("gui.results.filter_all"))
         self._filter_type_var.set(t("gui.results.filter_all_types"))
+        self._set_quick_filter("all", apply=False)
         self._apply_filters()
+
+    @staticmethod
+    def _badge_colors(role: str, accent: str | None = None) -> tuple[Any, Any]:
+        if role == "severity" and accent is not None:
+            return accent, "#ffffff"
+        if role == "type":
+            return ("#e8edf4", "#323844"), ("gray10", "gray92")
+        if role == "scope":
+            return ("#dbeafe", "#1e3a5f"), ("#1d4ed8", "#bfdbfe")
+        if role == "related":
+            return ("#ede9fe", "#312e81"), ("#6d28d9", "#ddd6fe")
+        if role == "status":
+            return ("#eef2f7", "#282d36"), ("gray15", "gray92")
+        return ("#eef2f7", "#2a3039"), ("gray10", "gray92")
+
+    def _make_badge(
+        self,
+        parent: Any,
+        text: str,
+        *,
+        role: str = "default",
+        accent: str | None = None,
+    ) -> Any:
+        fg_color, text_color = self._badge_colors(role, accent)
+        return ctk.CTkLabel(
+            parent,
+            text=text,
+            fg_color=fg_color,
+            text_color=text_color,
+            corner_radius=999,
+            padx=10,
+            pady=3,
+            font=ctk.CTkFont(size=11, weight="bold"),
+        )
 
     # ── Issue card ─────────────────────────────────────────────────────────
 
@@ -348,41 +526,55 @@ class ResultsTabMixin:
         }
         color = sev_colors.get(issue.severity, "#6b7280")
 
-        card = ctk.CTkFrame(self.results_frame, border_width=1,
-                             border_color=color)
+        card = ctk.CTkFrame(self.results_frame, fg_color=self._SECTION_SURFACE, border_width=1,
+                     border_color=color)
         card.grid(row=index, column=0, sticky="ew", padx=4, pady=3)
-        card.grid_columnconfigure(1, weight=1)
+        card.grid_columnconfigure(0, weight=1)
 
-        header_text = (f"[{issue.severity.upper()}] [{issue.issue_type}] "
-                       f"{Path(issue.file_path).name}")
-        header_lbl = ctk.CTkLabel(card, text=header_text, text_color=color,
-                      font=ctk.CTkFont(weight="bold"))
-        header_lbl.grid(
-            row=0, column=0, columnspan=5, sticky="w", padx=6, pady=(4, 0))
+        header_frame = ctk.CTkFrame(card, fg_color="transparent")
+        header_frame.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 2))
+        header_frame.grid_columnconfigure(2, weight=1)
 
-        # Show a "Related" badge when cross-issue interactions were detected
+        severity_badge = self._make_badge(
+            header_frame,
+            issue.severity.upper(),
+            role="severity",
+            accent=color,
+        )
+        severity_badge.grid(row=0, column=0, padx=(0, 6), sticky="w")
+
+        issue_type_badge = self._make_badge(header_frame, issue.issue_type, role="type")
+        issue_type_badge.grid(row=0, column=1, padx=(0, 6), sticky="w")
+
+        file_lbl = ctk.CTkLabel(
+            header_frame,
+            text=Path(issue.file_path).name,
+            anchor="w",
+            font=ctk.CTkFont(size=13, weight="bold"),
+        )
+        file_lbl.grid(row=0, column=2, sticky="w")
+
+        scope_text = t(f"gui.results.scope_{issue.context_scope}")
+        scope_badge = self._make_badge(header_frame, scope_text, role="scope")
+        scope_badge.grid(row=0, column=3, padx=(6, 0), sticky="e")
+
         related = getattr(issue, "related_issues", None) or []
         if related:
             _tip = getattr(issue, "interaction_summary", "") or ""
-            badge = ctk.CTkLabel(
-                card,
-                text=f"\U0001F517 Related ({len(related)})",
-                text_color="#7c3aed",
-                font=ctk.CTkFont(size=10, weight="bold"),
-                cursor="hand2",
-            )
-            badge.grid(row=0, column=5, sticky="e", padx=(0, 6), pady=(4, 0))
+            badge = self._make_badge(header_frame, t("gui.results.related_badge", count=len(related)), role="related")
+            badge.configure(cursor="hand2")
+            badge.grid(row=0, column=4, padx=(6, 0), sticky="e")
             if _tip:
                 badge.bind(
                     "<Enter>",
                     lambda e, w=badge, txt=_tip: w.configure(
-                        text=f"\U0001F517 {txt[:60]}" + ("\u2026" if len(txt) > 60 else "")
+                        text=txt[:60] + ("\u2026" if len(txt) > 60 else "")
                     ),
                 )
                 badge.bind(
                     "<Leave>",
                     lambda e, w=badge, n=len(related): w.configure(
-                        text=f"\U0001F517 Related ({n})"
+                        text=t("gui.results.related_badge", count=n)
                     ),
                 )
 
@@ -390,8 +582,15 @@ class ResultsTabMixin:
         full_desc = issue.description
         truncated = len(full_desc) > _TRUNC
         desc_text = full_desc[:_TRUNC] + "…" if truncated else full_desc
-        desc_lbl = ctk.CTkLabel(card, text=desc_text, anchor="w", wraplength=680, justify="left")
-        desc_lbl.grid(row=1, column=0, columnspan=5, sticky="w", padx=6)
+        desc_lbl = ctk.CTkLabel(
+            card,
+            text=desc_text,
+            anchor="w",
+            wraplength=740,
+            justify="left",
+            font=ctk.CTkFont(size=14),
+        )
+        desc_lbl.grid(row=1, column=0, sticky="ew", padx=10)
 
         expand_btn: Any = None
         if truncated:
@@ -423,42 +622,65 @@ class ResultsTabMixin:
                 hover_color=("gray85", "gray25"),
                 command=_toggle_desc,
             )
-            expand_btn.grid(row=1, column=5, padx=(0, 6), pady=(0, 2), sticky="e")
+            expand_btn.grid(row=1, column=1, padx=(0, 10), pady=(0, 2), sticky="e")
+
+        meta_parts = []
+        if issue.line_number:
+            meta_parts.append(t("gui.results.meta_line", line=issue.line_number))
+        if issue.related_files:
+            meta_parts.append(t("gui.results.meta_related_files", count=len(issue.related_files)))
+        if issue.systemic_impact:
+            meta_parts.append(t("gui.results.meta_systemic"))
+        if meta_parts:
+            meta_lbl = ctk.CTkLabel(
+                card,
+                text="  •  ".join(meta_parts),
+                anchor="w",
+                justify="left",
+                text_color=self._MUTED_TEXT,
+                font=ctk.CTkFont(size=11),
+            )
+            meta_lbl.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 4))
 
         s_key, s_color = self._status_display(issue, color)
-        status_lbl = ctk.CTkLabel(card, text=t(s_key), text_color=s_color)
-        status_lbl.grid(row=2, column=0, sticky="w", padx=6, pady=(0, 4))
+        action_frame = ctk.CTkFrame(card, fg_color="transparent")
+        action_frame.grid(row=self._CARD_ACTION_ROW, column=0, sticky="ew", padx=8, pady=(0, 8))
+        action_frame.grid_columnconfigure(0, weight=1)
+
+        status_lbl = self._make_badge(action_frame, t(s_key), role="status")
+        status_lbl.configure(text_color=s_color)
+        status_lbl.grid(row=0, column=0, sticky="w", padx=(0, 4))
 
         btn_kw = dict(width=65, height=26, font=ctk.CTkFont(size=11))
         view_btn = ctk.CTkButton(
-            card, text=t("gui.results.action_view"), **btn_kw,  # type: ignore[reportArgumentType]
+            action_frame, text=t("gui.results.action_view"), **btn_kw,  # type: ignore[reportArgumentType]
             command=lambda iss=issue: self._show_issue_detail(iss),
         )
-        view_btn.grid(row=2, column=2, padx=2, pady=(0, 4))
+        view_btn.grid(row=0, column=1, padx=2, pady=(0, 0))
 
         fix_check_var = ctk.BooleanVar(value=False)
         fix_checkbox = ctk.CTkCheckBox(
-            card, text=t("gui.results.select_for_fix"),
+            action_frame, text=t("gui.results.select_for_fix"),
             variable=fix_check_var,
             font=ctk.CTkFont(size=11), width=20,
         )
 
         resolve_btn = ctk.CTkButton(
-            card, text=t("gui.results.action_resolve"), **btn_kw,  # type: ignore[reportArgumentType]
+            action_frame, text=t("gui.results.action_resolve"), **btn_kw,  # type: ignore[reportArgumentType]
             fg_color="green",
             command=lambda idx=len(self._issue_cards):
                 self._resolve_issue(idx),
         )
 
         skip_btn = ctk.CTkButton(
-            card, text=t("gui.results.action_skip"), **btn_kw,  # type: ignore[reportArgumentType]
+            action_frame, text=t("gui.results.action_skip"), **btn_kw,  # type: ignore[reportArgumentType]
             fg_color="gray50",
             command=lambda idx=len(self._issue_cards):
                 self._toggle_skip(idx),
         )
 
         undo_btn = ctk.CTkButton(
-            card, text=t("gui.results.action_undo"), **btn_kw,  # type: ignore[reportArgumentType]
+            action_frame, text=t("gui.results.action_undo"), **btn_kw,  # type: ignore[reportArgumentType]
             fg_color=("gray70", "gray35"),
             hover_color=("gray60", "gray45"),
             command=lambda idx=len(self._issue_cards):
@@ -467,10 +689,10 @@ class ResultsTabMixin:
 
         # Show the correct buttons for the initial status
         if issue.status == "pending":
-            resolve_btn.grid(row=2, column=4, padx=2, pady=(0, 4))
-            skip_btn.grid(row=2, column=5, padx=2, pady=(0, 4))
+            resolve_btn.grid(row=0, column=2, padx=2, pady=(0, 0))
+            skip_btn.grid(row=0, column=3, padx=2, pady=(0, 0))
         else:
-            undo_btn.grid(row=2, column=3, padx=2, pady=(0, 4))
+            undo_btn.grid(row=0, column=2, padx=2, pady=(0, 0))
 
         skip_frame = ctk.CTkFrame(card, fg_color="transparent")
         skip_entry = ctk.CTkEntry(skip_frame, width=500,
@@ -478,7 +700,7 @@ class ResultsTabMixin:
         skip_entry.grid(row=0, column=0, sticky="ew", padx=(20, 6), pady=4)
         skip_frame.grid_columnconfigure(0, weight=1)
         if issue.status == "skipped":
-            skip_frame.grid(row=3, column=0, columnspan=6, sticky="ew", padx=4, pady=(0, 4))
+            skip_frame.grid(row=self._CARD_SKIP_ROW, column=0, sticky="ew", padx=8, pady=(0, 4))
 
         self._issue_cards.append(IssueCard(
             issue=issue,
@@ -516,12 +738,12 @@ class ResultsTabMixin:
         rec["status_lbl"].configure(text=t(s_key), text_color=s_color)
         if issue.status == "pending":
             rec["undo_btn"].grid_remove()
-            rec["resolve_btn"].grid(row=2, column=4, padx=2, pady=(0, 4))
-            rec["skip_btn"].grid(row=2, column=5, padx=2, pady=(0, 4))
+            rec["resolve_btn"].grid(row=0, column=2, padx=2, pady=(0, 0))
+            rec["skip_btn"].grid(row=0, column=3, padx=2, pady=(0, 0))
         else:
             rec["resolve_btn"].grid_remove()
             rec["skip_btn"].grid_remove()
-            rec["undo_btn"].grid(row=2, column=3, padx=2, pady=(0, 4))
+            rec["undo_btn"].grid(row=0, column=2, padx=2, pady=(0, 0))
         self._update_bottom_buttons()
         self._apply_filters()
 
@@ -1051,7 +1273,7 @@ class ResultsTabMixin:
         issue = rec["issue"]
 
         issue.status = "skipped"
-        rec["skip_frame"].grid(row=3, column=0, columnspan=6, sticky="ew", padx=4, pady=(0, 4))
+        rec["skip_frame"].grid(row=self._CARD_SKIP_ROW, column=0, sticky="ew", padx=8, pady=(0, 4))
         def _on_reason_change(*_a, _entry=rec["skip_entry"], _iss=issue):
             _iss.resolution_reason = _entry.get().strip() or None
         rec["skip_entry"].bind("<KeyRelease>", _on_reason_change)
@@ -1079,8 +1301,9 @@ class ResultsTabMixin:
         self.ai_fix_mode_btn.grid_remove()
         self.review_changes_btn.grid_remove()
         self.finalize_btn.grid_remove()
-        self.start_ai_fix_btn.grid(row=0, column=0, padx=6)
-        self.cancel_ai_fix_btn.grid(row=0, column=1, padx=6)
+        self.results_action_hint.configure(text=t("gui.results.ai_fix_hint"))
+        self.start_ai_fix_btn.grid(row=0, column=1, padx=6)
+        self.cancel_ai_fix_btn.grid(row=0, column=2, padx=6)
 
         self._set_action_buttons_state("disabled")
 
@@ -1092,8 +1315,8 @@ class ResultsTabMixin:
             rec["undo_btn"].grid_remove()
             if rec["issue"].status == "pending":
                 rec["fix_check_var"].set(True)
-                rec["fix_checkbox"].grid(row=2, column=2, columnspan=3,
-                                          padx=4, pady=(0, 4), sticky="w")
+                rec["fix_checkbox"].grid(row=0, column=1, columnspan=3,
+                                          padx=4, pady=(0, 0), sticky="w")
 
         self._apply_filters()
 
@@ -1110,9 +1333,10 @@ class ResultsTabMixin:
 
         self.start_ai_fix_btn.grid_remove()
         self.cancel_ai_fix_btn.grid_remove()
-        self.ai_fix_mode_btn.grid(row=0, column=0, padx=6)
-        self.review_changes_btn.grid(row=0, column=1, padx=6)
-        self.finalize_btn.grid(row=0, column=2, padx=6)
+        self.results_action_hint.configure(text=t("gui.results.next_action_hint"))
+        self.ai_fix_mode_btn.grid(row=0, column=1, padx=6)
+        self.review_changes_btn.grid(row=0, column=2, padx=6)
+        self.finalize_btn.grid(row=0, column=3, padx=6)
 
         self._set_action_buttons_state("normal")
 
@@ -1121,15 +1345,15 @@ class ResultsTabMixin:
             rec["fix_check_var"].set(False)
             s_key, s_color = self._status_display(rec["issue"], rec["color"])
             rec["status_lbl"].configure(text=t(s_key), text_color=s_color)
-            rec["view_btn"].grid(row=2, column=2, padx=2, pady=(0, 4))
+            rec["view_btn"].grid(row=0, column=1, padx=2, pady=(0, 0))
             if rec["issue"].status == "pending":
                 rec["undo_btn"].grid_remove()
-                rec["resolve_btn"].grid(row=2, column=4, padx=2, pady=(0, 4))
-                rec["skip_btn"].grid(row=2, column=5, padx=2, pady=(0, 4))
+                rec["resolve_btn"].grid(row=0, column=2, padx=2, pady=(0, 0))
+                rec["skip_btn"].grid(row=0, column=3, padx=2, pady=(0, 0))
             else:
                 rec["resolve_btn"].grid_remove()
                 rec["skip_btn"].grid_remove()
-                rec["undo_btn"].grid(row=2, column=3, padx=2, pady=(0, 4))
+                rec["undo_btn"].grid(row=0, column=2, padx=2, pady=(0, 0))
 
         self._update_bottom_buttons()
         self._apply_filters()

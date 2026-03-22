@@ -39,6 +39,7 @@ The screenshots below are generated from the real test-mode GUI with:
 Use the Review tab to set up a run.
 
 Capabilities:
+- sectioned setup flow for target, analysis options, execution context, and run actions
 - choose project or diff scope
 - pick a project path
 - choose all files or selected files
@@ -59,8 +60,10 @@ Additional controls:
 Use the Results tab to inspect and act on findings.
 
 Capabilities:
+- overview cards for total issues, pending triage, high-attention findings, and active backend
+- one-click quick triage filters for pending, critical, cross-file, and fix-failed findings
 - severity, status, and type filters
-- issue cards with summaries and detail views
+- issue cards with scope/status badges, richer metadata, and detail views
 - AI Fix mode for single and batch workflows
 - preview and edit proposed changes before applying them; preview edits stay staged until you use Apply Selected Fixes
 - save and load review sessions
@@ -92,12 +95,12 @@ Capabilities:
 ## Typical GUI Workflow
 
 1. Open the Review tab.
-2. Choose scope and project path.
+2. Choose the review target, scope, and optional diff filtering.
 3. Select review types.
-4. Choose the backend.
-5. Enter programmer and reviewer metadata.
-6. Start the review.
-7. Use the Results tab to inspect, filter, fix, save sessions, reload sessions, and finalize reports from the restored issue state.
+4. Choose the backend and enter reviewer metadata.
+5. Start the review.
+6. Use the Results tab overview cards and quick triage filters to prioritize findings.
+7. Inspect issue cards, apply fixes, save sessions, reload sessions, and finalize reports from the restored issue state.
 8. Use the Output Log tab if anything looks wrong or you need runtime detail.
 
 ## GUI Workflow Diagram

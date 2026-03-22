@@ -38,9 +38,33 @@ __all__ = ["ReviewTabMixin"]
 class ReviewTabMixin:
     """Mixin supplying Review-tab construction and review execution."""
 
+    _SECTION_SURFACE = ("#f5f7fb", "#262a31")
+    _SECTION_BORDER = ("#d8e1ee", "#3a404b")
+    _MUTED_TEXT = ("gray40", "gray65")
+
     # ══════════════════════════════════════════════════════════════════════
     #  REVIEW TAB  – includes inline results panel
     # ══════════════════════════════════════════════════════════════════════
+
+    def _add_review_section_header(self, parent: Any, row: int, title: str, description: str) -> int:
+        header = ctk.CTkFrame(parent, fg_color="transparent")
+        header.grid(row=row, column=0, sticky="ew", padx=6, pady=(10, 4))
+        header.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            header,
+            text=title,
+            anchor="w",
+            font=ctk.CTkFont(size=16, weight="bold"),
+        ).grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(
+            header,
+            text=description,
+            anchor="w",
+            justify="left",
+            text_color=self._MUTED_TEXT,
+            font=ctk.CTkFont(size=11),
+        ).grid(row=1, column=0, sticky="w", pady=(1, 0))
+        return row + 1
 
     def _build_review_tab(self):
         tab = self.tabs.add(t("gui.tab.review"))
@@ -48,9 +72,35 @@ class ReviewTabMixin:
 
         row = 0
 
+        intro = ctk.CTkFrame(tab, fg_color=self._SECTION_SURFACE, border_width=1, border_color=self._SECTION_BORDER)
+        intro.grid(row=row, column=0, sticky="ew", padx=6, pady=(0, 8))
+        intro.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            intro,
+            text=t("gui.review.header_title"),
+            anchor="w",
+            font=ctk.CTkFont(size=22, weight="bold"),
+        ).grid(row=0, column=0, sticky="w", padx=12, pady=(10, 0))
+        ctk.CTkLabel(
+            intro,
+            text=t("gui.review.header_subtitle"),
+            anchor="w",
+            justify="left",
+            text_color=self._MUTED_TEXT,
+            font=ctk.CTkFont(size=12),
+        ).grid(row=1, column=0, sticky="w", padx=12, pady=(2, 10))
+        row += 1
+
+        row = self._add_review_section_header(
+            tab,
+            row,
+            t("gui.review.section_target_title"),
+            t("gui.review.section_target_desc"),
+        )
+
         # ── Project path ──────────────────────────────────────────────────
-        path_frame = ctk.CTkFrame(tab)
-        path_frame.grid(row=row, column=0, sticky="ew", pady=(0, 4))
+        path_frame = ctk.CTkFrame(tab, fg_color=self._SECTION_SURFACE, border_width=1, border_color=self._SECTION_BORDER)
+        path_frame.grid(row=row, column=0, sticky="ew", padx=6, pady=(0, 4))
         path_frame.grid_columnconfigure(2, weight=1)
         InfoTooltip.add(path_frame, t("gui.tip.project_path"), row=0, column=0)
         ctk.CTkLabel(path_frame, text=t("gui.review.project_path")).grid(row=0, column=1, padx=(0, 4))
@@ -63,11 +113,19 @@ class ReviewTabMixin:
         self.path_entry.grid(row=0, column=2, sticky="ew", padx=4)
         ctk.CTkButton(path_frame, text=t("common.browse"), width=80,
                        command=self._browse_path).grid(row=0, column=3, padx=6)
+        ctk.CTkLabel(
+            path_frame,
+            text=t("gui.review.project_path_hint"),
+            anchor="w",
+            text_color=self._MUTED_TEXT,
+            font=ctk.CTkFont(size=11),
+        ).grid(row=1, column=1, columnspan=3, sticky="w", padx=(0, 4), pady=(1, 6))
         row += 1
 
         # ── Scope ─────────────────────────────────────────────────────────
-        scope_frame = ctk.CTkFrame(tab)
-        scope_frame.grid(row=row, column=0, sticky="ew", pady=3)
+        scope_frame = ctk.CTkFrame(tab, fg_color=self._SECTION_SURFACE, border_width=1, border_color=self._SECTION_BORDER)
+        scope_frame.grid(row=row, column=0, sticky="ew", padx=6, pady=3)
+        scope_frame.grid_columnconfigure(4, weight=1)
         InfoTooltip.add(scope_frame, t("gui.tip.scope"), row=0, column=0)
         ctk.CTkLabel(scope_frame, text=t("gui.review.scope")).grid(row=0, column=1, padx=(0, 4))
         self.scope_var = ctk.StringVar(value="project")
@@ -76,10 +134,18 @@ class ReviewTabMixin:
                             variable=self.scope_var, value="project").grid(row=0, column=2, padx=6)
         ctk.CTkRadioButton(scope_frame, text=t("gui.review.scope_diff"),
                             variable=self.scope_var, value="diff").grid(row=0, column=3, padx=6)
+        ctk.CTkLabel(
+            scope_frame,
+            text=t("gui.review.scope_hint"),
+            anchor="e",
+            text_color=self._MUTED_TEXT,
+            font=ctk.CTkFont(size=11),
+        ).grid(row=0, column=4, padx=(12, 10), sticky="e")
 
         # File selection sub-options (shown when Full Project is selected)
         self.file_select_frame = ctk.CTkFrame(scope_frame)
         self.file_select_frame.grid(row=1, column=0, columnspan=5, sticky="ew", padx=6, pady=3)
+        self.file_select_frame.grid_columnconfigure(4, weight=1)
         _saved_file_mode = config.get("gui", "file_select_mode", "all")
         self.file_select_mode_var = ctk.StringVar(value=_saved_file_mode)
         self.file_select_mode_var.trace_add("write", self._on_file_select_mode_changed)
@@ -103,6 +169,13 @@ class ReviewTabMixin:
             self.file_select_frame, text="",
             font=ctk.CTkFont(size=11), text_color=("gray40", "gray60"))
         self._file_count_lbl.grid(row=0, column=3, padx=(0, 6), sticky="w")
+        ctk.CTkLabel(
+            self.file_select_frame,
+            text=t("gui.review.file_select_hint"),
+            font=ctk.CTkFont(size=11),
+            text_color=self._MUTED_TEXT,
+            anchor="e",
+        ).grid(row=0, column=4, padx=(8, 4), sticky="e")
         if self.selected_files:
             self._file_count_lbl.configure(
                 text=f"{len(self.selected_files)} file(s) selected")
@@ -151,6 +224,13 @@ class ReviewTabMixin:
         self.diff_frame.grid_remove()
         row += 1
 
+        row = self._add_review_section_header(
+            tab,
+            row,
+            t("gui.review.section_analysis_title"),
+            t("gui.review.section_analysis_desc"),
+        )
+
         # ── Review types ──────────────────────────────────────────────────
         types_hdr = ctk.CTkFrame(tab, fg_color="transparent")
         types_hdr.grid(row=row, column=0, sticky="w", padx=6, pady=(4, 1))
@@ -159,9 +239,11 @@ class ReviewTabMixin:
                       anchor="w").grid(row=0, column=1)
         row += 1
 
-        types_frame = ctk.CTkFrame(tab, fg_color="transparent")
+        types_frame = ctk.CTkFrame(tab, fg_color=self._SECTION_SURFACE, border_width=1, border_color=self._SECTION_BORDER)
         types_frame.grid(row=row, column=0, sticky="ew", padx=6, pady=(0, 4))
         self.type_vars = {}
+        for column_index in range(max_columns if 'max_columns' in locals() else 4):
+            types_frame.grid_columnconfigure(column_index, weight=1)
 
         # Load previously selected review types from config
         saved_types = config.get("gui", "review_types", "").strip()
@@ -169,6 +251,7 @@ class ReviewTabMixin:
 
         col = 0
         r = 0
+        max_columns = 4
         for i, key in enumerate(REVIEW_TYPE_KEYS):
             # Use translated label if available, otherwise fall back to meta label
             label = t(f"review_type.{key}")
@@ -177,11 +260,11 @@ class ReviewTabMixin:
                 meta = REVIEW_TYPE_META.get(key, {})
                 label = meta.get("label", key)
             var = ctk.BooleanVar(value=(key in selected_types))
-            cb = ctk.CTkCheckBox(types_frame, text=label, variable=var, width=200)
+            cb = ctk.CTkCheckBox(types_frame, text=label, variable=var, width=220)
             cb.grid(row=r, column=col, sticky="w", padx=4, pady=2)
             self.type_vars[key] = var
             col += 1
-            if col >= 3:
+            if col >= max_columns:
                 col = 0
                 r += 1
         row += 1
@@ -194,9 +277,17 @@ class ReviewTabMixin:
                        command=lambda: self._set_all_types(False)).grid(row=0, column=1, padx=4)
         row += 1
 
+        row = self._add_review_section_header(
+            tab,
+            row,
+            t("gui.review.section_context_title"),
+            t("gui.review.section_context_desc"),
+        )
+
         # ── Backend ───────────────────────────────────────────────────────
-        be_frame = ctk.CTkFrame(tab)
-        be_frame.grid(row=row, column=0, sticky="ew", pady=3)
+        be_frame = ctk.CTkFrame(tab, fg_color=self._SECTION_SURFACE, border_width=1, border_color=self._SECTION_BORDER)
+        be_frame.grid(row=row, column=0, sticky="ew", padx=6, pady=3)
+        be_frame.grid_columnconfigure(6, weight=1)
         InfoTooltip.add(be_frame, t("gui.tip.backend_select"), row=0, column=0)
         ctk.CTkLabel(be_frame, text=t("gui.review.backend_label")).grid(row=0, column=1, padx=(0, 4))
         self.backend_var = ctk.StringVar(value=config.get("backend", "type", "bedrock"))
@@ -209,11 +300,18 @@ class ReviewTabMixin:
         ]):
             ctk.CTkRadioButton(be_frame, text=t(key), variable=self.backend_var,
                                 value=val).grid(row=0, column=i + 2, padx=6)
+        ctk.CTkLabel(
+            be_frame,
+            text=t("gui.review.backend_hint"),
+            anchor="e",
+            text_color=self._MUTED_TEXT,
+            font=ctk.CTkFont(size=11),
+        ).grid(row=0, column=6, padx=(8, 10), sticky="e")
         row += 1
 
         # ── Metadata ──────────────────────────────────────────────────────
-        meta_frame = ctk.CTkFrame(tab)
-        meta_frame.grid(row=row, column=0, sticky="ew", pady=3)
+        meta_frame = ctk.CTkFrame(tab, fg_color=self._SECTION_SURFACE, border_width=1, border_color=self._SECTION_BORDER)
+        meta_frame.grid(row=row, column=0, sticky="ew", padx=6, pady=3)
         meta_frame.grid_columnconfigure(2, weight=1)
         meta_frame.grid_columnconfigure(5, weight=1)
 
@@ -265,9 +363,16 @@ class ReviewTabMixin:
         self.spec_entry.grid(row=1, column=5, sticky="ew", padx=4, pady=(3, 0))
         row += 1
 
+        row = self._add_review_section_header(
+            tab,
+            row,
+            t("gui.review.section_run_title"),
+            t("gui.review.section_run_desc"),
+        )
+
         # ── Optional architectural analysis toggle ────────────────────────
-        arch_frame = ctk.CTkFrame(tab, fg_color="transparent")
-        arch_frame.grid(row=row, column=0, sticky="w", padx=6, pady=(2, 2))
+        arch_frame = ctk.CTkFrame(tab, fg_color=self._SECTION_SURFACE, border_width=1, border_color=self._SECTION_BORDER)
+        arch_frame.grid(row=row, column=0, sticky="ew", padx=6, pady=(2, 2))
         saved_arch = config.get("processing", "enable_architectural_review", "false")
         self.arch_analysis_var = ctk.BooleanVar(
             value=str(saved_arch).lower() in ("true", "1", "yes"))
@@ -275,23 +380,31 @@ class ReviewTabMixin:
         ctk.CTkCheckBox(
             arch_frame, text=t("gui.review.arch_analysis"),
             variable=self.arch_analysis_var,
-        ).grid(row=0, column=1, padx=4)
+        ).grid(row=0, column=1, padx=8, pady=6, sticky="w")
         row += 1
 
         # ── Action buttons ────────────────────────────────────────────────
         btn_frame = ctk.CTkFrame(tab, fg_color="transparent")
         btn_frame.grid(row=row, column=0, sticky="ew", pady=(6, 2))
+        btn_frame.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            btn_frame,
+            text=t("gui.review.run_hint"),
+            anchor="w",
+            text_color=self._MUTED_TEXT,
+            font=ctk.CTkFont(size=11),
+        ).grid(row=0, column=0, padx=(0, 10), sticky="w")
         self.run_btn = ctk.CTkButton(btn_frame, text=t("gui.review.start"),
                                       fg_color="green", hover_color="#228B22",
                                       command=self._start_review)
-        self.run_btn.grid(row=0, column=0, padx=6)
+        self.run_btn.grid(row=0, column=1, padx=6)
         _Tooltip(self.run_btn, t("gui.shortcut.start_review"))
         self.dry_btn = ctk.CTkButton(btn_frame, text=t("gui.review.dry_run"),
                                       command=self._start_dry_run)
-        self.dry_btn.grid(row=0, column=1, padx=6)
+        self.dry_btn.grid(row=0, column=2, padx=6)
         self.health_btn = ctk.CTkButton(btn_frame, text=t("health.check_btn"),
                                          command=self._check_backend_health)
-        self.health_btn.grid(row=0, column=2, padx=6)
+        self.health_btn.grid(row=0, column=3, padx=6)
 
         self.progress = ctk.CTkProgressBar(tab, width=400)
         self.progress.grid(row=row + 1, column=0, sticky="ew", padx=6, pady=(3, 0))

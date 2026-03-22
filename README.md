@@ -77,6 +77,8 @@ aicodereviewer --check-connection --backend local
 
 ![AICodeReviewer GUI Results tab](docs/images/gui-results-tab.png)
 
+The desktop GUI now uses a clearer sectioned Review tab and a Results tab with overview cards, quick triage filters, and richer issue cards. See [docs/gui.md](docs/gui.md) for the full workflow and all screenshots.
+
 ## Documentation
 
 - Documentation is the source of truth for supported user-facing behavior, workflows, configuration, and operational expectations.
