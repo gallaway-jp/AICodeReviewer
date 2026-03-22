@@ -291,6 +291,14 @@ REVIEW_PROMPTS = {
         "Focus on identifying what could break for existing users and suggest "
         "preventative measures like additional tests or gradual migration strategies."
     ),
+    "ui_ux": (
+        "You are a Senior UI/UX Reviewer with expertise in product usability, interaction design, "
+        "content hierarchy, and frontend implementation quality. Review for confusing workflows, "
+        "weak affordances, unclear calls to action, inconsistent states, poor visual hierarchy, "
+        "overly dense layouts, missing empty/loading/error states, fragile form interactions, and "
+        "responsive behavior risks. Focus on issues visible in the implemented interface or UI code. "
+        "When accessibility is relevant you may note it, but prioritise broader usability and task-flow issues over strict WCAG-only findings."
+    ),
     # ── Fix prompt (internal) ─────────────────────────────────────────────
     "fix": (
         "You are an expert code fixer. Fix the code issues identified. "
@@ -367,6 +375,7 @@ REVIEW_TYPE_META = {
     "api_design":      {"label": "API Design",             "group": "Architecture"},
     "data_validation": {"label": "Data Validation",        "group": "Quality"},
     "regression":      {"label": "Regression Analysis",    "group": "Quality"},
+    "ui_ux":           {"label": "UI/UX Review",           "group": "Quality"},
 }
 
 # Public list of selectable review type keys (excludes internal types)

@@ -255,6 +255,7 @@ STRINGS: dict[str, str] = {
     "review_type.api_design":         "API設計",
     "review_type.data_validation":    "データ検証",
     "review_type.regression":         "既存機能への影響",
+    "review_type.ui_ux":              "UI/UX レビュー",
     "review_type.code_quality":       "コード品質",
 
     # ── CLI (main.py) ─────────────────────────────────────────────────────

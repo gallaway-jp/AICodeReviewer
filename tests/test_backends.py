@@ -81,6 +81,12 @@ class TestReviewTypeRegistry:
             assert "label" in meta
             assert "group" in meta
 
+    def test_ui_ux_review_type_is_registered(self):
+        assert "ui_ux" in REVIEW_TYPE_KEYS
+        assert REVIEW_TYPE_META["ui_ux"]["label"] == "UI/UX Review"
+        assert REVIEW_TYPE_META["ui_ux"]["group"] == "Quality"
+        assert "usability" in REVIEW_PROMPTS["ui_ux"].lower()
+
     def test_fix_prompt_exists(self):
         """The special 'fix' prompt for code correction should exist."""
         assert "fix" in REVIEW_PROMPTS

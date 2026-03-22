@@ -1,6 +1,6 @@
 # Review Types Reference
 
-AICodeReviewer exposes 20 selectable review types.
+AICodeReviewer exposes 21 selectable review types.
 
 ## Quality
 
@@ -17,6 +17,7 @@ AICodeReviewer exposes 20 selectable review types.
 | `concurrency` | Concurrency Safety | Race conditions, shared-state hazards, synchronization gaps |
 | `data_validation` | Data Validation | Input validation, sanitization, contract enforcement |
 | `regression` | Regression Analysis | Risk of breaking existing behavior or contracts |
+| `ui_ux` | UI/UX Review | Usability, interaction flow, hierarchy, and interface clarity |
 
 ## Architecture
 
@@ -39,7 +40,7 @@ AICodeReviewer exposes 20 selectable review types.
 
 ## Notes
 
-- `--type all` selects all 20 user-selectable review types.
+- `--type all` selects all 21 user-selectable review types.
 - Internal processing prompts such as interaction analysis and architectural review are not directly selectable via `--type`.
 - `specification` requires `--spec-file` in the CLI or a spec file in the GUI.
 
@@ -51,6 +52,7 @@ Recommended starting sets:
 - Large codebases: `maintainability,complexity,architecture,scalability`
 - API-heavy systems: `api_design,compatibility,testing,regression`
 - Product release check: `best_practices,testing,regression,documentation`
+- Frontend and desktop apps: `ui_ux,accessibility,localization,regression`
 
 ## Related Guides
 

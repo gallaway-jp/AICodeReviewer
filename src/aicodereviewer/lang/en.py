@@ -239,6 +239,7 @@ STRINGS: dict[str, str] = {
     "review_type.api_design":         "API Design",
     "review_type.data_validation":    "Data Validation",
     "review_type.regression":         "Regression Analysis",
+    "review_type.ui_ux":              "UI/UX Review",
     "review_type.code_quality":       "Code Quality",
 
     # ── CLI (main.py) ─────────────────────────────────────────────────────

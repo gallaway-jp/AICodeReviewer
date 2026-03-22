@@ -8,7 +8,7 @@ It supports four backends:
 - GitHub Copilot CLI
 - Local LLM servers via LM Studio, Ollama, OpenAI-compatible, or Anthropic-compatible APIs
 
-It supports 20 selectable review types across quality, architecture, and compliance domains, plus an interactive CLI review flow and a GUI with review, results, settings, and log views.
+It supports 21 selectable review types across quality, architecture, and compliance domains, plus an interactive CLI review flow and a GUI with review, results, settings, and log views.
 
 ## What This Repository Contains
 
@@ -106,7 +106,7 @@ Examples:
 
 ## Feature Summary
 
-- 20 selectable review types
+- 21 selectable review types
 - Project and diff review scopes
 - Multi-type reviews in one session
 - Interactive CLI workflow with resolve, ignore, AI fix, view code, skip, and force-resolve paths

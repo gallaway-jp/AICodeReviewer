@@ -112,6 +112,12 @@ def test_parse_review_types_comma_separated():
     assert result == ["security", "performance"]
 
 
+def test_parse_review_types_ui_ux():
+    """The UI/UX review type should parse like any other selectable type."""
+    result = cli._parse_review_types("ui_ux")
+    assert result == ["ui_ux"]
+
+
 def test_parse_review_types_all():
     """'all' expands to the complete type list."""
     from aicodereviewer.backends.base import REVIEW_TYPE_KEYS
