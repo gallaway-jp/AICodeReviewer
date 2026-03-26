@@ -1,0 +1,21 @@
+{
+  "id": "security-sql-query-interpolation",
+  "title": "SQL Query Interpolation Through Repository",
+  "description": "An API handler forwards a request filter into a repository helper that builds a raw SQL query through string interpolation.",
+  "scope": "project",
+  "review_types": ["security"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "sql-query-interpolation",
+      "description_keywords": ["query", "injection"],
+      "file_path_contains_any": ["api.py", "user_repository.py"],
+      "issue_type": "security",
+      "minimum_severity": "high",
+      "context_scope": "cross_file",
+      "systemic_impact_contains": "data",
+      "evidence_basis_contains": "status"
+    }
+  ]
+}

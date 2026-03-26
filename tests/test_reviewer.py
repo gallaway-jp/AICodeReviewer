@@ -1945,6 +1945,50 @@ class TestCollectReviewIssues:
         assert [Path(path).name for path in supplement.related_files] == ["api.py"]
         assert "arbitrary command" in (supplement.systemic_impact or "").lower()
 
+    def test_collect_review_issues_adds_local_sql_query_interpolation_security_supplement(self):
+        mock_client = MagicMock()
+        mock_client._backend_kind = "local"
+        mock_client.get_review.return_value = json.dumps({
+            "files": [
+                {"filename": "api.py", "findings": []},
+                {"filename": "user_repository.py", "findings": []},
+            ],
+        })
+
+        target_files: List[FileInfo] = [  # type: ignore[list-item]
+            {
+                'path': Path('/path/to/api.py'),
+                'content': (
+                    'from .user_repository import list_users_by_status\n\n'
+                    'def search_users(request):\n'
+                    '    status = request.get("status", "active")\n'
+                    '    return list_users_by_status(status)\n'
+                ),
+                'filename': 'api.py'
+            },
+            {
+                'path': Path('/path/to/user_repository.py'),
+                'content': (
+                    'def list_users_by_status(status):\n'
+                    '    query = f"SELECT id, email FROM users WHERE status = \'{status}\' ORDER BY created_at DESC"\n'
+                    '    return db.execute(query).fetchall()\n'
+                ),
+                'filename': 'user_repository.py'
+            },
+        ]
+
+        issues = collect_review_issues(target_files, ["security"], mock_client, "en")
+
+        supplement = next(
+            issue for issue in issues
+            if issue.issue_type == "security"
+            and issue.context_scope == "cross_file"
+            and "where status" in (issue.evidence_basis or "").lower()
+        )
+        assert Path(supplement.file_path).name == "user_repository.py"
+        assert [Path(path).name for path in supplement.related_files] == ["api.py"]
+        assert "data" in (supplement.systemic_impact or "").lower()
+
     def test_collect_review_issues_adds_local_dead_code_unreachable_fallback_supplement(self):
         mock_client = MagicMock()
         mock_client._backend_kind = "local"

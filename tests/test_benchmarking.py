@@ -16,7 +16,7 @@ def test_discover_fixtures_returns_expected_catalog():
 
     ids = {fixture.id for fixture in fixtures}
 
-    assert len(fixtures) == 53
+    assert len(fixtures) == 54
     assert ids == {
         "accessibility-dialog-semantic-gap",
         "accessibility-icon-button-label-gap",
@@ -63,6 +63,7 @@ def test_discover_fixtures_returns_expected_catalog():
         "scalability-instance-local-rate-limit-state",
         "scalability-unbounded-pending-events-buffer",
         "security-shell-command-injection",
+        "security-sql-query-interpolation",
         "specification-batch-atomicity-contract",
         "specification-profile-display-name-contract",
         "testing-rollout-percent-range-untested",
@@ -97,6 +98,44 @@ def test_evaluate_security_fixture_matches_shell_command_injection(tmp_path):
                             "related_files": ["src/report_export.py"],
                             "systemic_impact": "An attacker can inject shell metacharacters and execute arbitrary commands on the host through the export flow.",
                             "evidence_basis": "report_export.py builds one command string from username, output_format, and output_path before calling subprocess.run(..., shell=True).",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_security_fixture_matches_sql_query_interpolation(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "security-sql-query-interpolation" / "fixture.json"
+    )
+    report_path = tmp_path / "security-sql-query-interpolation.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-sec-0002",
+                            "file_path": "src/api.py",
+                            "issue_type": "injection_risk",
+                            "severity": "high",
+                            "description": "Request-controlled status flows into a raw SQL query, which creates a SQL injection risk.",
+                            "ai_feedback": "api.py forwards status into user_repository.py, where an f-string builds the SELECT query directly.",
+                            "context_scope": "cross_file",
+                            "related_files": ["src/user_repository.py"],
+                            "systemic_impact": "An attacker can alter the database query and read or manipulate records beyond the intended filter.",
+                            "evidence_basis": "user_repository.py interpolates status into SELECT ... WHERE status = '{status}' before db.execute(query).",
                         }
                     ]
                 },

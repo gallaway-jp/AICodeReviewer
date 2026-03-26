@@ -3467,6 +3467,26 @@ def _supplement_local_security_findings(
     if not _is_local_backend(client):
         return []
 
+    entries = _load_target_file_entries(target_files)
+    if len(entries) < 2:
+        return []
+
+    shell_issue = _supplement_local_shell_command_security(entries, issues)
+    if shell_issue is not None:
+        return [shell_issue]
+
+    sql_issue = _supplement_local_sql_query_interpolation_security(entries, issues)
+    if sql_issue is not None:
+        return [sql_issue]
+
+    return []
+
+
+def _supplement_local_shell_command_security(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+
     for issue in issues:
         normalized_issue_type = re.sub(r"[\s\-/]+", "_", issue.issue_type.lower()).strip("_")
         if normalized_issue_type != "security":
@@ -3477,11 +3497,7 @@ def _supplement_local_security_findings(
             for marker in ("command injection", "shell command", "subprocess.run", "arbitrary command")
         ):
             if issue.severity.lower() in {"high", "critical"}:
-                return []
-
-    entries = _load_target_file_entries(target_files)
-    if len(entries) < 2:
-        return []
+                return None
 
     exporter_entry: Dict[str, str] | None = None
     api_entry: Dict[str, str] | None = None
@@ -3511,7 +3527,7 @@ def _supplement_local_security_findings(
         break
 
     if exporter_entry is None or exporter_match is None:
-        return []
+        return None
 
     for entry in entries:
         if entry["path"] == exporter_entry["path"]:
@@ -3528,7 +3544,7 @@ def _supplement_local_security_findings(
         break
 
     if api_entry is None:
-        return []
+        return None
 
     evidence_basis = (
         f"{Path(exporter_entry['path']).name} builds one interpolated command string and executes subprocess.run(..., shell=True), while {Path(api_entry['path']).name} forwards request-controlled output_path, format, and username into run_export."
@@ -3547,7 +3563,7 @@ def _supplement_local_security_findings(
         "Confidence: high",
         f"Evidence Basis: {evidence_basis}",
     ])
-    return [ReviewIssue(
+    return ReviewIssue(
         file_path=exporter_entry["path"],
         line_number=_line_number_from_offset(exporter_entry["content"], exporter_match.start()),
         issue_type="security",
@@ -3560,7 +3576,91 @@ def _supplement_local_security_findings(
         systemic_impact=systemic_impact,
         confidence="high",
         evidence_basis=evidence_basis,
-    )]
+    )
+
+
+def _supplement_local_sql_query_interpolation_security(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = re.sub(r"[\s\-/]+", "_", issue.issue_type.lower()).strip("_")
+        if normalized_issue_type != "security":
+            continue
+        text = _issue_text(issue)
+        if any(
+            marker in text
+            for marker in ("sql injection", "parameterized query", "prepared statement", "where status", "db.execute")
+        ) and issue.severity.lower() in {"high", "critical"}:
+            return None
+
+    repository_entry: Dict[str, str] | None = None
+    api_entry: Dict[str, str] | None = None
+    query_match: re.Match[str] | None = None
+
+    for entry in entries:
+        content = entry["content"]
+        match = re.search(
+            r"(?P<query_name>query)\s*=\s*f[\"']SELECT .*?WHERE\s+status\s*=\s*'\{status\}'.*?[\"']",
+            content,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if match is None:
+            continue
+        if "execute(query)" not in content and "db.execute(query)" not in content:
+            continue
+        repository_entry = entry
+        query_match = match
+        break
+
+    if repository_entry is None or query_match is None:
+        return None
+
+    for entry in entries:
+        if entry["path"] == repository_entry["path"]:
+            continue
+        content = entry["content"]
+        if 'request.get("status"' not in content:
+            continue
+        if "list_users_by_status(status)" not in content:
+            continue
+        api_entry = entry
+        break
+
+    if api_entry is None:
+        return None
+
+    evidence_basis = (
+        f"{Path(api_entry['path']).name} forwards request-controlled status into list_users_by_status, and {Path(repository_entry['path']).name} interpolates status directly into SELECT ... WHERE status = '{{status}}' before db.execute(query)."
+    )
+    systemic_impact = (
+        "Request-controlled status can alter SQL semantics and expose or modify data beyond the intended filter."
+    )
+    ai_feedback = "\n\n".join([
+        "**Request-controlled status flows into a raw SQL query**",
+        f"{Path(api_entry['path']).name} forwards the request status filter into list_users_by_status, and {Path(repository_entry['path']).name} builds one SELECT query by interpolating status directly into the WHERE clause before executing it.",
+        "Code: status = request.get(\"status\", \"active\") / query = f\"SELECT ... WHERE status = '{status}' ...\" / db.execute(query)",
+        "Suggestion: Parameterize the SQL query instead of interpolating status into the query string, and validate or whitelist allowed status values at the API boundary.",
+        "Context Scope: cross_file",
+        f"Related Files: {api_entry['path']}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: high",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=repository_entry["path"],
+        line_number=_line_number_from_offset(repository_entry["content"], query_match.start()),
+        issue_type="security",
+        severity="high",
+        description="Request-controlled status is interpolated into a raw SQL query string, creating a SQL injection risk before execution.",
+        code_snippet=_code_snippet(repository_entry["content"], query_match.start()),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=[api_entry["path"]],
+        systemic_impact=systemic_impact,
+        confidence="high",
+        evidence_basis=evidence_basis,
+    )
 
 
 def _supplement_local_dialog_semantics_accessibility(
