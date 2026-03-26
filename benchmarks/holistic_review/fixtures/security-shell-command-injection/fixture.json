@@ -1,0 +1,21 @@
+{
+  "id": "security-shell-command-injection",
+  "title": "Shell Command Injection In Export Helper",
+  "description": "A request handler passes user-controlled export arguments into a shell command string that executes with shell=True.",
+  "scope": "project",
+  "review_types": ["security"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "shell-command-injection",
+      "description_keywords": ["command", "injection"],
+      "file_path_contains_any": ["api.py", "report_export.py"],
+      "issue_type": "security",
+      "minimum_severity": "high",
+      "context_scope": "cross_file",
+      "systemic_impact_contains": "command",
+      "evidence_basis_contains": "shell=True"
+    }
+  ]
+}

@@ -1221,6 +1221,19 @@ def collect_review_issues(
             len(local_accessibility_issues),
         )
 
+    local_security_issues = _supplement_local_security_findings(
+        effective_target_files,
+        combined_type,
+        issues,
+        client,
+    )
+    if local_security_issues:
+        issues.extend(local_security_issues)
+        logger.info(
+            "Added %d Local security supplement finding(s) after AI review",
+            len(local_security_issues),
+        )
+
     architecture_supplements = _normalize_controller_repository_bypass_findings(
         effective_target_files,
         combined_type,
@@ -3441,6 +3454,113 @@ def _supplement_local_accessibility_findings(
     if dialog_semantics is not None:
         supplements.append(dialog_semantics)
     return supplements
+
+
+def _supplement_local_security_findings(
+    target_files: Sequence[FileInfo],
+    review_type: str,
+    issues: Sequence[ReviewIssue],
+    client: AIBackend,
+) -> List[ReviewIssue]:
+    if "security" not in review_type.split("+"):
+        return []
+    if not _is_local_backend(client):
+        return []
+
+    for issue in issues:
+        normalized_issue_type = re.sub(r"[\s\-/]+", "_", issue.issue_type.lower()).strip("_")
+        if normalized_issue_type != "security":
+            continue
+        text = _issue_text(issue)
+        if "shell=true" in text and any(
+            marker in text
+            for marker in ("command injection", "shell command", "subprocess.run", "arbitrary command")
+        ):
+            if issue.severity.lower() in {"high", "critical"}:
+                return []
+
+    entries = _load_target_file_entries(target_files)
+    if len(entries) < 2:
+        return []
+
+    exporter_entry: Dict[str, str] | None = None
+    api_entry: Dict[str, str] | None = None
+    exporter_match: re.Match[str] | None = None
+
+    for entry in entries:
+        content = entry["content"]
+        match = re.search(
+            r"subprocess\.run\(\s*(?P<command>[A-Za-z_][A-Za-z0-9_]*)\s*,(?P<body>.*?)shell\s*=\s*True",
+            content,
+            re.DOTALL,
+        )
+        if match is None:
+            continue
+        command_name = match.group("command")
+        command_assign = re.search(
+            rf"{re.escape(command_name)}\s*=\s*\(?\s*f?[\"'].*?(?:{{[^}}]*username[^}}]*}}|username).*?(?:{{[^}}]*(?:format|output_format)[^}}]*}}|output_format).*?(?:{{[^}}]*output_path[^}}]*}}|output_path).*?[\"']",
+            content,
+            re.DOTALL,
+        )
+        if command_assign is None:
+            continue
+        if re.search(r"def\s+run_export\s*\(", content) is None:
+            continue
+        exporter_entry = entry
+        exporter_match = match
+        break
+
+    if exporter_entry is None or exporter_match is None:
+        return []
+
+    for entry in entries:
+        if entry["path"] == exporter_entry["path"]:
+            continue
+        content = entry["content"]
+        if "run_export(" not in content:
+            continue
+        if not any(
+            marker in content
+            for marker in ('request["output_path"]', 'request.get("format"', 'current_user["username"]')
+        ):
+            continue
+        api_entry = entry
+        break
+
+    if api_entry is None:
+        return []
+
+    evidence_basis = (
+        f"{Path(exporter_entry['path']).name} builds one interpolated command string and executes subprocess.run(..., shell=True), while {Path(api_entry['path']).name} forwards request-controlled output_path, format, and username into run_export."
+    )
+    systemic_impact = (
+        "Request-controlled export arguments can reach a shell command and trigger arbitrary command execution on the host."
+    )
+    ai_feedback = "\n\n".join([
+        "**User-controlled export arguments flow into a shell=True command**",
+        f"{Path(api_entry['path']).name} passes request-controlled export values into run_export, and {Path(exporter_entry['path']).name} interpolates them into one shell command string before calling subprocess.run(..., shell=True).",
+        "Code: command = f\"generate-report --user {username} --format {output_format} --output {output_path}\" / subprocess.run(command, shell=True, ...)",
+        "Suggestion: Avoid shell=True and pass a list of arguments to subprocess.run. Also validate or allowlist export destinations and format values before they reach the exporter.",
+        "Context Scope: cross_file",
+        f"Related Files: {api_entry['path']}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: high",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return [ReviewIssue(
+        file_path=exporter_entry["path"],
+        line_number=_line_number_from_offset(exporter_entry["content"], exporter_match.start()),
+        issue_type="security",
+        severity="high",
+        description="User-controlled export arguments are interpolated into a shell command and executed with shell=True.",
+        code_snippet=_code_snippet(exporter_entry["content"], exporter_match.start()),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=[api_entry["path"]],
+        systemic_impact=systemic_impact,
+        confidence="high",
+        evidence_basis=evidence_basis,
+    )]
 
 
 def _supplement_local_dialog_semantics_accessibility(

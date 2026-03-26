@@ -1894,6 +1894,57 @@ class TestCollectReviewIssues:
         assert "screen" in (supplement.systemic_impact or "").lower()
         assert "aria-modal" in (supplement.evidence_basis or "").lower()
 
+    def test_collect_review_issues_adds_local_shell_command_injection_security_supplement(self):
+        mock_client = MagicMock()
+        mock_client._backend_kind = "local"
+        mock_client.get_review.return_value = json.dumps({
+            "files": [
+                {"filename": "api.py", "findings": []},
+                {"filename": "report_export.py", "findings": []},
+            ],
+        })
+
+        target_files: List[FileInfo] = [  # type: ignore[list-item]
+            {
+                'path': Path('/path/to/api.py'),
+                'content': (
+                    'from .report_export import run_export\n\n'
+                    'def export_activity_report(request, current_user):\n'
+                    '    output_path = request["output_path"]\n'
+                    '    output_format = request.get("format", "csv")\n'
+                    '    return run_export(\n'
+                    '        username=current_user["username"],\n'
+                    '        output_format=output_format,\n'
+                    '        output_path=output_path,\n'
+                    '    )\n'
+                ),
+                'filename': 'api.py'
+            },
+            {
+                'path': Path('/path/to/report_export.py'),
+                'content': (
+                    'import subprocess\n\n'
+                    'def run_export(*, username, output_format, output_path):\n'
+                    '    command = f"generate-report --user {username} --format {output_format} --output {output_path}"\n'
+                    '    completed = subprocess.run(command, shell=True, check=True, capture_output=True, text=True)\n'
+                    '    return completed.returncode == 0\n'
+                ),
+                'filename': 'report_export.py'
+            },
+        ]
+
+        issues = collect_review_issues(target_files, ["security"], mock_client, "en")
+
+        supplement = next(
+            issue for issue in issues
+            if issue.issue_type == "security"
+            and issue.context_scope == "cross_file"
+            and "shell=true" in (issue.evidence_basis or "").lower()
+        )
+        assert Path(supplement.file_path).name == "report_export.py"
+        assert [Path(path).name for path in supplement.related_files] == ["api.py"]
+        assert "arbitrary command" in (supplement.systemic_impact or "").lower()
+
     def test_collect_review_issues_adds_local_dead_code_unreachable_fallback_supplement(self):
         mock_client = MagicMock()
         mock_client._backend_kind = "local"
