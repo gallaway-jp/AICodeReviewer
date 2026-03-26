@@ -25,6 +25,7 @@ The scorer also normalizes semantically equivalent issue types for broad benchma
 - `security-ssrf-avatar-fetch`: request data is fetched server-side as a remote URL without internal-network restrictions
 - `security-sql-query-interpolation`: request data is interpolated into a raw SQL query string
 - `security-unsafe-yaml-load`: request data reaches `yaml.load` through an unsafe loader path
+- `security-zip-slip-theme-import`: request data selects an archive that is extracted with `extractall` without entry-path validation
 - `cache-invalidation-gap`: write path updates state without invalidating cache
 - `partial-refactor-callers`: refactor changed a return contract but callers still use the old shape
 - `diff-signature-break`: diff-only signature change leaves stale call sites in surrounding code
@@ -73,6 +74,8 @@ For the `compatibility-macos-open-command` fixture, reviews now add a narrow det
 For the `security-shell-command-injection` fixture, Local reviews now add a narrow deterministic security fallback when an API-style handler forwards request-controlled export arguments into a helper that interpolates them into a single shell command string and executes it with `subprocess.run(..., shell=True)`.
 
 For the `security-ssrf-avatar-fetch` fixture, Local reviews now add a narrow deterministic security fallback when an API-style handler forwards a request-controlled URL into a helper that fetches it with `requests.get(...)` without restricting internal destinations.
+
+For the `security-zip-slip-theme-import` fixture, Local reviews now add a narrow deterministic security fallback when an API-style handler forwards a request-controlled archive path into a helper that extracts that archive with `archive.extractall(destination)` without validating member paths.
 
 For the `security-path-traversal-download` fixture, Local reviews now add a narrow deterministic security fallback when an API-style handler forwards a request-controlled filename into a helper that opens `ATTACHMENTS_ROOT / account_id / filename` without constraining traversal segments.
 

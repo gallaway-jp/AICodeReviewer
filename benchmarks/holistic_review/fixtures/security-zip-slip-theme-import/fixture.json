@@ -1,0 +1,21 @@
+{
+  "id": "security-zip-slip-theme-import",
+  "title": "Zip Slip In Theme Bundle Import",
+  "description": "An API handler forwards an uploaded theme archive path into an importer that extracts the archive into a theme directory without validating entry paths.",
+  "scope": "project",
+  "review_types": ["security"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "zip-slip-theme-import",
+      "description_keywords": ["archive", "extract"],
+      "file_path_contains_any": ["api.py", "theme_importer.py"],
+      "issue_type": "security",
+      "minimum_severity": "high",
+      "context_scope": "cross_file",
+      "systemic_impact_contains": "overwrite",
+      "evidence_basis_contains": "extractall"
+    }
+  ]
+}

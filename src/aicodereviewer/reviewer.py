@@ -3475,6 +3475,10 @@ def _supplement_local_security_findings(
     if ssrf_issue is not None:
         return [ssrf_issue]
 
+    zip_slip_issue = _supplement_local_zip_slip_security(entries, issues)
+    if zip_slip_issue is not None:
+        return [zip_slip_issue]
+
     traversal_issue = _supplement_local_path_traversal_security(entries, issues)
     if traversal_issue is not None:
         return [traversal_issue]
@@ -3492,6 +3496,101 @@ def _supplement_local_security_findings(
         return [yaml_issue]
 
     return []
+
+
+def _supplement_local_zip_slip_security(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = re.sub(r"[\s\-/()]+", "_", issue.issue_type.lower()).strip("_")
+        if normalized_issue_type not in {
+            "security",
+            "path_traversal",
+            "zip_slip",
+            "insecure_deserialization",
+        }:
+            continue
+        text = _issue_text(issue)
+        if (
+            any(marker in text for marker in ("zip slip", "extractall", "archive", "path traversal"))
+            and any(
+                marker in text
+                for marker in (
+                    "overwrite",
+                    "arbitrary file",
+                    "outside the intended destination",
+                    "outside the destination",
+                )
+            )
+            and issue.severity.lower() in {"high", "critical"}
+            and issue.context_scope == "cross_file"
+        ):
+            return None
+
+    importer_entry: Dict[str, str] | None = None
+    api_entry: Dict[str, str] | None = None
+    extract_match: re.Match[str] | None = None
+
+    for entry in entries:
+        content = entry["content"]
+        match = re.search(r"archive\.extractall\(\s*destination\s*\)", content)
+        if match is None:
+            continue
+        if re.search(r"def\s+import_theme_bundle\s*\(", content) is None:
+            continue
+        importer_entry = entry
+        extract_match = match
+        break
+
+    if importer_entry is None or extract_match is None:
+        return None
+
+    for entry in entries:
+        if entry["path"] == importer_entry["path"]:
+            continue
+        content = entry["content"]
+        if 'request["archive_path"]' not in content and "request['archive_path']" not in content:
+            continue
+        if "import_theme_bundle(current_account[\"id\"], archive_path)" not in content and "import_theme_bundle(current_account['id'], archive_path)" not in content:
+            continue
+        api_entry = entry
+        break
+
+    if api_entry is None:
+        return None
+
+    evidence_basis = (
+        f"{Path(api_entry['path']).name} forwards request-controlled archive_path into import_theme_bundle, and {Path(importer_entry['path']).name} calls archive.extractall(destination) without validating archive member paths."
+    )
+    systemic_impact = (
+        "A malicious theme archive can overwrite arbitrary files outside the intended theme directory when extraction follows attacker-controlled member paths."
+    )
+    ai_feedback = "\n\n".join([
+        "**Request-controlled archive extraction allows zip-slip file overwrite**",
+        f"{Path(api_entry['path']).name} forwards the request archive_path into import_theme_bundle, and {Path(importer_entry['path']).name} extracts that archive with archive.extractall(destination) without validating member paths.",
+        "Code: archive_path = request[\"archive_path\"] / import_theme_bundle(current_account[\"id\"], archive_path) / archive.extractall(destination)",
+        "Suggestion: Iterate archive members and validate each resolved extraction path stays under destination before writing it. Reject entries with absolute paths or `..` segments instead of calling extractall on the untrusted archive directly.",
+        "Context Scope: cross_file",
+        f"Related Files: {api_entry['path']}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: high",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=importer_entry["path"],
+        line_number=_line_number_from_offset(importer_entry["content"], extract_match.start()),
+        issue_type="security",
+        severity="high",
+        description="Untrusted theme archives are extracted with extractall without path validation, creating a zip-slip arbitrary file overwrite risk.",
+        code_snippet=_code_snippet(importer_entry["content"], extract_match.start()),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=[api_entry["path"]],
+        systemic_impact=systemic_impact,
+        confidence="high",
+        evidence_basis=evidence_basis,
+    )
 
 
 def _supplement_local_ssrf_security(

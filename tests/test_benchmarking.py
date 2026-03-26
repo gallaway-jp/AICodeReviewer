@@ -16,7 +16,7 @@ def test_discover_fixtures_returns_expected_catalog():
 
     ids = {fixture.id for fixture in fixtures}
 
-    assert len(fixtures) == 57
+    assert len(fixtures) == 58
     assert ids == {
         "accessibility-dialog-semantic-gap",
         "accessibility-icon-button-label-gap",
@@ -67,6 +67,7 @@ def test_discover_fixtures_returns_expected_catalog():
         "security-ssrf-avatar-fetch",
         "security-sql-query-interpolation",
         "security-unsafe-yaml-load",
+        "security-zip-slip-theme-import",
         "specification-batch-atomicity-contract",
         "specification-profile-display-name-contract",
         "testing-rollout-percent-range-untested",
@@ -177,6 +178,44 @@ def test_evaluate_security_fixture_matches_ssrf_avatar_fetch(tmp_path):
                             "related_files": ["src/api.py"],
                             "systemic_impact": "An attacker can use the server to reach internal services or cloud metadata endpoints that should not be exposed externally.",
                             "evidence_basis": "avatar_fetcher.py calls requests.get(avatar_url, timeout=5) on a request-controlled URL.",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_security_fixture_matches_zip_slip_theme_import(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "security-zip-slip-theme-import" / "fixture.json"
+    )
+    report_path = tmp_path / "security-zip-slip-theme-import.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-sec-0006",
+                            "file_path": "src/theme_importer.py",
+                            "issue_type": "Path traversal (Zip Slip)",
+                            "severity": "high",
+                            "description": "The theme importer extracts an untrusted archive with extractall, which creates a zip-slip path traversal risk because archive entries can escape the destination directory.",
+                            "ai_feedback": "api.py forwards archive_path into theme_importer.py, which calls zipfile.ZipFile(...).extractall(destination) without validating member paths.",
+                            "context_scope": "cross_file",
+                            "related_files": ["src/api.py"],
+                            "systemic_impact": "A malicious theme archive can overwrite arbitrary files writable by the process outside the intended theme directory.",
+                            "evidence_basis": "theme_importer.py opens the request-controlled archive path and calls archive.extractall(destination) with no member path validation.",
                         }
                     ]
                 },

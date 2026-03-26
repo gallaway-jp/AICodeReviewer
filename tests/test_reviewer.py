@@ -1992,6 +1992,54 @@ class TestCollectReviewIssues:
         assert [Path(path).name for path in supplement.related_files] == ["api.py"]
         assert "internal" in (supplement.systemic_impact or "").lower()
 
+    def test_collect_review_issues_adds_local_zip_slip_security_supplement(self):
+        mock_client = MagicMock()
+        mock_client._backend_kind = "local"
+        mock_client.get_review.return_value = json.dumps({
+            "files": [
+                {"filename": "api.py", "findings": []},
+                {"filename": "theme_importer.py", "findings": []},
+            ],
+        })
+
+        target_files: List[FileInfo] = [  # type: ignore[list-item]
+            {
+                'path': Path('/path/to/api.py'),
+                'content': (
+                    'from .theme_importer import import_theme_bundle\n\n'
+                    'def upload_theme_bundle(request, current_account):\n'
+                    '    archive_path = request["archive_path"]\n'
+                    '    return import_theme_bundle(current_account["id"], archive_path)\n'
+                ),
+                'filename': 'api.py'
+            },
+            {
+                'path': Path('/path/to/theme_importer.py'),
+                'content': (
+                    'import zipfile\nfrom pathlib import Path\n\n'
+                    'THEMES_ROOT = Path("/srv/app/themes")\n\n'
+                    'def import_theme_bundle(account_id, archive_path):\n'
+                    '    destination = THEMES_ROOT / account_id\n'
+                    '    with zipfile.ZipFile(archive_path) as archive:\n'
+                    '        archive.extractall(destination)\n'
+                ),
+                'filename': 'theme_importer.py'
+            },
+        ]
+
+        issues = collect_review_issues(target_files, ["security"], mock_client, "en")
+
+        supplement = next(
+            issue for issue in issues
+            if issue.issue_type == "security"
+            and issue.context_scope == "cross_file"
+            and "extractall" in (issue.evidence_basis or "").lower()
+            and "zip-slip" in issue.description.lower()
+        )
+        assert Path(supplement.file_path).name == "theme_importer.py"
+        assert [Path(path).name for path in supplement.related_files] == ["api.py"]
+        assert "overwrite" in (supplement.systemic_impact or "").lower()
+
     def test_collect_review_issues_adds_local_path_traversal_security_supplement(self):
         mock_client = MagicMock()
         mock_client._backend_kind = "local"
