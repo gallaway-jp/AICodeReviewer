@@ -16,7 +16,7 @@ def test_discover_fixtures_returns_expected_catalog():
 
     ids = {fixture.id for fixture in fixtures}
 
-    assert len(fixtures) == 59
+    assert len(fixtures) == 60
     assert ids == {
         "accessibility-dialog-semantic-gap",
         "accessibility-icon-button-label-gap",
@@ -62,6 +62,7 @@ def test_discover_fixtures_returns_expected_catalog():
         "regression-inverted-sync-start-guard",
         "scalability-instance-local-rate-limit-state",
         "scalability-unbounded-pending-events-buffer",
+        "security-idor-invoice-download",
         "security-jwt-signature-bypass",
         "security-path-traversal-download",
         "security-shell-command-injection",
@@ -179,6 +180,44 @@ def test_evaluate_security_fixture_matches_jwt_signature_bypass(tmp_path):
                             "related_files": ["src/api.py"],
                             "systemic_impact": "An attacker can forge session tokens and bypass authentication because the server accepts unsigned or tampered claims.",
                             "evidence_basis": "token_service.py disables signature verification in jwt.decode before api.py trusts the resulting role claim.",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_security_fixture_matches_idor_invoice_download(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "security-idor-invoice-download" / "fixture.json"
+    )
+    report_path = tmp_path / "security-idor-invoice-download.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-sec-0008",
+                            "file_path": "src/invoice_service.py",
+                            "issue_type": "authorization",
+                            "severity": "high",
+                            "description": "Invoice download authorizes by identifier alone, which creates an insecure direct object reference because any caller who knows another invoice_id can fetch that invoice.",
+                            "ai_feedback": "api.py forwards request invoice_id into invoice_service.py, which loads the invoice record and returns pdf_bytes without checking ownership against current_account.",
+                            "context_scope": "cross_file",
+                            "related_files": ["src/api.py"],
+                            "systemic_impact": "Attackers can enumerate invoice identifiers and download other customers' billing documents.",
+                            "evidence_basis": "api.py forwards invoice_id into download_invoice_pdf, and invoice_service.py calls load_invoice_record(invoice_id) without comparing the result account_id to the current account.",
                         }
                     ]
                 },

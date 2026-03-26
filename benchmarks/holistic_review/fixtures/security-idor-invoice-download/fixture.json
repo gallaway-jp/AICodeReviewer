@@ -1,0 +1,20 @@
+{
+  "id": "security-idor-invoice-download",
+  "title": "Invoice Download Missing Ownership Check",
+  "description": "An API handler forwards a request-controlled invoice identifier into a helper that loads and returns invoice data without verifying the invoice belongs to the current account.",
+  "scope": "project",
+  "review_types": ["security"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "idor-invoice-download",
+      "description_keywords": ["invoice"],
+      "file_path_contains_any": ["api.py", "invoice_service.py"],
+      "issue_type": "security",
+      "minimum_severity": "high",
+      "context_scope": "cross_file",
+      "evidence_basis_contains": "invoice_id"
+    }
+  ]
+}
