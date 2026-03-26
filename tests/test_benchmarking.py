@@ -16,7 +16,7 @@ def test_discover_fixtures_returns_expected_catalog():
 
     ids = {fixture.id for fixture in fixtures}
 
-    assert len(fixtures) == 56
+    assert len(fixtures) == 57
     assert ids == {
         "accessibility-dialog-semantic-gap",
         "accessibility-icon-button-label-gap",
@@ -64,6 +64,7 @@ def test_discover_fixtures_returns_expected_catalog():
         "scalability-unbounded-pending-events-buffer",
         "security-path-traversal-download",
         "security-shell-command-injection",
+        "security-ssrf-avatar-fetch",
         "security-sql-query-interpolation",
         "security-unsafe-yaml-load",
         "specification-batch-atomicity-contract",
@@ -138,6 +139,44 @@ def test_evaluate_security_fixture_matches_path_traversal_download(tmp_path):
                             "related_files": ["src/api.py"],
                             "systemic_impact": "An attacker can escape the account attachment directory and read arbitrary files that the process can access.",
                             "evidence_basis": "attachment_store.py opens ATTACHMENTS_ROOT / account_id / filename directly, so traversal sequences in filename can reach unexpected files.",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_security_fixture_matches_ssrf_avatar_fetch(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "security-ssrf-avatar-fetch" / "fixture.json"
+    )
+    report_path = tmp_path / "security-ssrf-avatar-fetch.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-sec-0005",
+                            "file_path": "src/avatar_fetcher.py",
+                            "issue_type": "Server-Side Request Forgery (SSRF)",
+                            "severity": "high",
+                            "description": "Request-controlled avatar_url is fetched server-side, which creates an SSRF risk because the server will request arbitrary URLs on behalf of the caller.",
+                            "ai_feedback": "api.py forwards avatar_url into avatar_fetcher.py, which calls requests.get on that URL without constraining internal destinations.",
+                            "context_scope": "cross_file",
+                            "related_files": ["src/api.py"],
+                            "systemic_impact": "An attacker can use the server to reach internal services or cloud metadata endpoints that should not be exposed externally.",
+                            "evidence_basis": "avatar_fetcher.py calls requests.get(avatar_url, timeout=5) on a request-controlled URL.",
                         }
                     ]
                 },

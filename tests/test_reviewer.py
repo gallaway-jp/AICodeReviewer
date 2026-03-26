@@ -1945,6 +1945,53 @@ class TestCollectReviewIssues:
         assert [Path(path).name for path in supplement.related_files] == ["api.py"]
         assert "arbitrary command" in (supplement.systemic_impact or "").lower()
 
+    def test_collect_review_issues_adds_local_ssrf_security_supplement(self):
+        mock_client = MagicMock()
+        mock_client._backend_kind = "local"
+        mock_client.get_review.return_value = json.dumps({
+            "files": [
+                {"filename": "api.py", "findings": []},
+                {"filename": "avatar_fetcher.py", "findings": []},
+            ],
+        })
+
+        target_files: List[FileInfo] = [  # type: ignore[list-item]
+            {
+                'path': Path('/path/to/api.py'),
+                'content': (
+                    'from .avatar_fetcher import fetch_avatar_preview\n\n'
+                    'def preview_avatar(request):\n'
+                    '    avatar_url = request["avatar_url"]\n'
+                    '    return fetch_avatar_preview(avatar_url)\n'
+                ),
+                'filename': 'api.py'
+            },
+            {
+                'path': Path('/path/to/avatar_fetcher.py'),
+                'content': (
+                    'import requests\n\n'
+                    'def fetch_avatar_preview(avatar_url):\n'
+                    '    response = requests.get(avatar_url, timeout=5)\n'
+                    '    response.raise_for_status()\n'
+                    '    return response.content\n'
+                ),
+                'filename': 'avatar_fetcher.py'
+            },
+        ]
+
+        issues = collect_review_issues(target_files, ["security"], mock_client, "en")
+
+        supplement = next(
+            issue for issue in issues
+            if issue.issue_type == "security"
+            and issue.context_scope == "cross_file"
+            and "avatar_url" in (issue.evidence_basis or "").lower()
+            and "ssrf" in issue.description.lower()
+        )
+        assert Path(supplement.file_path).name == "avatar_fetcher.py"
+        assert [Path(path).name for path in supplement.related_files] == ["api.py"]
+        assert "internal" in (supplement.systemic_impact or "").lower()
+
     def test_collect_review_issues_adds_local_path_traversal_security_supplement(self):
         mock_client = MagicMock()
         mock_client._backend_kind = "local"

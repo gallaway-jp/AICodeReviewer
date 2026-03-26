@@ -1,0 +1,21 @@
+{
+  "id": "security-ssrf-avatar-fetch",
+  "title": "SSRF Through Avatar Fetch URL",
+  "description": "An API handler forwards a request-controlled avatar URL into a helper that fetches it server-side without restricting internal or metadata endpoints.",
+  "scope": "project",
+  "review_types": ["security"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "ssrf-avatar-fetch",
+      "description_keywords": ["url", "fetch"],
+      "file_path_contains_any": ["api.py", "avatar_fetcher.py"],
+      "issue_type": "security",
+      "minimum_severity": "high",
+      "context_scope": "cross_file",
+      "systemic_impact_contains": "internal",
+      "evidence_basis_contains": "url"
+    }
+  ]
+}

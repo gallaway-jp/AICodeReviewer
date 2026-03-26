@@ -22,6 +22,7 @@ The scorer also normalizes semantically equivalent issue types for broad benchma
 - `transaction-split`: transaction boundary removed across service and repository
 - `auth-guard-regression`: admin path no longer enforces the expected guard
 - `security-shell-command-injection`: request data is interpolated into a `shell=True` export command
+- `security-ssrf-avatar-fetch`: request data is fetched server-side as a remote URL without internal-network restrictions
 - `security-sql-query-interpolation`: request data is interpolated into a raw SQL query string
 - `security-unsafe-yaml-load`: request data reaches `yaml.load` through an unsafe loader path
 - `cache-invalidation-gap`: write path updates state without invalidating cache
@@ -70,6 +71,8 @@ For the `api-design-get-create-endpoint` fixture, reviews now normalize known HT
 For the `compatibility-macos-open-command` fixture, reviews now add a narrow deterministic compatibility fallback when a desktop helper shells out to the macOS-only `open` command without any platform branching and no existing medium-or-higher compatibility finding already captures the cross-platform launcher breakage.
 
 For the `security-shell-command-injection` fixture, Local reviews now add a narrow deterministic security fallback when an API-style handler forwards request-controlled export arguments into a helper that interpolates them into a single shell command string and executes it with `subprocess.run(..., shell=True)`.
+
+For the `security-ssrf-avatar-fetch` fixture, Local reviews now add a narrow deterministic security fallback when an API-style handler forwards a request-controlled URL into a helper that fetches it with `requests.get(...)` without restricting internal destinations.
 
 For the `security-path-traversal-download` fixture, Local reviews now add a narrow deterministic security fallback when an API-style handler forwards a request-controlled filename into a helper that opens `ATTACHMENTS_ROOT / account_id / filename` without constraining traversal segments.
 

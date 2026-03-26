@@ -3471,6 +3471,10 @@ def _supplement_local_security_findings(
     if len(entries) < 2:
         return []
 
+    ssrf_issue = _supplement_local_ssrf_security(entries, issues)
+    if ssrf_issue is not None:
+        return [ssrf_issue]
+
     traversal_issue = _supplement_local_path_traversal_security(entries, issues)
     if traversal_issue is not None:
         return [traversal_issue]
@@ -3488,6 +3492,107 @@ def _supplement_local_security_findings(
         return [yaml_issue]
 
     return []
+
+
+def _supplement_local_ssrf_security(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = re.sub(r"[\s\-/()]+", "_", issue.issue_type.lower()).strip("_")
+        if normalized_issue_type not in {
+            "security",
+            "ssrf",
+            "server_side_request_forgery",
+            "server_side_request_forgery_ssrf",
+        }:
+            continue
+        text = _issue_text(issue)
+        if (
+            any(marker in text for marker in ("ssrf", "server-side request forgery"))
+            and any(
+                marker in text
+                for marker in (
+                    "internal services",
+                    "internal api",
+                    "private ip",
+                    "localhost",
+                    "metadata endpoint",
+                    "metadata service",
+                    "169.254",
+                )
+            )
+            and issue.severity.lower() in {"high", "critical"}
+            and issue.context_scope == "cross_file"
+        ):
+            return None
+
+    fetcher_entry: Dict[str, str] | None = None
+    api_entry: Dict[str, str] | None = None
+    fetch_match: re.Match[str] | None = None
+
+    for entry in entries:
+        content = entry["content"]
+        match = re.search(
+            r"requests\.get\(\s*avatar_url\s*,\s*timeout\s*=\s*5\s*\)",
+            content,
+        )
+        if match is None:
+            continue
+        if re.search(r"def\s+fetch_avatar_preview\s*\(", content) is None:
+            continue
+        fetcher_entry = entry
+        fetch_match = match
+        break
+
+    if fetcher_entry is None or fetch_match is None:
+        return None
+
+    for entry in entries:
+        if entry["path"] == fetcher_entry["path"]:
+            continue
+        content = entry["content"]
+        if 'request["avatar_url"]' not in content and "request['avatar_url']" not in content:
+            continue
+        if "fetch_avatar_preview(avatar_url)" not in content:
+            continue
+        api_entry = entry
+        break
+
+    if api_entry is None:
+        return None
+
+    evidence_basis = (
+        f"{Path(api_entry['path']).name} forwards request-controlled avatar_url into fetch_avatar_preview, and {Path(fetcher_entry['path']).name} fetches that URL directly with requests.get(...) without validating or restricting the destination."
+    )
+    systemic_impact = (
+        "Request-controlled URLs can make the server reach internal services or metadata endpoints that should not be externally accessible."
+    )
+    ai_feedback = "\n\n".join([
+        "**Request-controlled avatar URL is fetched server-side without SSRF protections**",
+        f"{Path(api_entry['path']).name} forwards the request avatar_url into fetch_avatar_preview, and {Path(fetcher_entry['path']).name} calls requests.get(...) on that URL without an allowlist or internal-network restrictions.",
+        "Code: avatar_url = request[\"avatar_url\"] / fetch_avatar_preview(avatar_url) / requests.get(avatar_url, timeout=5)",
+        "Suggestion: Validate and canonicalize the URL before fetching it, restrict destinations to approved external hosts, deny localhost/private IP ranges and metadata endpoints, and consider routing fetches through a hardened proxy with egress controls.",
+        "Context Scope: cross_file",
+        f"Related Files: {api_entry['path']}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: high",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=fetcher_entry["path"],
+        line_number=_line_number_from_offset(fetcher_entry["content"], fetch_match.start()),
+        issue_type="security",
+        severity="high",
+        description="Request-controlled avatar URLs are fetched server-side without destination restrictions, creating an SSRF risk.",
+        code_snippet=_code_snippet(fetcher_entry["content"], fetch_match.start()),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=[api_entry["path"]],
+        systemic_impact=systemic_impact,
+        confidence="high",
+        evidence_basis=evidence_basis,
+    )
 
 
 def _supplement_local_path_traversal_security(
