@@ -1,0 +1,21 @@
+{
+  "id": "security-unsafe-yaml-load",
+  "title": "Unsafe YAML Load From Request Payload",
+  "description": "An API handler forwards request-controlled YAML into a loader helper that deserializes it with yaml.load instead of a safe loader.",
+  "scope": "project",
+  "review_types": ["security"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "unsafe-yaml-load",
+      "description_keywords": ["yaml", "load"],
+      "file_path_contains_any": ["api.py", "settings_loader.py"],
+      "issue_type": "security",
+      "minimum_severity": "high",
+      "context_scope": "cross_file",
+      "systemic_impact_contains": "execution",
+      "evidence_basis_contains": "yaml.load"
+    }
+  ]
+}

@@ -1989,6 +1989,50 @@ class TestCollectReviewIssues:
         assert [Path(path).name for path in supplement.related_files] == ["api.py"]
         assert "data" in (supplement.systemic_impact or "").lower()
 
+    def test_collect_review_issues_adds_local_unsafe_yaml_load_security_supplement(self):
+        mock_client = MagicMock()
+        mock_client._backend_kind = "local"
+        mock_client.get_review.return_value = json.dumps({
+            "files": [
+                {"filename": "api.py", "findings": []},
+                {"filename": "settings_loader.py", "findings": []},
+            ],
+        })
+
+        target_files: List[FileInfo] = [  # type: ignore[list-item]
+            {
+                'path': Path('/path/to/api.py'),
+                'content': (
+                    'from .settings_loader import parse_settings_payload\n\n'
+                    'def import_settings(request):\n'
+                    '    raw_config = request["config"]\n'
+                    '    return parse_settings_payload(raw_config)\n'
+                ),
+                'filename': 'api.py'
+            },
+            {
+                'path': Path('/path/to/settings_loader.py'),
+                'content': (
+                    'import yaml\n\n'
+                    'def parse_settings_payload(raw_config):\n'
+                    '    return yaml.load(raw_config, Loader=yaml.Loader)\n'
+                ),
+                'filename': 'settings_loader.py'
+            },
+        ]
+
+        issues = collect_review_issues(target_files, ["security"], mock_client, "en")
+
+        supplement = next(
+            issue for issue in issues
+            if issue.issue_type == "security"
+            and issue.context_scope == "cross_file"
+            and "yaml.load" in (issue.evidence_basis or "").lower()
+        )
+        assert Path(supplement.file_path).name == "settings_loader.py"
+        assert [Path(path).name for path in supplement.related_files] == ["api.py"]
+        assert "execution" in (supplement.systemic_impact or "").lower()
+
     def test_collect_review_issues_adds_local_dead_code_unreachable_fallback_supplement(self):
         mock_client = MagicMock()
         mock_client._backend_kind = "local"

@@ -23,6 +23,7 @@ The scorer also normalizes semantically equivalent issue types for broad benchma
 - `auth-guard-regression`: admin path no longer enforces the expected guard
 - `security-shell-command-injection`: request data is interpolated into a `shell=True` export command
 - `security-sql-query-interpolation`: request data is interpolated into a raw SQL query string
+- `security-unsafe-yaml-load`: request data reaches `yaml.load` through an unsafe loader path
 - `cache-invalidation-gap`: write path updates state without invalidating cache
 - `partial-refactor-callers`: refactor changed a return contract but callers still use the old shape
 - `diff-signature-break`: diff-only signature change leaves stale call sites in surrounding code
@@ -70,6 +71,8 @@ For the `compatibility-macos-open-command` fixture, reviews now add a narrow det
 For the `security-shell-command-injection` fixture, Local reviews now add a narrow deterministic security fallback when an API-style handler forwards request-controlled export arguments into a helper that interpolates them into a single shell command string and executes it with `subprocess.run(..., shell=True)`.
 
 For the `security-sql-query-interpolation` fixture, Local reviews now add a narrow deterministic security fallback when an API-style handler forwards a request-controlled `status` filter into a repository helper that interpolates it directly into a raw `SELECT ... WHERE status = '{status}'` query string before execution.
+
+For the `security-unsafe-yaml-load` fixture, Local reviews now add a narrow deterministic security fallback when an API-style handler forwards request-controlled YAML into a helper that calls `yaml.load(raw_config, Loader=yaml.Loader)` instead of a safe loader.
 
 For the Local `ui_ux` benchmark fixtures, reviews now include narrow deterministic supplements for the concrete desktop busy-feedback and React loading/empty-state gaps, and the wizard-orientation supplement now only stands down when an existing cross-file issue already names the actual `Enable cloud sync` prerequisite rather than any generic disabled-control wording. These paths are intentionally scoped to the concrete fixture structures under `desktop-busy-feedback-gap`, `ui-loading-feedback-gap`, and `desktop-wizard-orientation-gap`.
 

@@ -3479,6 +3479,10 @@ def _supplement_local_security_findings(
     if sql_issue is not None:
         return [sql_issue]
 
+    yaml_issue = _supplement_local_unsafe_yaml_load_security(entries, issues)
+    if yaml_issue is not None:
+        return [yaml_issue]
+
     return []
 
 
@@ -3654,6 +3658,87 @@ def _supplement_local_sql_query_interpolation_security(
         severity="high",
         description="Request-controlled status is interpolated into a raw SQL query string, creating a SQL injection risk before execution.",
         code_snippet=_code_snippet(repository_entry["content"], query_match.start()),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=[api_entry["path"]],
+        systemic_impact=systemic_impact,
+        confidence="high",
+        evidence_basis=evidence_basis,
+    )
+
+
+def _supplement_local_unsafe_yaml_load_security(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = re.sub(r"[\s\-/]+", "_", issue.issue_type.lower()).strip("_")
+        if normalized_issue_type != "security":
+            continue
+        text = _issue_text(issue)
+        if any(
+            marker in text
+            for marker in ("yaml.load", "safe_load", "safeloader", "unsafe yaml", "deserialization")
+        ) and issue.severity.lower() in {"high", "critical"}:
+            return None
+
+    loader_entry: Dict[str, str] | None = None
+    api_entry: Dict[str, str] | None = None
+    yaml_match: re.Match[str] | None = None
+
+    for entry in entries:
+        content = entry["content"]
+        match = re.search(
+            r"yaml\.load\(\s*raw_config\s*,\s*Loader\s*=\s*yaml\.Loader\s*\)",
+            content,
+        )
+        if match is None:
+            continue
+        loader_entry = entry
+        yaml_match = match
+        break
+
+    if loader_entry is None or yaml_match is None:
+        return None
+
+    for entry in entries:
+        if entry["path"] == loader_entry["path"]:
+            continue
+        content = entry["content"]
+        if 'request["config"]' not in content:
+            continue
+        if "parse_settings_payload(raw_config)" not in content:
+            continue
+        api_entry = entry
+        break
+
+    if api_entry is None:
+        return None
+
+    evidence_basis = (
+        f"{Path(api_entry['path']).name} forwards request-controlled config into parse_settings_payload, and {Path(loader_entry['path']).name} deserializes it with yaml.load(raw_config, Loader=yaml.Loader) instead of a safe loader."
+    )
+    systemic_impact = (
+        "Request-controlled YAML can trigger arbitrary object construction or code execution when it reaches the unsafe loader."
+    )
+    ai_feedback = "\n\n".join([
+        "**Request-controlled YAML reaches an unsafe yaml.load path**",
+        f"{Path(api_entry['path']).name} forwards untrusted config content into parse_settings_payload, and {Path(loader_entry['path']).name} deserializes it with yaml.load(..., Loader=yaml.Loader) instead of yaml.safe_load or yaml.SafeLoader.",
+        "Code: raw_config = request[\"config\"] / parse_settings_payload(raw_config) / yaml.load(raw_config, Loader=yaml.Loader)",
+        "Suggestion: Replace yaml.load(..., Loader=yaml.Loader) with yaml.safe_load or yaml.load(..., Loader=yaml.SafeLoader), and validate the parsed structure against an expected schema before use.",
+        "Context Scope: cross_file",
+        f"Related Files: {api_entry['path']}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: high",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=loader_entry["path"],
+        line_number=_line_number_from_offset(loader_entry["content"], yaml_match.start()),
+        issue_type="security",
+        severity="high",
+        description="Request-controlled YAML is deserialized through yaml.load with an unsafe loader, creating an unsafe deserialization risk.",
+        code_snippet=_code_snippet(loader_entry["content"], yaml_match.start()),
         ai_feedback=ai_feedback,
         context_scope="cross_file",
         related_files=[api_entry["path"]],

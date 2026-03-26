@@ -16,7 +16,7 @@ def test_discover_fixtures_returns_expected_catalog():
 
     ids = {fixture.id for fixture in fixtures}
 
-    assert len(fixtures) == 54
+    assert len(fixtures) == 55
     assert ids == {
         "accessibility-dialog-semantic-gap",
         "accessibility-icon-button-label-gap",
@@ -64,6 +64,7 @@ def test_discover_fixtures_returns_expected_catalog():
         "scalability-unbounded-pending-events-buffer",
         "security-shell-command-injection",
         "security-sql-query-interpolation",
+        "security-unsafe-yaml-load",
         "specification-batch-atomicity-contract",
         "specification-profile-display-name-contract",
         "testing-rollout-percent-range-untested",
@@ -136,6 +137,44 @@ def test_evaluate_security_fixture_matches_sql_query_interpolation(tmp_path):
                             "related_files": ["src/user_repository.py"],
                             "systemic_impact": "An attacker can alter the database query and read or manipulate records beyond the intended filter.",
                             "evidence_basis": "user_repository.py interpolates status into SELECT ... WHERE status = '{status}' before db.execute(query).",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_security_fixture_matches_unsafe_yaml_load(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "security-unsafe-yaml-load" / "fixture.json"
+    )
+    report_path = tmp_path / "security-unsafe-yaml-load.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-sec-0003",
+                            "file_path": "src/api.py",
+                            "issue_type": "insecure-deserialization",
+                            "severity": "high",
+                            "description": "Request-controlled YAML is deserialized through yaml.load, which is an unsafe load path.",
+                            "ai_feedback": "api.py forwards config into settings_loader.py, where yaml.load parses the payload with yaml.Loader instead of a safe loader.",
+                            "context_scope": "cross_file",
+                            "related_files": ["src/settings_loader.py"],
+                            "systemic_impact": "Unsafe deserialization can trigger arbitrary object construction or code execution when untrusted YAML reaches the loader.",
+                            "evidence_basis": "settings_loader.py calls yaml.load(raw_config, Loader=yaml.Loader).",
                         }
                     ]
                 },
