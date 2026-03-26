@@ -1,0 +1,19 @@
+{
+  "id": "security-open-redirect-login",
+  "title": "Open Redirect After Login",
+  "description": "An API login handler forwards a request-controlled return URL into a helper that redirects users there after authentication without validating the destination host.",
+  "scope": "project",
+  "review_types": ["security"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "open-redirect-after-login",
+      "description_keywords": ["open", "redirect"],
+      "file_path_contains_any": ["api.py", "redirects.py"],
+      "issue_type": "security",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file"
+    }
+  ]
+}

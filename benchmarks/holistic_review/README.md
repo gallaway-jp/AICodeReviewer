@@ -23,6 +23,7 @@ The scorer also normalizes semantically equivalent issue types for broad benchma
 - `auth-guard-regression`: admin path no longer enforces the expected guard
 - `security-idor-invoice-download`: request-controlled invoice ids are returned without checking ownership against the current account
 - `security-jwt-signature-bypass`: request data reaches JWT decoding with signature verification disabled
+- `security-open-redirect-login`: post-login redirects trust a request-controlled destination without restricting it to allowed internal paths
 - `security-predictable-reset-token`: password reset tokens are deterministically derived from a known identifier instead of using an unpredictable secret
 - `security-shell-command-injection`: request data is interpolated into a `shell=True` export command
 - `security-ssrf-avatar-fetch`: request data is fetched server-side as a remote URL without internal-network restrictions

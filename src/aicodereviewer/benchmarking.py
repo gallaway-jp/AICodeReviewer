@@ -47,6 +47,8 @@ _ISSUE_TYPE_ALIASES = {
         "authentication bypass",
         "authentication_bypass",
         "authorization",
+        "open redirect",
+        "open_redirect",
         "injection",
         "ssrf",
         "server side request forgery",

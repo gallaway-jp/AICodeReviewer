@@ -16,7 +16,7 @@ def test_discover_fixtures_returns_expected_catalog():
 
     ids = {fixture.id for fixture in fixtures}
 
-    assert len(fixtures) == 61
+    assert len(fixtures) == 62
     assert ids == {
         "accessibility-dialog-semantic-gap",
         "accessibility-icon-button-label-gap",
@@ -64,6 +64,7 @@ def test_discover_fixtures_returns_expected_catalog():
         "scalability-unbounded-pending-events-buffer",
         "security-idor-invoice-download",
         "security-jwt-signature-bypass",
+        "security-open-redirect-login",
         "security-path-traversal-download",
         "security-predictable-reset-token",
         "security-shell-command-injection",
@@ -219,6 +220,44 @@ def test_evaluate_security_fixture_matches_predictable_reset_token(tmp_path):
                             "related_files": ["src/api.py"],
                             "systemic_impact": "Anyone who can guess or know a victim email address can generate a valid reset link and take over that account.",
                             "evidence_basis": "password_reset.py builds a deterministic token directly from the email address and api.py returns that token in the reset link.",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_security_fixture_matches_open_redirect_login(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "security-open-redirect-login" / "fixture.json"
+    )
+    report_path = tmp_path / "security-open-redirect-login.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-sec-0010",
+                            "file_path": "src/api.py",
+                            "issue_type": "open_redirect",
+                            "severity": "medium",
+                            "description": "The login flow has an open redirect because it sends users to an attacker-controlled return_to URL after authentication.",
+                            "ai_feedback": "api.py forwards request['return_to'] into redirects.py, which returns that destination unchanged instead of restricting redirects to trusted internal paths.",
+                            "context_scope": "cross_file",
+                            "related_files": ["src/redirects.py"],
+                            "systemic_impact": "Attackers can use trusted login links to bounce users to phishing pages or malicious domains immediately after sign-in.",
+                            "evidence_basis": "login() passes the untrusted return_to parameter into build_post_login_redirect(), which returns the external destination without validation.",
                         }
                     ]
                 },
