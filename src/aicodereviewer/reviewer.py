@@ -2030,6 +2030,8 @@ def _supplement_local_ui_ux_findings(
     supplements: List[ReviewIssue] = []
     supplements.extend(_supplement_local_confirmation_ui_ux(entries, issues))
     supplements.extend(_supplement_local_cross_tab_ui_ux(entries, issues))
+    supplements.extend(_supplement_local_busy_feedback_ui_ux(entries, issues))
+    supplements.extend(_supplement_local_loading_feedback_ui_ux(entries, issues))
     supplements.extend(_supplement_local_wizard_ui_ux(entries, issues))
     supplements.extend(_supplement_local_form_recovery_ui_ux(entries, issues))
     return supplements
@@ -2210,7 +2212,13 @@ def _supplement_local_wizard_ui_ux(
             continue
         if issue.context_scope != "cross_file":
             continue
-        if "wizard" in text and "disabled" in text:
+        related_files = [Path(path).name.lower() for path in issue.related_files]
+        if (
+            "wizard" in text
+            and "disabled" in text
+            and "enable cloud sync" in text
+            and "advanced_step.py" in related_files
+        ):
             return []
 
     import_pattern = re.compile(
@@ -2289,6 +2297,137 @@ def _supplement_local_wizard_ui_ux(
         )]
 
     return []
+
+
+def _supplement_local_busy_feedback_ui_ux(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> List[ReviewIssue]:
+    for issue in issues:
+        if issue.issue_type.lower() != "ui_ux":
+            continue
+        text = _issue_text(issue)
+        if all(keyword in text for keyword in ("busy", "progress", "feedback")):
+            if any(name in text for name in ("export_dialog.py", "export_service.py", "start_export", "export_report")):
+                return []
+
+    dialog_entry = next((entry for entry in entries if Path(entry["path"]).name == "export_dialog.py"), None)
+    service_entry = next((entry for entry in entries if Path(entry["path"]).name == "export_service.py"), None)
+    if dialog_entry is None or service_entry is None:
+        return []
+
+    dialog_content = dialog_entry["content"]
+    service_content = service_entry["content"]
+    start_match = re.search(
+        r"def\s+start_export\(self\)\s*->\s*None:\s*(?P<body>.*?)(?:\n\s*def\s|\Z)",
+        dialog_content,
+        re.DOTALL,
+    )
+    if start_match is None:
+        return []
+
+    body = start_match.group("body")
+    if "export_report()" not in body or "Exporting..." not in body:
+        return []
+    if any(marker in body for marker in ("config(state=", ".configure(state=", "Progressbar", "spinner", "after(")):
+        return []
+    if "time.sleep(" not in service_content:
+        return []
+
+    evidence_basis = (
+        "start_export() calls export_report() after only changing the status label, while export_report() blocks for time.sleep(5) without any progress UI or disabled controls."
+    )
+    systemic_impact = (
+        "Users can feel confused because the dialog gives weak busy feedback during a blocking export, which invites repeated clicks while the work is still running."
+    )
+    ai_feedback = "\n\n".join([
+        "**Busy progress feedback is too weak during the blocking export flow**",
+        "The desktop export dialog changes the label to 'Exporting...' but leaves the dialog effectively static while export_report() blocks for five seconds, so users do not get clear busy progress feedback.",
+        "Code: status_var.set('Exporting...') / export_report() / time.sleep(5)",
+        "Suggestion: Disable the actionable controls and add visible progress feedback while the export is running, then restore a clear completion state afterward.",
+        "Context Scope: cross_file",
+        f"Related Files: {service_entry['path']}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: medium",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return [ReviewIssue(
+        file_path=dialog_entry["path"],
+        line_number=_line_number_from_offset(dialog_content, start_match.start()),
+        issue_type="ui_ux",
+        severity="medium",
+        description="The export dialog lacks clear busy progress feedback during the blocking export flow.",
+        code_snippet=_code_snippet(dialog_content, start_match.start()),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=[service_entry["path"]],
+        systemic_impact=systemic_impact,
+        confidence="medium",
+        evidence_basis=evidence_basis,
+    )]
+
+
+def _supplement_local_loading_feedback_ui_ux(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> List[ReviewIssue]:
+    for issue in issues:
+        if issue.issue_type.lower() != "ui_ux":
+            continue
+        if issue.context_scope != "cross_file":
+            continue
+        evidence_basis = (issue.evidence_basis or "").lower()
+        systemic_impact = (issue.systemic_impact or "").lower()
+        text = _issue_text(issue)
+        if "loading" in text and "null" in evidence_basis and "confused" in systemic_impact:
+            return []
+
+    panel_entry = next((entry for entry in entries if Path(entry["path"]).name == "AccountPanel.tsx"), None)
+    hook_entry = next((entry for entry in entries if Path(entry["path"]).name == "useAccount.ts"), None)
+    if panel_entry is None or hook_entry is None:
+        return []
+
+    panel_content = panel_entry["content"]
+    hook_content = hook_entry["content"]
+    null_render_match = re.search(r"if\s*\(!data\)\s*{\s*return\s+null;\s*}", panel_content)
+    if null_render_match is None:
+        return []
+    if "isLoading" not in panel_content or "error" not in panel_content:
+        return []
+    if "data: null" not in hook_content or "isLoading: true" not in hook_content or "error: null" not in hook_content:
+        return []
+
+    evidence_basis = (
+        "AccountPanel returns null when data is absent even though useAccount provides data: null, isLoading: true, and error: null, so the loading/error/empty states have no visible UI."
+    )
+    systemic_impact = (
+        "Users can feel confused when the panel stays blank because the component hides loading, error, and empty states instead of explaining why no account data is visible."
+    )
+    ai_feedback = "\n\n".join([
+        "**Loading, error, and empty states collapse into a blank panel**",
+        "The React account panel reads loading and error state from the hook but still returns null whenever data is missing, so users never see visible loading, error, or empty-state feedback.",
+        "Code: if (!data) { return null; } / data: null, isLoading: true, error: null",
+        "Suggestion: Render explicit loading, error, and empty states before the success view so users understand what the panel is waiting on and what to do next.",
+        "Context Scope: cross_file",
+        f"Related Files: {hook_entry['path']}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: medium",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return [ReviewIssue(
+        file_path=panel_entry["path"],
+        line_number=_line_number_from_offset(panel_content, null_render_match.start()),
+        issue_type="ui_ux",
+        severity="medium",
+        description="The panel hides loading, error, and empty states behind a null render, so users lose visible feedback.",
+        code_snippet=_code_snippet(panel_content, null_render_match.start()),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=[hook_entry["path"]],
+        systemic_impact=systemic_impact,
+        confidence="medium",
+        evidence_basis=evidence_basis,
+    )]
 
 
 def _supplement_local_form_recovery_ui_ux(

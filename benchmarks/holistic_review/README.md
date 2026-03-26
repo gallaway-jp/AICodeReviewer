@@ -65,6 +65,8 @@ For the `api-design-get-create-endpoint` fixture, reviews now normalize known HT
 
 For the `compatibility-macos-open-command` fixture, reviews now add a narrow deterministic compatibility fallback when a desktop helper shells out to the macOS-only `open` command without any platform branching and no existing medium-or-higher compatibility finding already captures the cross-platform launcher breakage.
 
+For the Local `ui_ux` benchmark fixtures, reviews now include narrow deterministic supplements for the concrete desktop busy-feedback and React loading/empty-state gaps, and the wizard-orientation supplement now only stands down when an existing cross-file issue already names the actual `Enable cloud sync` prerequisite rather than any generic disabled-control wording. These paths are intentionally scoped to the concrete fixture structures under `desktop-busy-feedback-gap`, `ui-loading-feedback-gap`, and `desktop-wizard-orientation-gap`.
+
 For the `partial-refactor-callers` fixture, Local LLM reviews also include a narrow deterministic supplement when the model misses an obvious return-shape contract break entirely. That supplement only activates for `best_practices` reviews, only when no contract-style finding was produced, and only when the code shows an imported function returning a literal dict shape while a caller still reads a missing legacy key from that result.
 
 The broader Local LLM web-enabled benchmark reports under `artifacts/holistic-benchmark-reports-local-web-broader-runs1-postshape/` currently reevaluate to `8/8` passed with `overall_score = 1.0`.

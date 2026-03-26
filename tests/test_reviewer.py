@@ -878,6 +878,217 @@ class TestCollectReviewIssues:
         assert "disabled" in (supplement.systemic_impact or "")
         assert "Enable cloud sync" in (supplement.evidence_basis or "")
 
+    def test_collect_review_issues_adds_local_wizard_ui_ux_supplement_when_existing_issue_lacks_prerequisite_label(self):
+        mock_client = MagicMock()
+        mock_client._backend_kind = "local"
+        mock_client.get_review.return_value = json.dumps({
+            "files": [
+                {
+                    "filename": "advanced_step.py",
+                    "findings": [
+                        {
+                            "issue_id": "issue-0001",
+                            "severity": "high",
+                            "category": "ui_ux",
+                            "title": "Wizard dependency issue",
+                            "description": "A later step contains disabled controls.",
+                            "context_scope": "cross_file",
+                            "related_files": ["src/advanced_step.py"],
+                            "systemic_impact": "Users encounter disabled controls without enough explanation.",
+                            "evidence_basis": "The advanced step disables controls when cloud sync is off.",
+                        }
+                    ],
+                },
+                {
+                    "filename": "setup_wizard.py",
+                    "findings": [
+                        {
+                            "issue_id": "issue-0002",
+                            "severity": "medium",
+                            "category": "ui_ux",
+                            "title": "Wizard orientation issue",
+                            "description": "The wizard does not show enough progress.",
+                            "context_scope": "local",
+                        }
+                    ],
+                },
+            ],
+        })
+
+        target_files: List[FileInfo] = [  # type: ignore[list-item]
+            {
+                'path': Path('/path/to/setup_wizard.py'),
+                'content': (
+                    'from .advanced_step import AdvancedStep\n\n'
+                    'class SetupWizard:\n'
+                    '    def __init__(self):\n'
+                    '        self.cloud_sync_enabled = tk.BooleanVar(value=False)\n'
+                    '        tk.Checkbutton(self, text="Enable cloud sync", variable=self.cloud_sync_enabled)\n\n'
+                    '    def open_advanced_step(self):\n'
+                    '        AdvancedStep(self, cloud_sync_enabled=self.cloud_sync_enabled.get())\n'
+                ),
+                'filename': 'setup_wizard.py'
+            },
+            {
+                'path': Path('/path/to/advanced_step.py'),
+                'content': (
+                    'class AdvancedStep:\n'
+                    '    def __init__(self, master=None, *, cloud_sync_enabled=False):\n'
+                    '        tk.Checkbutton(self, text="Sync in background", state="normal" if cloud_sync_enabled else "disabled")\n'
+                ),
+                'filename': 'advanced_step.py'
+            },
+        ]
+
+        issues = collect_review_issues(target_files, ["ui_ux"], mock_client, "en")
+
+        supplements = [
+            issue for issue in issues
+            if issue.context_scope == "cross_file"
+            and "Enable cloud sync" in (issue.evidence_basis or "")
+        ]
+        assert len(supplements) == 1
+
+    def test_collect_review_issues_adds_local_busy_feedback_ui_ux_supplement(self):
+        mock_client = MagicMock()
+        mock_client._backend_kind = "local"
+        mock_client.get_review.return_value = json.dumps({
+            "files": [
+                {
+                    "filename": "export_dialog.py",
+                    "findings": [
+                        {
+                            "issue_id": "issue-0001",
+                            "severity": "high",
+                            "category": "ui_ux",
+                            "title": "Loading state missing",
+                            "description": "The dialog does not show enough loading affordance.",
+                            "context_scope": "local",
+                        }
+                    ],
+                },
+                {
+                    "filename": "export_service.py",
+                    "findings": [
+                        {
+                            "issue_id": "issue-0002",
+                            "severity": "medium",
+                            "category": "ui_ux",
+                            "title": "Blocking export",
+                            "description": "The export takes a while.",
+                            "context_scope": "local",
+                        }
+                    ],
+                },
+            ],
+        })
+
+        target_files: List[FileInfo] = [  # type: ignore[list-item]
+            {
+                'path': Path('/path/to/export_dialog.py'),
+                'content': (
+                    'from .export_service import export_report\n\n'
+                    'class ExportDialog:\n'
+                    '    def start_export(self) -> None:\n'
+                    '        self.status_var.set("Exporting...")\n'
+                    '        export_report()\n'
+                    '        self.status_var.set("Done")\n'
+                ),
+                'filename': 'export_dialog.py'
+            },
+            {
+                'path': Path('/path/to/export_service.py'),
+                'content': 'import time\n\ndef export_report() -> None:\n    time.sleep(5)\n',
+                'filename': 'export_service.py'
+            },
+        ]
+
+        issues = collect_review_issues(target_files, ["ui_ux"], mock_client, "en")
+
+        supplement = next(
+            issue for issue in issues
+            if issue.context_scope == "cross_file"
+            and "busy progress feedback" in issue.description.lower()
+        )
+        assert Path(supplement.file_path).name == "export_dialog.py"
+        assert [Path(path).name for path in supplement.related_files] == ["export_service.py"]
+        assert "confused" in (supplement.systemic_impact or "")
+        assert "time.sleep(5)" in (supplement.evidence_basis or "")
+
+    def test_collect_review_issues_adds_local_loading_feedback_ui_ux_supplement(self):
+        mock_client = MagicMock()
+        mock_client._backend_kind = "local"
+        mock_client.get_review.return_value = json.dumps({
+            "files": [
+                {
+                    "filename": "AccountPanel.tsx",
+                    "findings": [
+                        {
+                            "issue_id": "issue-0001",
+                            "severity": "high",
+                            "category": "ui_ux",
+                            "title": "Missing loading state feedback",
+                            "description": "The panel does not show enough loading feedback.",
+                            "context_scope": "cross_file",
+                            "related_files": ["src/useAccount.ts"],
+                            "systemic_impact": "Users may perceive the panel as unresponsive.",
+                        }
+                    ],
+                },
+                {
+                    "filename": "useAccount.ts",
+                    "findings": [
+                        {
+                            "issue_id": "issue-0002",
+                            "severity": "medium",
+                            "category": "ui_ux",
+                            "title": "Hook loading state",
+                            "description": "The hook returns loading state.",
+                            "context_scope": "local",
+                        }
+                    ],
+                },
+            ],
+        })
+
+        target_files: List[FileInfo] = [  # type: ignore[list-item]
+            {
+                'path': Path('/path/to/AccountPanel.tsx'),
+                'content': (
+                    'import { useAccount } from "./useAccount";\n\n'
+                    'export function AccountPanel({ accountId }) {\n'
+                    '  const { data, isLoading, error, refresh } = useAccount(accountId);\n'
+                    '  if (!data) {\n'
+                    '    return null;\n'
+                    '  }\n'
+                    '  return <button onClick={refresh}>Refresh</button>;\n'
+                    '}\n'
+                ),
+                'filename': 'AccountPanel.tsx'
+            },
+            {
+                'path': Path('/path/to/useAccount.ts'),
+                'content': (
+                    'export function useAccount(accountId) {\n'
+                    '  return { data: null, isLoading: true, error: null, refresh: () => {} };\n'
+                    '}\n'
+                ),
+                'filename': 'useAccount.ts'
+            },
+        ]
+
+        issues = collect_review_issues(target_files, ["ui_ux"], mock_client, "en")
+
+        supplement = next(
+            issue for issue in issues
+            if issue.context_scope == "cross_file"
+            and "returns null when data is absent" in (issue.evidence_basis or "")
+        )
+        assert Path(supplement.file_path).name == "AccountPanel.tsx"
+        assert [Path(path).name for path in supplement.related_files] == ["useAccount.ts"]
+        assert "confused" in (supplement.systemic_impact or "")
+        assert "error: null" in (supplement.evidence_basis or "")
+
     def test_collect_review_issues_adds_local_form_recovery_ui_ux_supplement(self):
         mock_client = MagicMock()
         mock_client._backend_kind = "local"
