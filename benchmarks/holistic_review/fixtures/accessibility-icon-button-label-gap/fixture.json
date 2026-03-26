@@ -1,0 +1,20 @@
+{
+  "id": "accessibility-icon-button-label-gap",
+  "title": "Accessibility Icon Button Label Gap",
+  "description": "A search toolbar renders an icon-only button and an unlabeled input, leaving screen reader users without an accessible name for the primary search controls.",
+  "scope": "project",
+  "review_types": ["accessibility"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "icon-button-missing-accessible-name",
+      "description_keywords": ["label", "screen"],
+      "file_path_contains_any": ["SearchToolbar.tsx"],
+      "issue_type": "accessibility",
+      "minimum_severity": "medium",
+      "systemic_impact_contains": "screen",
+      "evidence_basis_contains": "aria-label"
+    }
+  ]
+}

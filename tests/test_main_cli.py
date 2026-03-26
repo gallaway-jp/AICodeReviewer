@@ -11,6 +11,7 @@ from unittest.mock import MagicMock
 import pytest
 
 import aicodereviewer.main as cli
+from aicodereviewer.i18n import set_locale
 
 
 def run_main_with_args(args):
@@ -118,6 +119,12 @@ def test_parse_review_types_ui_ux():
     assert result == ["ui_ux"]
 
 
+def test_parse_review_types_dead_code():
+    """The dead_code review type should parse like any other selectable type."""
+    result = cli._parse_review_types("dead_code")
+    assert result == ["dead_code"]
+
+
 def test_parse_review_types_all():
     """'all' expands to the complete type list."""
     from aicodereviewer.backends.base import REVIEW_TYPE_KEYS
@@ -196,6 +203,29 @@ def test_help_is_localized_before_argparse_renders(monkeypatch, capsys):
     captured = capsys.readouterr()
     assert exc_info.value.code == 0
     assert "多言語対応AIコードレビュー" in captured.out
+
+
+def test_epilog_includes_review_type_summaries():
+    set_locale("en")
+
+    epilog = cli._build_epilog()
+
+    assert "ui_ux" in epilog
+    assert "dead_code" in epilog
+    assert "Usability, interaction flow, hierarchy, and interface clarity." in epilog
+    assert "Unused, unreachable, or obsolete code paths with concrete evidence." in epilog
+    assert "WCAG-oriented UI and interaction concerns." in epilog
+
+
+def test_epilog_summaries_are_localized():
+    set_locale("ja")
+
+    epilog = cli._build_epilog()
+
+    assert "利用可能なレビュータイプ" in epilog
+    assert "デッドコード" in epilog
+    assert "使いやすさ、操作フロー、情報階層、インターフェースの明確さ。" in epilog
+    assert "未使用、到達不能、または役目を終えたコード経路を根拠付きで検出します。" in epilog
 
 
 def test_print_console_replaces_unencodable_characters(monkeypatch):

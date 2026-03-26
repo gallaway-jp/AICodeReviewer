@@ -1,0 +1,8 @@
+[project]
+name = "sync-uploader"
+version = "0.2.0"
+requires-python = ">=3.10"
+dependencies = [
+  "telemetry-sdk>=5.4",
+  "requests>=2.31",
+]

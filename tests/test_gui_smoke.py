@@ -78,10 +78,15 @@ class TestAppCreation:
         assert hasattr(app, "path_entry")
         assert hasattr(app, "scope_var")
         assert hasattr(app, "backend_var")
+        assert hasattr(app, "review_types_hint_label")
         assert hasattr(app, "run_btn")
         assert hasattr(app, "dry_btn")
         assert hasattr(app, "health_btn")
         assert hasattr(app, "progress")
+
+    def test_review_types_hint_text_is_localized(self, app: Any) -> None:
+        """Review types helper text should be present and translated."""
+        assert app.review_types_hint_label.cget("text") == t("gui.review.types_hint")
 
     def test_file_select_frame_exists(self, app: Any) -> None:
         """File selection frame should exist for project mode."""

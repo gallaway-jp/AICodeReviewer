@@ -1,0 +1,22 @@
+{
+  "id": "ui-form-recovery-gap",
+  "title": "UI Form Recovery Gap",
+  "description": "A checkout-style profile form clears invalid input, delays feedback until submit, and gives users no inline recovery path after validation fails.",
+  "scope": "project",
+  "review_types": ["ui_ux"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "missing-inline-validation-recovery",
+      "description_keywords": ["validation", "generic"],
+      "file_path_contains_any": ["ProfileForm.tsx", "validators.ts"],
+      "issue_type": "ui_ux",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["validators.ts"],
+      "systemic_impact_contains": "re-enter",
+      "evidence_basis_contains": "validateProfile"
+    }
+  ]
+}

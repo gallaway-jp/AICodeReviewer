@@ -1,0 +1,17 @@
+{
+  "id": "compatibility-python311-tomllib-runtime-gap",
+  "title": "Compatibility Python 3.11 tomllib Runtime Gap",
+  "description": "A configuration loader imports `tomllib` directly even though the project metadata still declares support for Python 3.9+, so the code will fail at import time on supported 3.9 and 3.10 runtimes.",
+  "scope": "project",
+  "review_types": ["compatibility"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "python311-tomllib-runtime-gap",
+      "file_path_contains_any": ["config_loader.py"],
+      "issue_type": "compatibility",
+      "minimum_severity": "medium"
+    }
+  ]
+}

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 from tools import run_holistic_benchmarks
@@ -108,6 +110,72 @@ def test_runner_executes_selected_fixture_and_scores(monkeypatch, capsys, tmp_pa
     assert "--local-disable-web-search" in captured_args[0]
 
 
+def test_runner_forwards_fixture_spec_file(monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(
+        run_holistic_benchmarks,
+        "_health_payload",
+        lambda backend_name: {
+            "backend": backend_name,
+            "ready": True,
+            "summary": "ready",
+            "checks": [],
+        },
+    )
+
+    captured_args = []
+
+    def _fake_invoke_review_tool(args):
+        captured_args.append(args)
+        output_path = Path(args[args.index("--json-out") + 1])
+        output_path.write_text(
+            json.dumps(
+                {
+                    "status": "completed",
+                    "success": True,
+                    "issue_count": 1,
+                    "report": {
+                        "issues_found": [
+                            {
+                                "file_path": "src/service.py",
+                                "issue_type": "specification",
+                                "severity": "high",
+                                "description": "The implementation returns partial success even though the spec requires atomic failure.",
+                                "context_scope": "local",
+                                "related_files": [],
+                                "systemic_impact": "Callers observe behavior that diverges from the documented contract.",
+                                "evidence_basis": "service.py returns status='partial_success' while the requirements document says the batch must fail atomically.",
+                            }
+                        ]
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        return 0, {"status": "completed", "success": True, "issue_count": 1}
+
+    monkeypatch.setattr(run_holistic_benchmarks, "_invoke_review_tool", _fake_invoke_review_tool)
+
+    exit_code = run_holistic_benchmarks.main(
+        [
+            "--fixtures-root",
+            str(FIXTURES_ROOT),
+            "--output-dir",
+            str(tmp_path),
+            "--fixture",
+            "specification-batch-atomicity-contract",
+            "--skip-health-check",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["score_summary"]["fixtures_passed"] == 1
+    assert "--spec-file" in captured_args[0]
+    forwarded_path = Path(captured_args[0][captured_args[0].index("--spec-file") + 1])
+    assert forwarded_path.name == "requirements.md"
+
+
 def test_runner_repeats_runs_and_emits_stability_summary(monkeypatch, capsys, tmp_path):
     monkeypatch.setattr(
         run_holistic_benchmarks,
@@ -201,3 +269,39 @@ def test_runner_repeats_runs_and_emits_stability_summary(monkeypatch, capsys, tm
     assert payload["generated_reports"][1]["run_index"] == 2
     assert Path(payload["run_summaries"][0]["output_dir"]).name == "run-001"
     assert Path(payload["run_summaries"][1]["output_dir"]).name == "run-002"
+
+
+def test_invoke_review_tool_uses_subprocess_isolation(monkeypatch):
+    calls = {}
+
+    def _fake_run(command, capture_output, text, cwd, env, check):
+        calls["command"] = command
+        calls["capture_output"] = capture_output
+        calls["text"] = text
+        calls["cwd"] = cwd
+        calls["env"] = env
+        calls["check"] = check
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=json.dumps({"status": "completed", "success": True}),
+            stderr="",
+        )
+
+    monkeypatch.setattr(run_holistic_benchmarks.subprocess, "run", _fake_run)
+    exit_code, payload = run_holistic_benchmarks._invoke_review_tool(["review", "demo"])
+
+    assert exit_code == 0
+    assert payload["status"] == "completed"
+    assert calls["command"][0] == sys.executable
+    assert calls["command"][1:4] == [
+        "-c",
+        "from aicodereviewer.main import main; import sys; sys.exit(main())",
+        "review",
+    ]
+    assert calls["command"][4] == "demo"
+    assert calls["capture_output"] is True
+    assert calls["text"] is True
+    assert calls["check"] is False
+    assert Path(calls["cwd"]).name == "AICodeReviewer"
+    assert str(Path(calls["cwd"]) / "src") in calls["env"]["PYTHONPATH"]

@@ -1,0 +1,22 @@
+{
+  "id": "scalability-instance-local-rate-limit-state",
+  "title": "Scalability Instance Local Rate Limit State",
+  "description": "A service keeps rate-limit counters in process-local memory even though the deployment starts multiple workers, so the quota stops being globally consistent as the app scales horizontally.",
+  "scope": "project",
+  "review_types": ["scalability"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "per-process-rate-limit-state",
+      "description_keywords": ["rate"],
+      "file_path_contains_any": ["app.py", "gunicorn.conf.py"],
+      "issue_type": "scalability",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["gunicorn.conf.py"],
+      "systemic_impact_contains": "horizontal",
+      "evidence_basis_contains": "RATE_LIMIT_STATE"
+    }
+  ]
+}

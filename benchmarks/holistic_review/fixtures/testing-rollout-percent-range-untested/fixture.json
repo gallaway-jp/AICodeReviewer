@@ -1,0 +1,22 @@
+{
+  "id": "testing-rollout-percent-range-untested",
+  "title": "Testing Rollout Percent Range Untested",
+  "description": "The rollout validation code rejects out-of-range rollout_percent values, but the tests only cover the happy path and missing-field behavior, leaving the range contract untested.",
+  "scope": "project",
+  "review_types": ["testing"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "missing-rollout-percent-range-test",
+      "description_keywords": ["test", "rollout", "percent"],
+      "file_path_contains_any": ["test_api.py", "validation.py", "api.py"],
+      "issue_type": "testing",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["validation.py"],
+      "systemic_impact_contains": "regression",
+      "evidence_basis_contains": "rollout_percent"
+    }
+  ]
+}

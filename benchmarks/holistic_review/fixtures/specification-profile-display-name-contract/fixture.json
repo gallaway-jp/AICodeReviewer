@@ -1,0 +1,19 @@
+{
+  "id": "specification-profile-display-name-contract",
+  "title": "Specification Profile Display Name Contract",
+  "description": "A profile serialization helper returns `name` and omits `email_verified` even though the external requirements document says clients must receive `display_name` and `email_verified` in the response contract.",
+  "scope": "project",
+  "review_types": ["specification"],
+  "project_dir": "project",
+  "spec_file": "requirements.md",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "profile-response-violates-required-fields-spec",
+      "file_path_contains": "profile_api.py",
+      "issue_type": "specification",
+      "minimum_severity": "medium",
+      "evidence_basis_contains": "display_name"
+    }
+  ]
+}

@@ -8,7 +8,9 @@ It supports four backends:
 - GitHub Copilot CLI
 - Local LLM servers via LM Studio, Ollama, OpenAI-compatible, or Anthropic-compatible APIs
 
-It supports 21 selectable review types across quality, architecture, and compliance domains, plus an interactive CLI review flow and a GUI with review, results, settings, and log views.
+It supports 22 selectable review types across quality, architecture, and compliance domains, plus an interactive CLI review flow and a GUI with review, results, settings, and log views.
+
+The repository also includes holistic benchmark fixtures that score review quality against known cross-file and UI/UX scenarios.
 
 ## What This Repository Contains
 
@@ -17,6 +19,7 @@ It supports 21 selectable review types across quality, architecture, and complia
 - Backend integrations for Bedrock, Kiro, Copilot, and local LLMs
 - Structured report generation in JSON, text, and Markdown
 - Example projects and walkthroughs for demo use
+- Holistic benchmark fixtures and runner scripts for review-quality regression checks
 
 ## Install
 
@@ -96,6 +99,7 @@ Core guides:
 - [GUI Guide](docs/gui.md)
 - [Configuration Reference](docs/configuration.md)
 - [Review Types Reference](docs/review-types.md)
+- [Quality Benchmarks](docs/benchmarks.md)
 - [Reports and Outputs](docs/reports.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Architecture](docs/architecture.md)
@@ -104,9 +108,14 @@ Core guides:
 Examples:
 - [examples/README.md](examples/README.md)
 
+Quality regression:
+- Holistic benchmark fixtures live under [benchmarks/holistic_review/fixtures](benchmarks/holistic_review/fixtures)
+- Run the benchmark runner with `python tools/run_holistic_benchmarks.py --backend <backend> --skip-health-check`
+- See [docs/benchmarks.md](docs/benchmarks.md) for fixture structure, runner flags, and update guidance
+
 ## Feature Summary
 
-- 21 selectable review types
+- 22 selectable review types
 - Project and diff review scopes
 - Multi-type reviews in one session
 - Interactive CLI workflow with resolve, ignore, AI fix, view code, skip, and force-resolve paths

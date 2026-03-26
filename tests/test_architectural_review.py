@@ -34,6 +34,7 @@ from aicodereviewer.models import ReviewIssue, ReviewReport
 from aicodereviewer.reviewer import (
     _build_project_structure_summary,
     architectural_review,
+    collect_review_issues,
 )
 
 
@@ -503,3 +504,59 @@ class TestCollectReviewIssuesArchConfig:
         if isinstance(enable_arch, str):
             enable_arch = enable_arch.lower() in ("true", "1", "yes")
         assert enable_arch is False
+
+    @patch("aicodereviewer.reviewer.architectural_review")
+    @patch("aicodereviewer.reviewer._process_file_batch")
+    @patch("aicodereviewer.reviewer.config")
+    def test_architecture_review_type_forces_arch_pass_when_config_disabled(
+        self,
+        mock_config,
+        mock_process_batch,
+        mock_arch,
+    ):
+        mock_config.get.side_effect = lambda sec, key, default=None: {
+            ("processing", "enable_project_context"): False,
+            ("processing", "enable_parallel_processing"): False,
+            ("processing", "enable_adaptive_batching"): False,
+            ("processing", "batch_size"): 10,
+            ("processing", "enable_interaction_analysis"): False,
+            ("processing", "enable_architectural_review"): "false",
+            ("performance", "max_api_calls_per_session"): 10,
+        }.get((sec, key), default)
+        mock_process_batch.return_value = []
+        mock_arch.return_value = ([], None)
+
+        backend = _MockBackend(review_response="No issues found.")
+        files = _make_file_infos(3)
+
+        collect_review_issues(files, ["architecture"], backend, "en")
+
+        mock_arch.assert_called_once()
+
+    @patch("aicodereviewer.reviewer.architectural_review")
+    @patch("aicodereviewer.reviewer._process_file_batch")
+    @patch("aicodereviewer.reviewer.config")
+    def test_non_architecture_review_does_not_force_arch_pass_when_config_disabled(
+        self,
+        mock_config,
+        mock_process_batch,
+        mock_arch,
+    ):
+        mock_config.get.side_effect = lambda sec, key, default=None: {
+            ("processing", "enable_project_context"): False,
+            ("processing", "enable_parallel_processing"): False,
+            ("processing", "enable_adaptive_batching"): False,
+            ("processing", "batch_size"): 10,
+            ("processing", "enable_interaction_analysis"): False,
+            ("processing", "enable_architectural_review"): "false",
+            ("performance", "max_api_calls_per_session"): 10,
+        }.get((sec, key), default)
+        mock_process_batch.return_value = []
+        mock_arch.return_value = ([], None)
+
+        backend = _MockBackend(review_response="No issues found.")
+        files = _make_file_infos(3)
+
+        collect_review_issues(files, ["security"], backend, "en")
+
+        mock_arch.assert_not_called()

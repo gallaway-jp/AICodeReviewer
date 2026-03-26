@@ -1,0 +1,21 @@
+{
+  "id": "performance-n-plus-one-order-queries",
+  "title": "Performance N Plus One Order Queries",
+  "description": "A dashboard service loops over order ids and calls a repository method that performs one database query per item instead of batching the load.",
+  "scope": "project",
+  "review_types": ["performance"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "n-plus-one-order-query-loop",
+      "file_path_contains": "order_service.py",
+      "issue_type": "performance",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["order_repository.py"],
+      "systemic_impact_contains": "latency",
+      "evidence_basis_contains": "fetch_order"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "id": "regression-default-sync-disabled",
+  "title": "Regression Default Sync Disabled",
+  "description": "A diff changes the default sync preference from enabled to disabled, silently turning off an existing startup feature for users who rely on defaults.",
+  "scope": "diff",
+  "review_types": ["regression"],
+  "project_dir": "project",
+  "diff_file": "changes.diff",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "default-sync-disabled-regression",
+      "description_keywords": ["sync", "disabled"],
+      "file_path_contains_any": ["settings_defaults.py", "app_startup.py"],
+      "issue_type": "regression",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["app_startup.py"],
+      "systemic_impact_contains": "disabled",
+      "evidence_basis_contains": "sync_enabled"
+    }
+  ]
+}

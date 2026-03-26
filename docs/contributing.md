@@ -24,6 +24,20 @@ Run a focused test file:
 pytest tests/test_scanner.py -v
 ```
 
+Run the holistic benchmark tests:
+
+```bash
+pytest tests/test_benchmarking.py tests/test_run_holistic_benchmarks.py -v
+```
+
+Run the holistic benchmark runner against a configured backend:
+
+```bash
+python tools/run_holistic_benchmarks.py --backend local --skip-health-check
+```
+
+See [Quality Benchmarks](benchmarks.md) for the fixture layout, runner options, and update expectations.
+
 Manual GUI validation:
 
 ```bash
@@ -40,6 +54,7 @@ Typical examples:
 - new settings or defaults -> update [Configuration Reference](configuration.md)
 - GUI workflow change -> update [GUI Guide](gui.md)
 - new review type or changed semantics -> update [Review Types Reference](review-types.md)
+- new benchmark fixture or runner behavior -> update contributor guidance and any affected benchmark docs or examples
 
 ## Refreshing Docs Assets
 

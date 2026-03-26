@@ -1,0 +1,18 @@
+{
+  "id": "desktop-busy-feedback-gap",
+  "title": "Desktop Busy Feedback Gap",
+  "description": "A desktop export dialog starts a long-running export without disabling controls, showing progress, or giving a clear completion path.",
+  "scope": "project",
+  "review_types": ["ui_ux"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "missing-busy-progress-feedback",
+      "description_keywords": ["progress", "busy", "feedback"],
+      "file_path_contains_any": ["export_dialog.py", "export_service.py"],
+      "issue_type": "ui_ux",
+      "minimum_severity": "medium"
+    }
+  ]
+}

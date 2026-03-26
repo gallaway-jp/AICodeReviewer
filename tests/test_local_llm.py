@@ -82,6 +82,23 @@ class TestLocalLLMConstruction:
         backend = _make_backend(api_type="lmstudio", api_url="http://localhost:1234/api/v1/")
         assert backend.api_url == "http://localhost:1234"
 
+    def test_timeout_accepts_float_string(self):
+        with patch("aicodereviewer.backends.local_llm.config") as mock_cfg:
+            mock_cfg.get.side_effect = lambda section, key, default=None: {
+                ("local_llm", "api_url"): "http://localhost:9999/v1",
+                ("local_llm", "api_type"): "openai",
+                ("local_llm", "model"): "test-model",
+                ("local_llm", "api_key"): "test-key",
+                ("local_llm", "timeout"): "600.0",
+                ("local_llm", "max_tokens"): "512",
+                ("local_llm", "enable_web_search"): True,
+                ("performance", "min_request_interval_seconds"): 0.0,
+            }.get((section, key), default)
+
+            backend = LocalLLMBackend()
+
+        assert backend.timeout == 600
+
     def test_ollama_url_normalizes_api_suffix(self):
         backend = _make_backend(api_type="ollama", api_url="http://localhost:11434/api/")
         assert backend.api_url == "http://localhost:11434"
@@ -203,6 +220,40 @@ class TestOpenAIReview:
         backend = _make_backend()
         result = backend.get_review("code", "security", "en")
         assert "Error" in result or "Empty" in result
+
+    @patch("aicodereviewer.backends.local_llm.requests.post")
+    def test_get_review_reasoning_only_response_returns_explicit_error(self, mock_post):
+        mock_post.return_value = _mock_response(200, {
+            "choices": [
+                {
+                    "message": {
+                        "content": "",
+                        "reasoning_content": "Detailed internal reasoning only",
+                    }
+                }
+            ]
+        })
+        backend = _make_backend(enable_web_search=False)
+        result = backend.get_review("code", "security", "en")
+        assert "reasoning_content only" in result
+
+    @patch("aicodereviewer.backends.local_llm.requests.post")
+    def test_get_review_openai_content_blocks_are_joined(self, mock_post):
+        mock_post.return_value = _mock_response(200, {
+            "choices": [
+                {
+                    "message": {
+                        "content": [
+                            {"type": "text", "text": "Part one."},
+                            {"type": "text", "text": "Part two."},
+                        ]
+                    }
+                }
+            ]
+        })
+        backend = _make_backend(enable_web_search=False)
+        result = backend.get_review("code", "security", "en")
+        assert result == "Part one.\nPart two."
 
     @patch("aicodereviewer.backends.local_llm.requests.post")
     def test_get_fix_success(self, mock_post):

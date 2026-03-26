@@ -1,0 +1,22 @@
+{
+  "id": "dead-code-stale-feature-flag",
+  "title": "Dead Code Stale Feature Flag",
+  "description": "A feature flag is permanently disabled, leaving a dormant UI handler and setup path that can no longer be reached by users.",
+  "scope": "project",
+  "review_types": ["dead_code"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "dormant-ui-handler-behind-disabled-flag",
+      "description_keywords": ["feature", "flag"],
+      "file_path_contains_any": ["toolbar.py", "feature_flags.py"],
+      "issue_type": "dead_code",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["feature_flags.py"],
+      "systemic_impact_contains": "obsolete",
+      "evidence_basis_contains": "ENABLE_BULK_ARCHIVE"
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "id": "data-validation-rollout-percent-range",
+  "title": "Data Validation Rollout Percent Range",
+  "description": "The deployment API accepts a rollout percentage outside the valid 0..100 range because the validator only checks presence and integer coercion before the caller computes a batch size.",
+  "scope": "project",
+  "review_types": ["data_validation"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "rollout-percent-range-not-enforced",
+      "description_keywords": ["rollout", "percent"],
+      "file_path_contains_any": ["api.py", "validation.py"],
+      "issue_type": "data_validation",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["validation.py"],
+      "systemic_impact_contains": "invalid",
+      "evidence_basis_contains": "rollout_percent"
+    }
+  ]
+}

@@ -6,6 +6,8 @@ import argparse
 import contextlib
 import io
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Sequence
@@ -179,12 +181,28 @@ def _health_payload(backend_name: str) -> dict[str, Any]:
 
 
 def _invoke_review_tool(args: list[str]) -> tuple[int, dict[str, Any]]:
-    buffer = io.StringIO()
-    with contextlib.redirect_stdout(buffer):
-        exit_code = cli_main.main(args)
-    raw = buffer.getvalue().strip()
+    repo_root = Path(__file__).resolve().parents[1]
+    env = os.environ.copy()
+    src_path = str(repo_root / "src")
+    existing_pythonpath = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = src_path if not existing_pythonpath else os.pathsep.join([src_path, existing_pythonpath])
+    command = [
+        sys.executable,
+        "-c",
+        "from aicodereviewer.main import main; import sys; sys.exit(main())",
+        *args,
+    ]
+    completed = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        cwd=repo_root,
+        env=env,
+        check=False,
+    )
+    raw = completed.stdout.strip()
     payload = json.loads(raw) if raw else {}
-    return exit_code, payload
+    return completed.returncode, payload
 
 
 def _build_review_args(
@@ -209,6 +227,9 @@ def _build_review_args(
         diff_file = fixture_args.get("diff_file")
         if diff_file:
             argv.extend(["--diff-file", diff_file])
+    spec_file = fixture_args.get("spec_file")
+    if spec_file:
+        argv.extend(["--spec-file", spec_file])
     if runner_args.timeout is not None:
         argv.extend(["--timeout", str(runner_args.timeout)])
     if runner_args.model:

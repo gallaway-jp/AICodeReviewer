@@ -185,7 +185,7 @@ class LocalLLMBackend(AIBackend):
 
         self.model: str = str(model or config.get("local_llm", "model", "default"))
         self.api_key: str = str(api_key or config.get("local_llm", "api_key", ""))
-        self.timeout: int = int(config.get("local_llm", "timeout", "300") or "300")
+        self.timeout: int = int(float(config.get("local_llm", "timeout", "300") or "300"))
         self.max_tokens: int = int(config.get("local_llm", "max_tokens", "4096") or "4096")
         if enable_web_search is None:
             self.enable_web_search = bool(
@@ -705,7 +705,30 @@ class LocalLLMBackend(AIBackend):
 
         choices = data.get("choices", [])
         if choices:
-            return choices[0].get("message", {}).get("content", "")
+            first_message = choices[0].get("message", {})
+            content = first_message.get("content", "")
+            if isinstance(content, list):
+                text_parts: list[str] = []
+                content_blocks = cast(list[Any], content)
+                for block in content_blocks:
+                    if not isinstance(block, dict):
+                        continue
+                    block_payload = cast(dict[str, Any], block)
+                    text = block_payload.get("text") or block_payload.get("content")
+                    if isinstance(text, str) and text.strip():
+                        text_parts.append(text.strip())
+                content = "\n".join(text_parts)
+
+            if isinstance(content, str) and content.strip():
+                return content
+
+            reasoning_content = first_message.get("reasoning_content")
+            if isinstance(reasoning_content, str) and reasoning_content.strip():
+                return (
+                    "Error: OpenAI-compatible endpoint returned empty assistant content "
+                    "and reasoning_content only. Configure a non-thinking model or "
+                    "disable server-side thinking mode for tool-mode JSON reviews."
+                )
         return "Error: Empty response from local LLM."
 
     def _invoke_anthropic(self, system_prompt: str, user_message: str) -> str:

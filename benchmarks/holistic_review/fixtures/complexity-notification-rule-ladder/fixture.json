@@ -1,0 +1,19 @@
+{
+  "id": "complexity-notification-rule-ladder",
+  "title": "Complexity Notification Rule Ladder",
+  "description": "A notification planner packs channel selection, quiet hours, escalation, account tier, and policy exceptions into one long conditional ladder, making the delivery rules hard to reason about or change safely.",
+  "scope": "project",
+  "review_types": ["complexity"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "notification-rule-ladder-complexity",
+      "description_keywords": ["branch"],
+      "file_path_contains_any": ["notification_policy.py"],
+      "issue_type": "complexity",
+      "minimum_severity": "medium",
+      "evidence_basis_contains": "policy"
+    }
+  ]
+}

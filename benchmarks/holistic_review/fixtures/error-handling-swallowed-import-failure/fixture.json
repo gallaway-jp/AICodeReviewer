@@ -1,0 +1,22 @@
+{
+  "id": "error-handling-swallowed-import-failure",
+  "title": "Error Handling Swallowed Import Failure",
+  "description": "An import job swallows a parsing failure and still reports completion, so the controller tells operators the import finished successfully when it actually failed.",
+  "scope": "project",
+  "review_types": ["error_handling"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "swallowed-import-failure-reported-as-success",
+      "description_keywords": ["exception", "success"],
+      "file_path_contains_any": ["import_job.py", "import_controller.py"],
+      "issue_type": "error_handling",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["import_controller.py"],
+      "systemic_impact_contains": "success",
+      "evidence_basis_contains": "except Exception"
+    }
+  ]
+}

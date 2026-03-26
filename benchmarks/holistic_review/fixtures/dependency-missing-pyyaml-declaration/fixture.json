@@ -1,0 +1,18 @@
+{
+  "id": "dependency-missing-pyyaml-declaration",
+  "title": "Dependency Missing PyYAML Declaration",
+  "description": "A configuration writer imports the third-party `yaml` module, but the project metadata never declares `PyYAML`, so environments installing from the published package can fail at runtime with a missing dependency.",
+  "scope": "project",
+  "review_types": ["dependency"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "missing-pyyaml-declaration",
+      "file_path_contains_any": ["config_writer.py"],
+      "issue_type": "dependency",
+      "minimum_severity": "medium",
+      "evidence_basis_contains": "yaml"
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "id": "complexity-nested-sync-decision-tree",
+  "title": "Complexity Nested Sync Decision Tree",
+  "description": "A sync strategy helper implements a deeply nested decision tree across feature flags, account state, retry mode, and bandwidth settings, making the behavior difficult to reason about or safely modify.",
+  "scope": "project",
+  "review_types": ["complexity"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "nested-sync-decision-tree-complexity",
+      "description_keywords": ["nest"],
+      "file_path_contains_any": ["sync_strategy.py"],
+      "issue_type": "complexity",
+      "minimum_severity": "medium",
+      "context_scope": "local",
+      "evidence_basis_contains": "nested"
+    }
+  ]
+}

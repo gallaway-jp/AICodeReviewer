@@ -1,0 +1,9 @@
+--- a/src/settings_defaults.py
++++ b/src/settings_defaults.py
+@@ -1,5 +1,5 @@
+ def load_default_preferences() -> dict:
+     return {
+-        "sync_enabled": True,
++        "sync_enabled": False,
+         "sync_interval_minutes": 15,
+     }

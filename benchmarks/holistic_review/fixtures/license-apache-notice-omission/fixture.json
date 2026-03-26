@@ -1,0 +1,23 @@
+{
+  "id": "license-apache-notice-omission",
+  "title": "License Apache Notice Omission",
+  "description": "The project distributes an Apache-2.0 runtime dependency, but the third-party notice file explicitly says the dependency's upstream NOTICE text will not be included in shipped binaries.",
+  "scope": "project",
+  "review_types": ["license"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "apache-notice-omission",
+      "file_path_contains_any": [
+        "THIRD_PARTY_NOTICES.md",
+        "licenses_check.csv",
+        "pyproject.toml",
+        "sync_uploader.py"
+      ],
+      "issue_type": "license",
+      "minimum_severity": "medium",
+      "evidence_basis_contains": "NOTICE"
+    }
+  ]
+}

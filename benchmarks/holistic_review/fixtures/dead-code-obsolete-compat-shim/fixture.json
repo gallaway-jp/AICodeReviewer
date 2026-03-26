@@ -1,0 +1,22 @@
+{
+  "id": "dead-code-obsolete-compat-shim",
+  "title": "Dead Code Obsolete Compatibility Shim",
+  "description": "The active report flow has moved to the new exporter, but an older compatibility shim and its helper remain in the project without any live wiring.",
+  "scope": "project",
+  "review_types": ["dead_code"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "obsolete-legacy-export-shim",
+      "description_keywords": ["unused", "legacy"],
+      "file_path_contains_any": ["legacy_export.py", "report_service.py"],
+      "issue_type": "dead_code",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["report_service.py"],
+      "systemic_impact_contains": "obsolete",
+      "evidence_basis_contains": "render_legacy_csv"
+    }
+  ]
+}

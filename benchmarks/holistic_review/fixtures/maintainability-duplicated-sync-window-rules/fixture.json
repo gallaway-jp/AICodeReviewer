@@ -1,0 +1,22 @@
+{
+  "id": "maintainability-duplicated-sync-window-rules",
+  "title": "Maintainability Duplicated Sync Window Rules",
+  "description": "CLI and GUI settings modules both carry the same sync-window normalization logic, so policy changes have to be kept in sync manually and can drift over time.",
+  "scope": "project",
+  "review_types": ["maintainability"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "duplicated-sync-window-maintainability",
+      "description_keywords": ["duplicat"],
+      "file_path_contains_any": ["cli_sync_settings.py", "gui_sync_settings.py"],
+      "issue_type": "maintainability",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["gui_sync_settings.py"],
+      "systemic_impact_contains": "drift",
+      "evidence_basis_contains": "normalize_sync_window"
+    }
+  ]
+}

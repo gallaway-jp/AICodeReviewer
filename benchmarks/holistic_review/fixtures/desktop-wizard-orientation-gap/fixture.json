@@ -1,0 +1,22 @@
+{
+  "id": "desktop-wizard-orientation-gap",
+  "title": "Desktop Wizard Orientation Gap",
+  "description": "A desktop setup wizard spreads dependent choices across steps without showing progress, preserving context, or explaining why later options are disabled.",
+  "scope": "project",
+  "review_types": ["ui_ux"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "missing-wizard-orientation-and-dependency-context",
+      "description_keywords": ["wizard", "step", "disabled"],
+      "file_path_contains_any": ["setup_wizard.py", "advanced_step.py"],
+      "issue_type": "ui_ux",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["advanced_step.py"],
+      "systemic_impact_contains": "disabled",
+      "evidence_basis_contains": "Enable cloud sync"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "id": "concurrency-async-slot-double-booking",
+  "title": "Concurrency Async Slot Double Booking",
+  "description": "An async reservation helper checks shared slot availability, awaits remote policy loading, and then decrements the same shared slot counter, so overlapping requests can reserve the same capacity twice.",
+  "scope": "project",
+  "review_types": ["concurrency"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "async-slot-double-booking",
+      "file_path_contains_any": ["reservations.py"],
+      "issue_type": "concurrency",
+      "minimum_severity": "medium"
+    }
+  ]
+}

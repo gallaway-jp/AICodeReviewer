@@ -1,0 +1,18 @@
+{
+  "id": "localization-us-only-receipt-format",
+  "title": "Localization US Only Receipt Format",
+  "description": "A receipt formatter hardcodes US-style month/day/year dates and dollar-prefixed amounts instead of using locale-aware formatting, which breaks international presentation.",
+  "scope": "project",
+  "review_types": ["localization"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "us-only-receipt-format",
+      "file_path_contains_any": ["receipt_formatter.py"],
+      "issue_type": "localization",
+      "minimum_severity": "medium",
+      "evidence_basis_contains": "%m/%d/%Y"
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "id": "accessibility-dialog-semantic-gap",
+  "title": "Accessibility Dialog Semantic Gap",
+  "description": "A settings modal is rendered as plain div containers without dialog semantics, so assistive technology users are not told that focus moved into a modal context.",
+  "scope": "project",
+  "review_types": ["accessibility"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "modal-missing-dialog-semantics",
+      "description_keywords": ["dialog", "screen"],
+      "file_path_contains_any": ["SettingsModal.tsx"],
+      "issue_type": "accessibility",
+      "minimum_severity": "medium",
+      "systemic_impact_contains": "screen",
+      "evidence_basis_contains": "role"
+    }
+  ]
+}

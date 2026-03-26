@@ -1,0 +1,19 @@
+{
+  "id": "desktop-settings-discoverability-gap",
+  "title": "Desktop Settings Discoverability Gap",
+  "description": "A desktop settings window hides core save behavior and advanced options behind unclear labels and off-screen grouping, making important configuration paths hard to find.",
+  "scope": "project",
+  "review_types": ["ui_ux"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "hidden-settings-information-architecture",
+      "description_keywords": ["discover", "settings"],
+      "file_path_contains_any": ["settings_window.py", "advanced_panel.py"],
+      "issue_type": "ui_ux",
+      "minimum_severity": "medium",
+      "evidence_basis_contains": "Advanced"
+    }
+  ]
+}

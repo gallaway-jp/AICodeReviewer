@@ -1,0 +1,20 @@
+{
+  "id": "specification-batch-atomicity-contract",
+  "title": "Specification Batch Atomicity Contract",
+  "description": "A batch submission handler returns partial success and persists valid entries even though the external requirements document says the batch must fail atomically when any item is invalid.",
+  "scope": "project",
+  "review_types": ["specification"],
+  "project_dir": "project",
+  "spec_file": "requirements.md",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "batch-submit-violates-atomicity-spec",
+      "file_path_contains": "service.py",
+      "description_keywords": ["partial"],
+      "issue_type": "specification",
+      "minimum_severity": "medium",
+      "evidence_basis_contains": "partial_success"
+    }
+  ]
+}

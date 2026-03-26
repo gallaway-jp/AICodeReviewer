@@ -29,6 +29,12 @@ _ISSUE_TYPE_ALIASES = {
         "layer-separation",
         "layer_separation",
         "layering_violation",
+        "dependency_misalignment",
+        "dependency misalignment",
+        "separation_of_concerns",
+        "separation of concerns",
+        "framework_coupling",
+        "framework coupling",
         "dependency",
         "dependency-direction",
         "dependency_direction",
@@ -51,8 +57,13 @@ _ISSUE_TYPE_ALIASES = {
         "performance",
         "cache",
         "caching",
+        "algorithmic efficiency",
+        "algorithmic_efficiency",
         "missing_cache_invalidation",
         "cache_invalidation",
+        "n+1",
+        "n_plus_one",
+        "query_efficiency",
         "stale_cache",
         "redundant_work",
         "cache_consistency",
@@ -82,10 +93,265 @@ _ISSUE_TYPE_ALIASES = {
         "missing-repository",
         "missing_repository",
     },
+    "dead_code": {
+        "dead_code",
+        "dead code",
+        "dead-code",
+        "unused_code",
+        "unused code",
+        "obsolete_code",
+        "obsolete code",
+        "unreachable_code",
+        "unreachable code",
+        "dormant_code",
+        "dormant code",
+    },
+    "specification": {
+        "specification",
+        "spec mismatch",
+        "spec_mismatch",
+        "behavior_mismatch",
+        "behavior mismatch",
+        "contract_mismatch",
+        "contract mismatch",
+        "requirements_gap",
+        "requirements gap",
+        "functionality",
+        "atomicity_violation",
+        "atomicity violation",
+        "spec_mismatch_return_value",
+        "spec mismatch return value",
+    },
+    "error_handling": {
+        "error_handling",
+        "error handling",
+        "error-handling",
+        "exception_handling",
+        "exception handling",
+        "exception-handling",
+        "error_reporting",
+        "error reporting",
+        "error-reporting",
+        "failure_handling",
+        "failure handling",
+        "failure-handling",
+    },
+    "data_validation": {
+        "data_validation",
+        "data validation",
+        "data-validation",
+        "validation",
+        "validation_contract",
+        "validation/contract",
+        "input_validation",
+        "boundary_checks",
+        "boundary checks",
+        "type_handling",
+        "type handling",
+    },
+    "testing": {
+        "testing",
+        "test coverage",
+        "test_coverage",
+        "insufficient test coverage",
+        "insufficient_test_coverage",
+        "missing tests",
+        "missing_tests",
+        "testability",
+        "error_paths",
+        "error paths",
+    },
+    "documentation": {
+        "documentation",
+        "documentation mismatch",
+        "documentation_mismatch",
+        "docs drift",
+        "docs_drift",
+        "outdated documentation",
+        "outdated_documentation",
+        "outdated docs",
+        "outdated_docs",
+        "command example",
+        "command_example",
+        "cli contract",
+        "cli_contract",
+        "documentation mismatch / cli contract",
+        "outdated documentation / command example",
+    },
+    "maintainability": {
+        "maintainability",
+        "duplicated_code",
+        "duplicated code",
+        "duplicate code",
+        "duplicate_logic",
+        "duplicate logic",
+        "code_reuse",
+        "code reuse",
+        "technical debt",
+        "technical_debt",
+        "low cohesion",
+        "low_cohesion",
+        "god class",
+        "god_class",
+        "god object",
+        "god_object",
+        "mixed responsibilities",
+        "mixed_responsibilities",
+        "separation of concerns",
+        "separation_of_concerns",
+    },
+    "complexity": {
+        "complexity",
+        "cyclomatic complexity",
+        "cyclomatic_complexity",
+        "cognitive complexity",
+        "cognitive_complexity",
+        "nesting",
+        "deep nesting",
+        "large_method",
+        "large method",
+        "maintainability",
+    },
+    "concurrency": {
+        "concurrency",
+        "race condition",
+        "race_condition",
+        "thread safety",
+        "thread_safety",
+        "shared state",
+        "shared_state",
+        "synchronization",
+    },
+    "regression": {
+        "regression",
+        "behavioral change",
+        "behavioral_change",
+        "behavior change",
+        "behavior_change",
+        "cross_file behavioral impact",
+        "cross_file_behavioral_impact",
+        "breaking change",
+        "breaking_change",
+    },
+    "api_design": {
+        "api_design",
+        "api design",
+        "rest",
+        "rest api",
+        "rest_api",
+        "endpoint design",
+        "endpoint_design",
+        "http method",
+        "http_method",
+        "http method / endpoint semantics",
+        "http_method_endpoint_semantics",
+        "endpoint semantics",
+        "endpoint_semantics",
+        "response modeling",
+        "response_modeling",
+        "status code",
+        "status_code",
+    },
+    "compatibility": {
+        "compatibility",
+        "platform compatibility",
+        "platform_compatibility",
+        "cross-platform",
+        "cross_platform",
+        "os-specific",
+        "os_specific",
+        "runtime compatibility",
+        "runtime_compatibility",
+    },
+    "scalability": {
+        "scalability",
+        "stateful-component",
+        "stateful_component",
+        "stateful component",
+        "throughput bottleneck",
+        "throughput_bottleneck",
+        "scaling bottleneck",
+        "scaling_bottleneck",
+        "horizontal scaling",
+        "horizontal_scaling",
+        "capacity planning",
+        "capacity_planning",
+        "queue growth",
+        "queue_growth",
+        "unbounded queue",
+        "unbounded_queue",
+        "backpressure",
+        "deployment configuration",
+        "deployment_configuration",
+    },
+    "dependency": {
+        "dependency",
+        "dependency management",
+        "dependency_management",
+        "missing dependency",
+        "missing_dependency",
+        "undeclared dependency",
+        "undeclared_dependency",
+        "package declaration",
+        "package_declaration",
+    },
+    "license": {
+        "license",
+        "license compliance",
+        "license_compliance",
+        "licensing",
+        "license conflict",
+        "license_conflict",
+        "license compatibility",
+        "license_compatibility",
+        "license attribution",
+        "license_attribution",
+        "license declaration",
+        "license_declaration",
+        "dependency license",
+        "dependency_license",
+        "third party notice",
+        "third_party_notice",
+        "attribution",
+        "notice requirements",
+        "notice_requirements",
+    },
+    "localization": {
+        "localization",
+        "i18n",
+        "internationalization",
+        "internationalisation",
+        "hardcoded strings",
+        "hardcoded_strings",
+        "translation readiness",
+        "translation_readiness",
+        "locale formatting",
+        "locale_formatting",
+    },
 }
 
 _TEXT_EXPECTATION_ALIASES = {
+    "aria-label": (
+        "aria-label",
+        "aria label",
+        "aria labels",
+        "aria-labelledby",
+        "accessible name",
+        "accessible names",
+    ),
     "cache": ("cache", "caching", "cached", "キャッシュ"),
+    "latency": (
+        "latency",
+        "response time",
+        "response times",
+        "throughput",
+        "performance degradation",
+        "degradation",
+        "slower",
+        "slowdown",
+        "round trip",
+        "round trips",
+    ),
     "caller": (
         "callers",
         "caller",
@@ -121,7 +387,47 @@ _TEXT_EXPECTATION_ALIASES = {
     "controller": ("controller", "controllers", "コントローラー", "controller.py"),
     "database": ("database", "db", "databases", "データベース", "db.py"),
     "db": ("db", "database", "データベース", "db.py", "execute_query"),
+    "drift": (
+        "drift",
+        "divergent",
+        "diverge",
+        "inconsistent",
+        "inconsistencies",
+        "multiple places",
+        "stay synchronized",
+        "stay in sync",
+    ),
+    "disabled": (
+        "disabled",
+        "disable",
+        "disabled by default",
+        "turned off",
+        "stops working",
+        "no longer runs",
+        "break",
+        "breaks",
+        "broken",
+    ),
+    "except exception": (
+        "except exception",
+        "except returns status 'completed'",
+        "except returns status completed",
+        "except block in run_import catches all exceptions and returns",
+        "returns status 'completed'",
+        "returns completed even on exception",
+    ),
     "full_name": ("full_name", "display_name"),
+    "horizontal": (
+        "horizontal",
+        "horizontally",
+        "global",
+        "distributed",
+        "different workers",
+        "multiple workers",
+        "multiple instances",
+        "across workers",
+        "across instances",
+    ),
     "user_profile": (
         "user_profile",
         "get_user_profile",
@@ -131,6 +437,31 @@ _TEXT_EXPECTATION_ALIASES = {
         "profiles",
     ),
     "email": ("email", "emails"),
+    "invalid": (
+        "invalid",
+        "unvalidated",
+        "incompletely validated",
+        "impossible state",
+        "negative duration",
+        "negative durations",
+        "incorrect scheduling",
+        "bad data",
+    ),
+    "operator": (
+        "operator",
+        "operators",
+        "user",
+        "users",
+        "automation",
+        "workflow",
+        "workflows",
+        "documentation-led workflows",
+        "tutorial",
+        "tutorials",
+        "ci",
+        "mislead",
+        "misleading",
+    ),
     "invalidate": (
         "invalidate",
         "invalidates",
@@ -145,6 +476,13 @@ _TEXT_EXPECTATION_ALIASES = {
     "layer": (
         "layer",
         "layered",
+        "layer boundary",
+        "layer boundaries",
+        "boundary",
+        "boundaries",
+        "coupled",
+        "coupling",
+        "tightly coupled",
         "dependency direction",
         "separation of concerns",
         "architecture",
@@ -162,6 +500,30 @@ _TEXT_EXPECTATION_ALIASES = {
         "認可",
         "アクセス制御",
         "管理者",
+    ),
+    "recovery": (
+        "recovery",
+        "recover",
+        "recovers",
+        "delayed recovery",
+        "automatic recovery",
+        "retry",
+        "retries",
+        "retryable",
+        "outage",
+        "prolonged outage",
+        "missed syncs",
+    ),
+    "regression": (
+        "regression",
+        "regress",
+        "regresses",
+        "regressions",
+        "regress silently",
+        "ship unnoticed",
+        "ship unnoticed because",
+        "unpinned",
+        "without a failing test",
     ),
     "require_admin": ("require_admin", "admin guard", "guard", "管理者ガード", "ガード"),
     "transaction": ("transaction", "transactional", "トランザクション"),
@@ -214,6 +576,7 @@ class BenchmarkFixture:
     manifest_path: Path
     project_dir: Path | None
     diff_file: Path | None
+    spec_file: Path | None
     expected_findings: list[BenchmarkExpectation]
 
 
@@ -294,6 +657,7 @@ def load_fixture(manifest_path: Path) -> BenchmarkFixture:
         manifest_path=manifest_path,
         project_dir=(base_dir / payload["project_dir"]).resolve() if payload.get("project_dir") else None,
         diff_file=(base_dir / payload["diff_file"]).resolve() if payload.get("diff_file") else None,
+        spec_file=(base_dir / payload["spec_file"]).resolve() if payload.get("spec_file") else None,
         expected_findings=expectations,
     )
 
@@ -319,10 +683,54 @@ def load_report(path: Path) -> dict[str, Any]:
     return _extract_report(_load_json(path))
 
 
-def _normalize_issue(issue: dict[str, Any]) -> dict[str, Any]:
+def _resolve_related_issue_paths(issue: dict[str, Any], raw_issues: Sequence[dict[str, Any]]) -> list[str]:
+    related_paths: list[str] = []
+    raw_related = issue.get("related_issues")
+    if not isinstance(raw_related, list):
+        return related_paths
+
+    file_path = str(issue.get("file_path") or issue.get("file") or "")
+    issue_id_lookup = {
+        str(candidate.get("issue_id") or ""): candidate
+        for candidate in raw_issues
+        if isinstance(candidate, dict)
+    }
+
+    for entry in raw_related:
+        candidate: dict[str, Any] | None = None
+        if isinstance(entry, int) and 0 <= entry < len(raw_issues):
+            raw_candidate = raw_issues[entry]
+            candidate = raw_candidate if isinstance(raw_candidate, dict) else None
+        elif isinstance(entry, str):
+            candidate = issue_id_lookup.get(entry)
+
+        if not candidate:
+            continue
+
+        candidate_path = str(candidate.get("file_path") or candidate.get("file") or "")
+        if candidate_path and candidate_path != file_path and candidate_path not in related_paths:
+            related_paths.append(candidate_path)
+
+    return related_paths
+
+
+def _normalize_issue(issue: dict[str, Any], raw_issues: Sequence[dict[str, Any]]) -> dict[str, Any]:
     related_files = issue.get("related_files")
     if not isinstance(related_files, list):
         related_files = []
+    resolved_related_paths = _resolve_related_issue_paths(issue, raw_issues)
+    normalized_related_files = [str(entry) for entry in related_files if entry]
+    for candidate_path in resolved_related_paths:
+        if candidate_path not in normalized_related_files:
+            normalized_related_files.append(candidate_path)
+
+    raw_context_scope = str(issue.get("context_scope") or "local").lower()
+    normalized_context_scope = (
+        "cross_file"
+        if raw_context_scope == "local" and resolved_related_paths
+        else raw_context_scope
+    )
+
     return {
         "issue_id": str(issue.get("issue_id") or ""),
         "file_path": str(issue.get("file_path") or issue.get("file") or ""),
@@ -330,8 +738,8 @@ def _normalize_issue(issue: dict[str, Any]) -> dict[str, Any]:
         "severity": str(issue.get("severity") or "medium").lower(),
         "description": str(issue.get("description") or ""),
         "ai_feedback": str(issue.get("ai_feedback") or issue.get("feedback") or ""),
-        "context_scope": str(issue.get("context_scope") or "local").lower(),
-        "related_files": [str(entry) for entry in related_files if entry],
+        "context_scope": normalized_context_scope,
+        "related_files": normalized_related_files,
         "systemic_impact": str(issue.get("systemic_impact") or ""),
         "evidence_basis": str(issue.get("evidence_basis") or ""),
     }
@@ -482,7 +890,7 @@ def evaluate_fixture(fixture: BenchmarkFixture, report: dict[str, Any], report_p
     raw_issues = report.get("issues_found", [])
     if not isinstance(raw_issues, list):
         raise ValueError("Report must contain an 'issues_found' list")
-    issues = [_normalize_issue(issue) for issue in raw_issues if isinstance(issue, dict)]
+    issues = [_normalize_issue(issue, raw_issues) for issue in raw_issues if isinstance(issue, dict)]
 
     used_indices: set[int] = set()
     expectation_results: list[ExpectationEvaluation] = []
@@ -605,6 +1013,8 @@ def describe_fixture_invocation(fixture: BenchmarkFixture) -> dict[str, Any]:
         payload["path"] = str(fixture.project_dir)
     if fixture.diff_file is not None:
         payload["diff_file"] = str(fixture.diff_file)
+    if fixture.spec_file is not None:
+        payload["spec_file"] = str(fixture.spec_file)
     return payload
 
 

@@ -1,0 +1,17 @@
+{
+  "id": "api-design-get-create-endpoint",
+  "title": "API Design GET Create Endpoint",
+  "description": "A FastAPI route uses GET to create invitations and mutate server state, which breaks HTTP method semantics and makes caches, idempotency expectations, and client behavior unreliable.",
+  "scope": "project",
+  "review_types": ["api_design"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "get-create-endpoint",
+      "file_path_contains_any": ["api.py"],
+      "issue_type": "api_design",
+      "minimum_severity": "medium"
+    }
+  ]
+}

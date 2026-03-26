@@ -76,6 +76,34 @@ _SEVERITY_MAP: Dict[str, str] = {
     "suggestion": "info",
 }
 
+_DEAD_CODE_CATEGORY_MARKERS = {
+    "dead_code",
+    "dead-code",
+    "dead code",
+    "dead_function",
+    "dead function",
+    "dormant_feature",
+    "dormant feature",
+    "obsolete_code",
+    "obsolete code",
+    "unreachable_code",
+    "unreachable code",
+    "unused_code",
+    "unused code",
+}
+
+_DEAD_CODE_EVIDENCE_MARKERS = (
+    "unreachable",
+    "obsolete",
+    "dormant",
+    "no call sites",
+    "no remaining caller",
+    "permanently false",
+    "feature flag",
+    "fallback",
+    "compatibility shim",
+)
+
 
 def _normalize_severity(severity_str: str) -> str:
     """Normalise a severity string through a strict allow-list."""
@@ -84,6 +112,37 @@ def _normalize_severity(severity_str: str) -> str:
         logger.debug("Unknown severity '%s', defaulting to 'medium'", severity_str)
         return "medium"
     return normalized
+
+
+def _normalize_issue_category(category: str, review_type: str) -> str:
+    normalized = re.sub(r"[\s\-]+", "_", category.strip().lower())
+    if "dead_code" in review_type.split("+") and normalized in {
+        re.sub(r"[\s\-]+", "_", marker) for marker in _DEAD_CODE_CATEGORY_MARKERS
+    }:
+        return "dead_code"
+    return category.strip() or review_type
+
+
+def _normalize_dead_code_severity(
+    severity: str,
+    category: str,
+    title: str,
+    desc: str,
+    systemic_impact: Optional[str],
+    evidence_basis: Optional[str],
+    review_type: str,
+) -> str:
+    if category != "dead_code" or "dead_code" not in review_type.split("+"):
+        return severity
+    if severity not in {"info", "low"}:
+        return severity
+
+    combined_text = " ".join(
+        part for part in (title, desc, systemic_impact, evidence_basis) if part
+    ).lower()
+    if any(marker in combined_text for marker in _DEAD_CODE_EVIDENCE_MARKERS):
+        return "medium"
+    return severity
 
 def _normalize_context_scope(
     context_scope: str,
@@ -301,7 +360,10 @@ def _json_to_issues(
                     line_num = None
             elif not isinstance(line_num, int):
                 line_num = None
-            category = str(finding.get("category") or review_type)
+            category = _normalize_issue_category(
+                str(finding.get("category") or review_type),
+                review_type,
+            )
             title = str(finding.get("title") or "")
             desc = str(finding.get("description") or "")
             suggestion = str(finding.get("suggestion") or finding.get("recommendation") or "")
@@ -326,6 +388,15 @@ def _json_to_issues(
             evidence_basis = finding.get("evidence_basis")
             if evidence_basis is not None:
                 evidence_basis = str(evidence_basis).strip() or None
+            severity = _normalize_dead_code_severity(
+                severity,
+                category,
+                title,
+                desc,
+                systemic_impact,
+                evidence_basis,
+                review_type,
+            )
             inferred_related_files = _infer_related_files_from_text(
                 str(entry.get("name") or filename),
                 file_entries,
@@ -405,7 +476,63 @@ def _json_to_issues(
             ))
 
     _promote_cache_findings_from_related_context(issues)
+    _promote_ui_ux_findings_from_related_context(issues)
     return issues
+
+def _promote_ui_ux_findings_from_related_context(issues: List[ReviewIssue]) -> None:
+    """Promote related UI/UX findings to cross-file when the model already linked them."""
+    for issue in issues:
+        if issue.context_scope != "local":
+            continue
+        if issue.issue_type.lower() != "ui_ux":
+            continue
+        if not issue.related_issues:
+            continue
+
+        sibling_paths: list[str] = []
+        fallback_evidence: str | None = None
+        fallback_impact: str | None = None
+        for related_index in issue.related_issues:
+            if related_index < 0 or related_index >= len(issues):
+                continue
+            sibling = issues[related_index]
+            if sibling.issue_type.lower() != "ui_ux":
+                continue
+            if sibling.file_path == issue.file_path:
+                continue
+            if sibling.file_path not in sibling_paths:
+                sibling_paths.append(sibling.file_path)
+            for related_file in sibling.related_files:
+                if related_file != issue.file_path and related_file not in sibling_paths:
+                    sibling_paths.append(related_file)
+            if fallback_evidence is None and sibling.evidence_basis:
+                fallback_evidence = sibling.evidence_basis
+            if fallback_impact is None and sibling.systemic_impact:
+                fallback_impact = sibling.systemic_impact
+
+        if not sibling_paths:
+            continue
+
+        issue.context_scope = "cross_file"
+        for sibling_path in sibling_paths:
+            if sibling_path not in issue.related_files:
+                issue.related_files.append(sibling_path)
+
+        if not issue.evidence_basis and fallback_evidence:
+            issue.evidence_basis = fallback_evidence
+        if not issue.systemic_impact and fallback_impact:
+            issue.systemic_impact = fallback_impact
+
+        feedback_parts = [issue.ai_feedback] if issue.ai_feedback else []
+        if "Context Scope:" not in issue.ai_feedback:
+            feedback_parts.append("Context Scope: cross_file")
+        if issue.related_files and "Related Files:" not in issue.ai_feedback:
+            feedback_parts.append(f"Related Files: {', '.join(issue.related_files)}")
+        if issue.systemic_impact and "Systemic Impact:" not in issue.ai_feedback:
+            feedback_parts.append(f"Systemic Impact: {issue.systemic_impact}")
+        if issue.evidence_basis and "Evidence Basis:" not in issue.ai_feedback:
+            feedback_parts.append(f"Evidence Basis: {issue.evidence_basis}")
+        issue.ai_feedback = "\n\n".join(part for part in feedback_parts if part)
 
 
 def _promote_cache_findings_from_related_context(issues: List[ReviewIssue]) -> None:

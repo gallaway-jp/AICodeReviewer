@@ -1,0 +1,22 @@
+{
+  "id": "documentation-stale-dry-run-flag",
+  "title": "Documentation Stale Dry Run Flag",
+  "description": "The README still documents a safe --dry-run CLI mode, but the actual command parser no longer supports that flag and will execute the live sync path instead of a preview flow.",
+  "scope": "project",
+  "review_types": ["documentation"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "stale-dry-run-docs",
+      "description_keywords": ["dry-run", "README"],
+      "file_path_contains_any": ["README.md", "cli.py"],
+      "issue_type": "documentation",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["cli.py"],
+      "systemic_impact_contains": "operator",
+      "evidence_basis_contains": "dry-run"
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "id": "data-validation-inverted-time-window",
+  "title": "Data Validation Inverted Time Window",
+  "description": "The scheduling API accepts a maintenance window whose end is earlier than its start because the validator only checks field presence and integer coercion, not the ordering constraint.",
+  "scope": "project",
+  "review_types": ["data_validation"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "inverted-time-window-not-rejected",
+      "description_keywords": ["start", "end"],
+      "file_path_contains_any": ["api.py", "validation.py"],
+      "issue_type": "data_validation",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["validation.py"],
+      "systemic_impact_contains": "invalid",
+      "evidence_basis_contains": "end_hour"
+    }
+  ]
+}

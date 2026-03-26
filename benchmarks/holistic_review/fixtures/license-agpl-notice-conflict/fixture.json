@@ -1,0 +1,24 @@
+{
+  "id": "license-agpl-notice-conflict",
+  "title": "License AGPL Notice Conflict",
+  "description": "The project declares MIT distribution terms, but the generated dependency license inventory shows an AGPL-3.0-only runtime package while the third-party notices still claim all bundled dependencies are permissive and MIT-compatible.",
+  "scope": "project",
+  "review_types": ["license"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "agpl-runtime-license-conflict",
+      "file_path_contains_any": [
+        "LICENSE",
+        "THIRD_PARTY_NOTICES.md",
+        "licenses_check.csv",
+        "pyproject.toml",
+        "report_export.py"
+      ],
+      "issue_type": "license",
+      "minimum_severity": "medium",
+      "evidence_basis_contains": "AGPL"
+    }
+  ]
+}

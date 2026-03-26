@@ -57,6 +57,10 @@ These flags are forwarded to tool-mode `review` so a benchmark run can compare p
 
 For the `cache-invalidation-gap` fixture, Local LLM reviews now include a narrow deterministic supplement when the model misses an obvious stale-cache read/write split entirely. The supplement only activates for `performance` reviews, only when no cache/state finding was produced, and only when the fixture code shows a concrete cache accessor pair plus a separate write path for the same entity without invalidation.
 
+For the `performance-n-plus-one-order-queries` fixture, reviews now also include a narrow deterministic supplement when the model misses an obvious cross-file N+1 query loop entirely. That supplement only activates for `performance` reviews, only when no existing performance finding already mentions the N+1/query-loop pattern, and only when the code shows a service loop calling a singular repository fetch helper while the repository also exposes a corresponding batch helper.
+
+For the `architectural-service-web-context-leak` fixture, reviews now normalize the concrete controller-to-repository bypass shape so the surviving architecture finding explicitly names the missing service boundary, and they add a narrow deterministic fallback when the controller imports a repository directly despite an available service layer. That logic only activates for `architecture` reviews and only for the concrete controller/web plus repository plus service layout used by the fixture.
+
 For the `partial-refactor-callers` fixture, Local LLM reviews also include a narrow deterministic supplement when the model misses an obvious return-shape contract break entirely. That supplement only activates for `best_practices` reviews, only when no contract-style finding was produced, and only when the code shows an imported function returning a literal dict shape while a caller still reads a missing legacy key from that result.
 
 The broader Local LLM web-enabled benchmark reports under `artifacts/holistic-benchmark-reports-local-web-broader-runs1-postshape/` currently reevaluate to `8/8` passed with `overall_score = 1.0`.

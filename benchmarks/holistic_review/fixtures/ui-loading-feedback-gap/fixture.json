@@ -1,0 +1,20 @@
+{
+  "id": "ui-loading-feedback-gap",
+  "title": "UI Loading Feedback Gap",
+  "description": "A React account panel ignores loading, error, and empty states, leaving users with a blank surface and unclear next actions.",
+  "scope": "project",
+  "review_types": ["ui_ux"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "missing-loading-error-empty-states",
+      "description_keywords": ["loading"],
+      "file_path_contains_any": ["AccountPanel.tsx", "useAccount.ts"],
+      "issue_type": "ui_ux",
+      "minimum_severity": "medium",
+      "systemic_impact_contains": "confused",
+      "evidence_basis_contains": "null"
+    }
+  ]
+}

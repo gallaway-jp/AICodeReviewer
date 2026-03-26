@@ -277,6 +277,17 @@ class ReviewTabMixin:
                        command=lambda: self._set_all_types(False)).grid(row=0, column=1, padx=4)
         row += 1
 
+        self.review_types_hint_label = ctk.CTkLabel(
+            tab,
+            text=t("gui.review.types_hint"),
+            anchor="w",
+            justify="left",
+            text_color=self._MUTED_TEXT,
+            font=ctk.CTkFont(size=11),
+        )
+        self.review_types_hint_label.grid(row=row, column=0, sticky="w", padx=10, pady=(0, 6))
+        row += 1
+
         row = self._add_review_section_header(
             tab,
             row,

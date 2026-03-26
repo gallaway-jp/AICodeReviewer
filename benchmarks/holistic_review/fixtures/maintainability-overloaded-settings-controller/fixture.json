@@ -1,0 +1,18 @@
+{
+  "id": "maintainability-overloaded-settings-controller",
+  "title": "Maintainability Overloaded Settings Controller",
+  "description": "A single controller class mixes configuration loading, form normalization, validation, persistence, sync orchestration, audit logging, telemetry, and UI summary formatting, making the code hard to change safely.",
+  "scope": "project",
+  "review_types": ["maintainability"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "overloaded-settings-controller-maintainability",
+      "description_keywords": ["responsib"],
+      "file_path_contains_any": ["settings_controller.py"],
+      "issue_type": "maintainability",
+      "minimum_severity": "medium"
+    }
+  ]
+}

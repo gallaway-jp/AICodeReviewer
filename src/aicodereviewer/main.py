@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any, Callable, Sequence, cast
 
 from aicodereviewer.auth import get_system_language, set_profile_name, clear_profile
-from aicodereviewer.backends import create_backend
+from aicodereviewer.backends import create_backend, resolve_backend_type
 from aicodereviewer.backends.health import check_backend, HealthReport
 from aicodereviewer.backends.base import REVIEW_TYPE_KEYS, REVIEW_TYPE_META
 from aicodereviewer.config import config
@@ -84,7 +84,13 @@ def _build_epilog() -> str:
         if label == f"review_type.{key}":
             label = meta.get("label", key)
         group = meta.get("group", "")
+        summary_key = meta.get("summary_key", "")
+        summary = t(summary_key) if summary_key else ""
+        if summary == summary_key:
+            summary = ""
         lines.append(f"  {key:20s}  {label}  [{group}]")
+        if summary:
+            lines.append(f"{'':24s}{summary}")
 
     lines += [
         "",
@@ -405,10 +411,13 @@ def _run_tool_command(
 
 def _apply_runtime_overrides(args: argparse.Namespace) -> str:
     """Apply per-invocation config overrides and return the effective backend."""
-    backend_name = args.backend or config.get("backend", "type", "bedrock")
+    requested_backend = args.backend or config.get("backend", "type", "bedrock")
+    backend_name, backend_overrides = resolve_backend_type(requested_backend)
 
-    if args.backend:
-        config.set_value("backend", "type", args.backend)
+    if args.backend or requested_backend != backend_name:
+        config.set_value("backend", "type", backend_name)
+    if backend_overrides.get("api_type"):
+        config.set_value("local_llm", "api_type", backend_overrides["api_type"])
     if args.model:
         config.set_value("model", "model_id", args.model)
     if args.region:
@@ -1086,7 +1095,9 @@ def _check_connection(backend_name: str | None) -> int:
     """Test connectivity for the selected backend with diagnostic output."""
     from aicodereviewer.config import config as _cfg
 
-    backend_name = backend_name or _cfg.get("backend", "type", "bedrock")
+    backend_name, _backend_overrides = resolve_backend_type(
+        backend_name or _cfg.get("backend", "type", "bedrock")
+    )
     _print_console(t("conn.checking", backend=backend_name))
 
     try:

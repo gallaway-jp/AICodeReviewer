@@ -1,0 +1,22 @@
+{
+  "id": "testing-order-rollback-untested",
+  "title": "Testing Order Rollback Untested",
+  "description": "The order service already rolls back the repository when payment capture fails, but the test suite only exercises the successful checkout path and never pins the rollback behavior.",
+  "scope": "project",
+  "review_types": ["testing"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "missing-order-rollback-test",
+      "description_keywords": ["test", "rollback"],
+      "file_path_contains_any": ["test_orders.py", "orders.py"],
+      "issue_type": "testing",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["orders.py"],
+      "systemic_impact_contains": "regression",
+      "evidence_basis_contains": "rollback"
+    }
+  ]
+}

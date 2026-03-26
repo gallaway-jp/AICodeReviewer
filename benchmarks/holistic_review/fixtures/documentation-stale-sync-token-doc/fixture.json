@@ -1,0 +1,22 @@
+{
+  "id": "documentation-stale-sync-token-doc",
+  "title": "Documentation Stale Sync Token Doc",
+  "description": "An operations guide still tells users to set SYNC_API_TOKEN before starting the worker, but the implementation now only reads SYNC_TOKEN, so the published setup steps no longer match the shipped configuration contract.",
+  "scope": "project",
+  "review_types": ["documentation"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "stale-sync-token-docs",
+      "description_keywords": ["token", "docs"],
+      "file_path_contains_any": ["operations.md", "config.py"],
+      "issue_type": "documentation",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["config.py"],
+      "systemic_impact_contains": "operator",
+      "evidence_basis_contains": "SYNC_API_TOKEN"
+    }
+  ]
+}

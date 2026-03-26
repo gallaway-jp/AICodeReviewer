@@ -63,6 +63,35 @@ class TestBackendFactory:
         with pytest.raises(ValueError, match="Unknown backend"):
             create_backend("nonexistent")
 
+    @patch("aicodereviewer.backends.local_llm.config")
+    def test_create_local_backend_from_provider_alias(self, mock_cfg):
+        mock_cfg.get.side_effect = lambda section, key, default=None: {
+            ("local_llm", "api_url"): "http://localhost:11434/api",
+            ("local_llm", "api_type"): "openai",
+            ("local_llm", "model"): "tiny-model",
+            ("local_llm", "api_key"): "",
+            ("local_llm", "timeout"): "300",
+            ("local_llm", "max_tokens"): "4096",
+            ("performance", "min_request_interval_seconds"): 0.0,
+        }.get((section, key), default)
+
+        backend = create_backend("ollama")
+
+        from aicodereviewer.backends.local_llm import LocalLLMBackend
+        assert isinstance(backend, LocalLLMBackend)
+        assert backend.api_type == "ollama"
+
+    @patch("aicodereviewer.backends.bedrock.create_aws_session")
+    def test_create_backend_accepts_bedrock_alias(self, mock_session):
+        mock_sess = MagicMock()
+        mock_sess.client.return_value = MagicMock()
+        mock_session.return_value = (mock_sess, "mock auth")
+
+        backend = create_backend("aws-bedrock")
+
+        from aicodereviewer.backends.bedrock import BedrockBackend
+        assert isinstance(backend, BedrockBackend)
+
 
 class TestReviewTypeRegistry:
     """Test the centralized review type definitions."""
@@ -80,12 +109,19 @@ class TestReviewTypeRegistry:
             assert meta is not None, f"Missing meta for {key}"
             assert "label" in meta
             assert "group" in meta
+            assert "summary_key" in meta
 
     def test_ui_ux_review_type_is_registered(self):
         assert "ui_ux" in REVIEW_TYPE_KEYS
         assert REVIEW_TYPE_META["ui_ux"]["label"] == "UI/UX Review"
         assert REVIEW_TYPE_META["ui_ux"]["group"] == "Quality"
         assert "usability" in REVIEW_PROMPTS["ui_ux"].lower()
+
+    def test_dead_code_review_type_is_registered(self):
+        assert "dead_code" in REVIEW_TYPE_KEYS
+        assert REVIEW_TYPE_META["dead_code"]["label"] == "Dead Code"
+        assert REVIEW_TYPE_META["dead_code"]["group"] == "Quality"
+        assert "unused functions" in REVIEW_PROMPTS["dead_code"].lower()
 
     def test_fix_prompt_exists(self):
         """The special 'fix' prompt for code correction should exist."""

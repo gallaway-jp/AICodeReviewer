@@ -1,0 +1,18 @@
+{
+  "id": "concurrency-shared-sequence-race",
+  "title": "Concurrency Shared Sequence Race",
+  "description": "A threaded notification dispatcher mutates shared sequence state and recipient queues without synchronization, so duplicate sequence numbers or lost updates can appear under concurrent load.",
+  "scope": "project",
+  "review_types": ["concurrency"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "shared-sequence-race",
+      "file_path_contains_any": ["dispatch.py"],
+      "issue_type": "concurrency",
+      "minimum_severity": "medium",
+      "evidence_basis_contains": "next_sequence"
+    }
+  ]
+}

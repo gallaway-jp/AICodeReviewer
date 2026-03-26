@@ -70,7 +70,7 @@ class CopilotBackend(AIBackend):
             logger.debug(
                 "Resolved copilot CLI path: %r → %r", _raw_path, self.copilot_path
             )
-        self.timeout: int = int(config.get("copilot", "timeout", "300"))
+        self.timeout: int = int(float(config.get("copilot", "timeout", "300")))
         self.model: str = config.get("copilot", "model", "auto").strip()
 
         self._stream_callback: Optional[Callable[[str], None]] = None

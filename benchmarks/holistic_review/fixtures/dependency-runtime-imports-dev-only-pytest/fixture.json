@@ -1,0 +1,18 @@
+{
+  "id": "dependency-runtime-imports-dev-only-pytest",
+  "title": "Dependency Runtime Imports Dev-Only Pytest",
+  "description": "A runtime module imports `pytest` to compare values with `pytest.approx`, but the package metadata only declares pytest under a dev extra, so production installs can fail when the feature executes.",
+  "scope": "project",
+  "review_types": ["dependency"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "runtime-imports-dev-only-pytest",
+      "file_path_contains_any": ["metrics.py"],
+      "issue_type": "dependency",
+      "minimum_severity": "medium",
+      "evidence_basis_contains": "pytest"
+    }
+  ]
+}

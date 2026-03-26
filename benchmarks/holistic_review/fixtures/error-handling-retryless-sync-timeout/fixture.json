@@ -1,0 +1,22 @@
+{
+  "id": "error-handling-retryless-sync-timeout",
+  "title": "Error Handling Retryless Sync Timeout",
+  "description": "A sync worker surfaces a retryable timeout, but the controller treats that transient failure as terminal and disables background sync immediately instead of retrying or preserving a recovery path.",
+  "scope": "project",
+  "review_types": ["error_handling"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "retryless-timeout-disables-sync",
+      "description_keywords": ["timeout", "retry"],
+      "file_path_contains_any": ["sync_worker.py", "sync_controller.py"],
+      "issue_type": "error_handling",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["sync_controller.py"],
+      "systemic_impact_contains": "recovery",
+      "evidence_basis_contains": "TimeoutError"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "id": "localization-hardcoded-settings-labels",
+  "title": "Localization Hardcoded Settings Labels",
+  "description": "A desktop settings panel uses the translation helper for some labels but still hardcodes user-facing button and status text, leaving those controls untranslated.",
+  "scope": "project",
+  "review_types": ["localization"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "hardcoded-settings-labels",
+      "file_path_contains_any": ["settings_panel.py"],
+      "issue_type": "localization",
+      "minimum_severity": "medium"
+    }
+  ]
+}

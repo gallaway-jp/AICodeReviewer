@@ -1,0 +1,17 @@
+{
+  "id": "compatibility-macos-open-command",
+  "title": "Compatibility macOS Open Command",
+  "description": "A desktop helper opens exported reports by shelling out to the macOS-only `open` command without any platform branching, so the feature will fail on Windows or Linux installations.",
+  "scope": "project",
+  "review_types": ["compatibility"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "macos-open-command",
+      "file_path_contains_any": ["report_viewer.py"],
+      "issue_type": "compatibility",
+      "minimum_severity": "medium"
+    }
+  ]
+}

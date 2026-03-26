@@ -1,0 +1,21 @@
+{
+  "id": "dead-code-unreachable-fallback",
+  "title": "Dead Code Unreachable Fallback",
+  "description": "A module keeps an always-disabled legacy fallback branch and helper even though the current path is unconditional.",
+  "scope": "project",
+  "review_types": ["dead_code"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "always-disabled-legacy-fallback",
+      "description_keywords": ["unreachable", "legacy"],
+      "file_path_contains_any": ["formatter.py"],
+      "issue_type": "dead_code",
+      "minimum_severity": "medium",
+      "context_scope": "local",
+      "systemic_impact_contains": "obsolete",
+      "evidence_basis_contains": "USE_LEGACY_RENDERER"
+    }
+  ]
+}

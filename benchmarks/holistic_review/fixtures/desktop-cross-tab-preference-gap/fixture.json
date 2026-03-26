@@ -1,0 +1,22 @@
+{
+  "id": "desktop-cross-tab-preference-gap",
+  "title": "Desktop Cross-Tab Preference Dependency Gap",
+  "description": "A desktop settings window lets users configure a preference in one tab, then silently overrides it from another tab without explaining the dependency.",
+  "scope": "project",
+  "review_types": ["ui_ux"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "silent-cross-tab-preference-override",
+      "description_keywords": ["override", "tab", "preference"],
+      "file_path_contains_any": ["settings_window.py", "sync_tab.py"],
+      "issue_type": "ui_ux",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["sync_tab.py"],
+      "systemic_impact_contains": "silently",
+      "evidence_basis_contains": "sync_enabled"
+    }
+  ]
+}

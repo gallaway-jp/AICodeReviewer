@@ -52,7 +52,7 @@ class KiroBackend(AIBackend):
         )
         self.cli_cmd: str = config.get("kiro", "cli_command", "kiro").strip()
         self.model: str = config.get("kiro", "model", "").strip() or None
-        self.timeout: int = int(config.get("kiro", "timeout", "300"))
+        self.timeout: int = int(float(config.get("kiro", "timeout", "300")))
         self._cancel_requested: bool = False
 
         if os.name == "nt" and not is_wsl_available():

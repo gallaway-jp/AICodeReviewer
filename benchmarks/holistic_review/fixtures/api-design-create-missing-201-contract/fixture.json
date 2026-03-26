@@ -1,0 +1,17 @@
+{
+  "id": "api-design-create-missing-201-contract",
+  "title": "API Design Create Missing 201 Contract",
+  "description": "A FastAPI creation endpoint uses POST but still returns the default 200 response with a raw dict and no explicit creation contract, which weakens client expectations for resource creation semantics.",
+  "scope": "project",
+  "review_types": ["api_design"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "create-missing-201-contract",
+      "file_path_contains_any": ["api.py"],
+      "issue_type": "api_design",
+      "minimum_severity": "medium"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "id": "scalability-unbounded-pending-events-buffer",
+  "title": "Scalability Unbounded Pending Events Buffer",
+  "description": "Incoming events are appended to an in-memory buffer with no capacity limit, backpressure, or persistence, so a slow downstream sink turns traffic growth into unbounded memory growth.",
+  "scope": "project",
+  "review_types": ["scalability"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "unbounded-in-memory-event-buffer",
+      "file_path_contains": "event_buffer.py",
+      "description_keywords": ["backpressure"],
+      "issue_type": "scalability",
+      "minimum_severity": "medium",
+      "evidence_basis_contains": "pending_events"
+    }
+  ]
+}

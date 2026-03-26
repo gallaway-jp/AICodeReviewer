@@ -13,7 +13,7 @@ import logging
 import os
 import shutil
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from aicodereviewer.config import config
 from aicodereviewer.i18n import t
@@ -36,6 +36,13 @@ from aicodereviewer.backends.models import (  # noqa: F401
 )
 
 logger = logging.getLogger(__name__)
+
+_LOCAL_PROVIDER_LABELS = {
+    "lmstudio": "LM Studio",
+    "openai": "OpenAI-compatible",
+    "ollama": "Ollama",
+    "anthropic": "Anthropic-compatible",
+}
 
 
 @dataclass
@@ -347,7 +354,11 @@ def check_copilot() -> HealthReport:
             os.path.join(home, ".config", "github-copilot"),
         ]
         has_config = any(os.path.isdir(d) for d in copilot_config_dirs)
-        has_token = bool(os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN"))
+        has_token = bool(
+            os.environ.get("COPILOT_GITHUB_TOKEN")
+            or os.environ.get("GH_TOKEN")
+            or os.environ.get("GITHUB_TOKEN")
+        )
         auth_ok = has_config or has_token
         checks.append(CheckResult(
             name=t("health.copilot_auth"),
@@ -398,14 +409,49 @@ def check_copilot() -> HealthReport:
 
 # ── Local LLM health ──────────────────────────────────────────────────────
 
-def check_local_llm() -> HealthReport:
+def _local_llm_headers(api_type: str, api_key: str) -> dict[str, str]:
+    headers = {"Content-Type": "application/json"}
+    if not api_key:
+        return headers
+    if api_type == "anthropic":
+        headers["x-api-key"] = api_key
+        headers["anthropic-version"] = "2023-06-01"
+        return headers
+    headers["Authorization"] = f"Bearer {api_key}"
+    return headers
+
+
+def _local_llm_model_probe(api_url: str, api_type: str) -> tuple[str | None, str | None]:
+    if api_type == "lmstudio":
+        return f"{api_url}/api/v1/models", "lmstudio"
+    if api_type == "openai":
+        return f"{api_url}/v1/models", "openai"
+    if api_type == "ollama":
+        return f"{api_url}/api/tags", "ollama"
+    if api_type == "anthropic":
+        return f"{api_url}/v1/messages", None
+    return None, None
+
+
+def _parse_local_model_names(data: dict[str, Any], parser: str) -> list[str]:
+    from aicodereviewer.backends.local_llm import LocalLLMBackend
+
+    return LocalLLMBackend._parse_model_list(data, parser)
+
+
+def check_local_llm(api_type_override: str | None = None) -> HealthReport:
     """Check Local LLM server prerequisites."""
+    from aicodereviewer.backends.local_llm import LocalLLMBackend
+
     report = HealthReport(backend="local")
     checks = []
 
-    api_url = config.get("local_llm", "api_url", "http://localhost:1234")
-    api_type = config.get("local_llm", "api_type", "lmstudio")
+    raw_api_url = config.get("local_llm", "api_url", "http://localhost:1234")
+    api_type = str(api_type_override or config.get("local_llm", "api_type", "lmstudio")).strip().lower()
+    api_url = LocalLLMBackend._normalize_api_url(str(raw_api_url), api_type)
     model = config.get("local_llm", "model", "default")
+    api_key = str(config.get("local_llm", "api_key", "") or "")
+    label = _LOCAL_PROVIDER_LABELS.get(api_type, "Local LLM")
 
     # 1. URL configured
     checks.append(CheckResult(
@@ -416,46 +462,107 @@ def check_local_llm() -> HealthReport:
         fix_hint="" if api_url else t("health.hint_api_url"),
     ))
 
-    # 2. Server reachable
-    if api_url:
-        import requests
-        try:
-            # Try the /models endpoint (OpenAI-compatible)
-            test_url = api_url.rstrip("/")
-            if api_type == "openai":
-                test_url = test_url.rstrip("/v1").rstrip("/") + "/v1/models"
-            resp = requests.get(test_url, timeout=5)
-            reachable = resp.status_code < 500
-            checks.append(CheckResult(
-                name=t("health.server_reachable"),
-                passed=reachable,
-                detail=(t("health.server_ok", status=resp.status_code) if reachable
-                        else t("health.server_error", status=resp.status_code)),
-                fix_hint="" if reachable else t("health.hint_server"),
-            ))
-        except requests.ConnectionError:
-            checks.append(CheckResult(
-                name=t("health.server_reachable"),
-                passed=False,
-                detail=t("health.server_unreachable", url=api_url),
-                fix_hint=t("health.hint_server"),
-            ))
-        except Exception as e:
-            checks.append(CheckResult(
-                name=t("health.server_reachable"),
-                passed=False,
-                detail=t("health.server_check_error", error=str(e)),
-                fix_hint=t("health.hint_server"),
-            ))
+    # 2. API type configured
+    api_type_ok = api_type in _LOCAL_PROVIDER_LABELS
+    checks.append(CheckResult(
+        name="API Type",
+        passed=api_type_ok,
+        detail=(f"Using {label} detection." if api_type_ok else f"Unsupported local_llm.api_type '{api_type}'."),
+        fix_hint="" if api_type_ok else "Use one of: lmstudio, ollama, openai, anthropic.",
+    ))
 
-    # 3. Model configured
+    if not api_url or not api_type_ok:
+        report.checks = checks
+        report.ready = all(c.passed for c in checks)
+        report.summary = (t("health.ready") if report.ready
+                          else t("health.not_ready", count=len(report.failed_checks)))
+        return report
+
+    # 3. Server reachable and models discoverable when supported
+    import requests
+
+    probe_url, model_parser = _local_llm_model_probe(api_url, api_type)
+    discovered_models: list[str] = []
+    try:
+        resp = requests.get(
+            probe_url or api_url,
+            timeout=5,
+            headers=_local_llm_headers(api_type, api_key),
+        )
+        reachable = resp.status_code < 500
+        checks.append(CheckResult(
+            name=t("health.server_reachable"),
+            passed=reachable,
+            detail=(
+                f"{label} endpoint responded with HTTP {resp.status_code}."
+                if reachable else t("health.server_error", status=resp.status_code)
+            ),
+            fix_hint="" if reachable else t("health.hint_server"),
+        ))
+        if reachable and model_parser and resp.status_code == 200:
+            discovered_models = _parse_local_model_names(resp.json(), model_parser)
+    except requests.ConnectionError:
+        checks.append(CheckResult(
+            name=t("health.server_reachable"),
+            passed=False,
+            detail=t("health.server_unreachable", url=api_url),
+            fix_hint=t("health.hint_server"),
+        ))
+    except Exception as e:
+        checks.append(CheckResult(
+            name=t("health.server_reachable"),
+            passed=False,
+            detail=t("health.server_check_error", error=str(e)),
+            fix_hint=t("health.hint_server"),
+        ))
+
+    # 4. Model configured
+    model_name = str(model or "").strip()
     checks.append(CheckResult(
         name=t("health.model_config"),
-        passed=bool(model),
-        detail=(t("health.model_set", model=model) if model
+        passed=bool(model_name),
+        detail=(t("health.model_set", model=model_name) if model_name
                 else t("health.model_not_set")),
-        fix_hint="" if model else t("health.hint_model"),
+        fix_hint="" if model_name else t("health.hint_model"),
     ))
+
+    # 5. Model availability for providers that advertise model lists
+    if model_name and model_parser:
+        if discovered_models:
+            model_ok = model_name.lower() in {"default", "auto"} or model_name in discovered_models
+            checks.append(CheckResult(
+                name="Model Availability",
+                passed=model_ok,
+                detail=(
+                    f"Configured model '{model_name}' is available on the {label} server."
+                    if model_ok else
+                    f"Configured model '{model_name}' was not advertised by the {label} server."
+                ),
+                fix_hint="" if model_ok else t("health.hint_model"),
+            ))
+        else:
+            checks.append(CheckResult(
+                name="Model Availability",
+                passed=model_name.lower() in {"default", "auto"},
+                detail=(
+                    f"No models were advertised by the {label} server; auto/default model selection will rely on the live connection test."
+                    if model_name.lower() in {"default", "auto"} else
+                    f"No models were advertised by the {label} server, so configured model '{model_name}' could not be confirmed."
+                ),
+                fix_hint="" if model_name.lower() in {"default", "auto"} else t("health.hint_model"),
+            ))
+    elif api_type == "anthropic":
+        anthropic_model_ok = model_name.lower() not in {"", "default", "auto"}
+        checks.append(CheckResult(
+            name="Model Availability",
+            passed=anthropic_model_ok,
+            detail=(
+                f"Configured Anthropiс-compatible model '{model_name}' will be used for the live connection test."
+                if anthropic_model_ok else
+                "Anthropic-compatible endpoints require an explicit model instead of default/auto."
+            ),
+            fix_hint="" if anthropic_model_ok else t("health.hint_model"),
+        ))
 
     report.checks = checks
     report.ready = all(c.passed for c in checks)
@@ -496,15 +603,15 @@ def _run_connection_test(backend_type: str) -> CheckResult:
 
 def check_backend(backend_type: Optional[str] = None) -> HealthReport:
     """Run health checks for the given backend type."""
-    if backend_type is None:
-        backend_type = config.get("backend", "type", "bedrock")
-    backend_type = str(backend_type).strip().lower()
+    from aicodereviewer.backends import resolve_backend_type
+
+    backend_type, backend_overrides = resolve_backend_type(backend_type)
 
     dispatchers = {
         "bedrock": check_bedrock,
         "kiro": check_kiro,
         "copilot": check_copilot,
-        "local": check_local_llm,
+        "local": lambda: check_local_llm(backend_overrides.get("api_type")),
     }
     fn = dispatchers.get(backend_type)
     if fn is None:

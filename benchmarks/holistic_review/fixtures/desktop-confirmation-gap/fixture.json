@@ -1,0 +1,20 @@
+{
+  "id": "desktop-confirmation-gap",
+  "title": "Desktop Confirmation Flow Gap",
+  "description": "A desktop settings dialog performs a destructive reset immediately, without confirmation, cancellation context, or an undo path.",
+  "scope": "project",
+  "review_types": ["ui_ux"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "missing-destructive-action-confirmation",
+      "description_keywords": ["confirmation", "destructive"],
+      "file_path_contains_any": ["settings_dialog.py", "settings_store.py"],
+      "issue_type": "ui_ux",
+      "minimum_severity": "medium",
+      "systemic_impact_contains": "accidental",
+      "evidence_basis_contains": "reset_all_settings"
+    }
+  ]
+}

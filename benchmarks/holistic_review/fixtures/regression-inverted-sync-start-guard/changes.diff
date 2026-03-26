@@ -1,0 +1,9 @@
+--- a/src/app_startup.py
++++ b/src/app_startup.py
+@@ -3,5 +3,5 @@
+ 
+ def initialize_sync(sync_scheduler) -> None:
+     preferences = load_default_preferences()
+-    if preferences["sync_enabled"]:
++    if not preferences["sync_enabled"]:
+         sync_scheduler.start()

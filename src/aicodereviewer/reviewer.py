@@ -528,6 +528,223 @@ def _infer_project_root(files: Sequence[FileInfo]) -> str:
     return str(root_candidate)
 
 
+def _infer_review_root(files: Sequence[FileInfo]) -> Path:
+    """Infer a practical review root without climbing to the filesystem root."""
+    if not files:
+        return Path.cwd()
+
+    sample = files[0]
+    if isinstance(sample, dict):
+        sample_path = (
+            sample.get("path")
+            or sample.get("filename")
+            or sample.get("name")
+            or "."
+        )
+    else:
+        sample_path = str(sample)
+
+    root_candidate = Path(sample_path)
+    if root_candidate.suffix:
+        root_candidate = root_candidate.parent
+    if not root_candidate.is_absolute():
+        root_candidate = (Path.cwd() / root_candidate).resolve()
+
+    if root_candidate.name.lower() in {"src", "tests", "test", "lib", "app"} and root_candidate.parent != root_candidate:
+        root_candidate = root_candidate.parent
+
+    search_candidate = root_candidate
+    for _ in range(5):
+        if any(
+            (search_candidate / marker).exists()
+            for marker in (
+                "pyproject.toml",
+                "package.json",
+                "Cargo.toml",
+                "go.mod",
+                "pom.xml",
+                ".git",
+            )
+        ):
+            return search_candidate
+        parent = search_candidate.parent
+        if parent == search_candidate:
+            break
+        search_candidate = parent
+
+    return root_candidate
+
+
+def _discover_documentation_targets(project_root: Path) -> List[Path]:
+    candidates: List[Path] = []
+    seen: set[str] = set()
+
+    def _add_candidate(path: Path) -> None:
+        if not path.exists() or not path.is_file():
+            return
+        resolved = str(path.resolve())
+        if resolved in seen:
+            return
+        seen.add(resolved)
+        candidates.append(path)
+
+    for relative in (
+        "README.md",
+        "README.rst",
+        "README.txt",
+        "CONTRIBUTING.md",
+        "CHANGELOG.md",
+        "docs/README.md",
+    ):
+        _add_candidate(project_root / relative)
+
+    docs_dir = project_root / "docs"
+    if docs_dir.exists() and docs_dir.is_dir():
+        for pattern in ("*.md", "*.rst", "*.txt"):
+            for path in sorted(docs_dir.rglob(pattern))[:12]:
+                _add_candidate(path)
+
+    return candidates
+
+
+def _discover_dependency_targets(project_root: Path) -> List[Path]:
+    candidates: List[Path] = []
+    seen: set[str] = set()
+
+    def _add_candidate(path: Path) -> None:
+        if not path.exists() or not path.is_file():
+            return
+        resolved = str(path.resolve())
+        if resolved in seen:
+            return
+        seen.add(resolved)
+        candidates.append(path)
+
+    for relative in (
+        "pyproject.toml",
+        "requirements.txt",
+        "requirements-dev.txt",
+        "requirements.lock",
+        "Pipfile",
+        "Pipfile.lock",
+        "poetry.lock",
+        "setup.py",
+        "setup.cfg",
+        "package.json",
+        "package-lock.json",
+        "pnpm-lock.yaml",
+        "yarn.lock",
+        "Cargo.toml",
+        "Cargo.lock",
+        "go.mod",
+        "go.sum",
+    ):
+        _add_candidate(project_root / relative)
+
+    return candidates
+
+
+def _discover_license_targets(project_root: Path) -> List[Path]:
+    candidates: List[Path] = []
+    seen: Set[str] = set()
+
+    def _add_candidate(path: Path) -> None:
+        if not path.exists() or not path.is_file():
+            return
+        resolved = str(path.resolve())
+        if resolved in seen:
+            return
+        seen.add(resolved)
+        candidates.append(path)
+
+    for compliance_file in (
+        "LICENSE",
+        "LICENSE.txt",
+        "LICENSE.md",
+        "LICENCE",
+        "LICENCE.txt",
+        "COPYING",
+        "COPYING.txt",
+        "NOTICE",
+        "NOTICE.txt",
+        "THIRD_PARTY_NOTICES.md",
+        "THIRD_PARTY_NOTICES.txt",
+        "licenses_check.csv",
+    ):
+        _add_candidate(project_root / compliance_file)
+
+    for manifest_path in _discover_dependency_targets(project_root):
+        _add_candidate(manifest_path)
+
+    return candidates
+
+
+def _augment_documentation_review_targets(
+    target_files: Sequence[FileInfo],
+    review_types: Sequence[str],
+) -> List[FileInfo]:
+    if "documentation" not in review_types:
+        return list(target_files)
+
+    project_root = _infer_review_root(target_files)
+    augmented: List[FileInfo] = list(target_files)
+    existing_paths = {
+        str((Path(str(file_info["path"])) if isinstance(file_info, dict) else Path(file_info)).resolve())
+        for file_info in target_files
+    }
+    for doc_path in _discover_documentation_targets(project_root):
+        resolved = str(doc_path.resolve())
+        if resolved in existing_paths:
+            continue
+        existing_paths.add(resolved)
+        augmented.append(doc_path)
+    return augmented
+
+
+def _augment_dependency_review_targets(
+    target_files: Sequence[FileInfo],
+    review_types: Sequence[str],
+) -> List[FileInfo]:
+    if "dependency" not in review_types:
+        return list(target_files)
+
+    project_root = _infer_review_root(target_files)
+    augmented: List[FileInfo] = list(target_files)
+    existing_paths = {
+        str((Path(str(file_info["path"])) if isinstance(file_info, dict) else Path(file_info)).resolve())
+        for file_info in target_files
+    }
+    for manifest_path in _discover_dependency_targets(project_root):
+        resolved = str(manifest_path.resolve())
+        if resolved in existing_paths:
+            continue
+        existing_paths.add(resolved)
+        augmented.append(manifest_path)
+    return augmented
+
+
+def _augment_license_review_targets(
+    target_files: Sequence[FileInfo],
+    review_types: Sequence[str],
+) -> List[FileInfo]:
+    if "license" not in review_types:
+        return list(target_files)
+
+    project_root = _infer_review_root(target_files)
+    augmented: List[FileInfo] = list(target_files)
+    existing_paths = {
+        str((Path(str(file_info["path"])) if isinstance(file_info, dict) else Path(file_info)).resolve())
+        for file_info in target_files
+    }
+    for license_path in _discover_license_targets(project_root):
+        resolved = str(license_path.resolve())
+        if resolved in existing_paths:
+            continue
+        existing_paths.add(resolved)
+        augmented.append(license_path)
+    return augmented
+
+
 def _build_dependency_highlights(files: Sequence[FileInfo]) -> Optional[str]:
     """Build a compact dependency-edge summary for architectural review."""
     scanned_paths = [
@@ -675,14 +892,21 @@ def collect_review_issues(
         Flat list of :class:`ReviewIssue` instances.
     """
     issues: List[ReviewIssue] = []
+    effective_target_files = _augment_license_review_targets(
+        _augment_dependency_review_targets(
+            _augment_documentation_review_targets(target_files, review_types),
+            review_types,
+        ),
+        review_types,
+    )
 
     # ── Build project context (once per session) ───────────────────────────
     enable_context = config.get("processing", "enable_project_context", True)
     if enable_context:
         try:
             # Determine project root from target_files
-            if target_files:
-                sample = target_files[0]
+            if effective_target_files:
+                sample = effective_target_files[0]
                 if isinstance(sample, dict):
                     project_root = str(Path(sample.get("path", ".")).parent)
                 else:
@@ -703,7 +927,7 @@ def collect_review_issues(
 
             scanned_paths = [
                 str(f) if not isinstance(f, dict) else f.get("path", "")
-                for f in target_files
+                for f in effective_target_files
             ]
             ctx = collect_project_context(project_root, scanned_paths)
             max_tokens = config.get("processing", "context_max_tokens", 500)
@@ -731,7 +955,7 @@ def collect_review_issues(
 
     # Always one pass over files — multiple review types are merged into one prompt
     combined_type = "+".join(review_types) if len(review_types) > 1 else review_types[0]
-    total_work = len(target_files)
+    total_work = len(effective_target_files)
     done = 0
 
     enable_parallel = config.get("processing", "enable_parallel_processing", False)
@@ -742,16 +966,16 @@ def collect_review_issues(
     if enable_adaptive:
         max_batch_tokens = config.get("processing", "max_batch_token_budget", 80_000)
         max_batch_files = config.get("processing", "batch_size", 10)
-        batches = _build_adaptive_batches(target_files, max_batch_tokens, max_batch_files)
+        batches = _build_adaptive_batches(effective_target_files, max_batch_tokens, max_batch_files)
         logger.info(
             "Adaptive batching: %d file(s) → %d batch(es)",
-            len(target_files), len(batches),
+            len(effective_target_files), len(batches),
         )
     else:
         batch_size = config.get("processing", "batch_size", 5)
         batches = [
-            target_files[i : i + batch_size]
-            for i in range(0, len(target_files), batch_size)
+            effective_target_files[i : i + batch_size]
+            for i in range(0, len(effective_target_files), batch_size)
         ]
 
     # ── Budget / session tracking ────────────────────────────────────────────
@@ -814,6 +1038,17 @@ def collect_review_issues(
             "Added %d deterministic stale-cache finding(s) after AI review",
             len(supplemental_issues),
         )
+    n_plus_one_issues = _supplement_n_plus_one_query_findings(
+        target_files,
+        combined_type,
+        issues,
+    )
+    if n_plus_one_issues:
+        issues.extend(n_plus_one_issues)
+        logger.info(
+            "Added %d deterministic N+1 performance finding(s) after AI review",
+            len(n_plus_one_issues),
+        )
     return_shape_issues = _supplement_return_shape_mismatch_findings(
         target_files,
         combined_type,
@@ -856,17 +1091,121 @@ def collect_review_issues(
     )
     if isinstance(enable_arch, str):
         enable_arch = enable_arch.lower() in ("true", "1", "yes")
-    if enable_arch and len(target_files) >= 3 and session.has_budget():
+    force_architecture_review = "architecture" in review_types
+    if (enable_arch or force_architecture_review) and len(effective_target_files) >= 3 and session.has_budget():
         if progress_callback:
             progress_callback(
                 total_work, total_work, f"[{type_label}] architectural review\u2026",
             )
         arch_issues, _arch_summary = architectural_review(
-            target_files, issues, client, lang,
+            effective_target_files, issues, client, lang,
         )
         issues.extend(arch_issues)
         _normalize_cache_issue_context(issues)
         session.record_call()
+
+    local_ui_ux_issues = _supplement_local_ui_ux_findings(
+        effective_target_files,
+        combined_type,
+        issues,
+        client,
+    )
+    if local_ui_ux_issues:
+        issues.extend(local_ui_ux_issues)
+        logger.info(
+            "Added %d Local UI/UX supplement finding(s) after AI review",
+            len(local_ui_ux_issues),
+        )
+
+    local_dead_code_issues = _supplement_local_dead_code_findings(
+        effective_target_files,
+        combined_type,
+        issues,
+        client,
+    )
+    if local_dead_code_issues:
+        issues.extend(local_dead_code_issues)
+        logger.info(
+            "Added %d Local dead_code supplement finding(s) after AI review",
+            len(local_dead_code_issues),
+        )
+
+    local_error_handling_issues = _supplement_local_error_handling_findings(
+        effective_target_files,
+        combined_type,
+        issues,
+        client,
+    )
+    if local_error_handling_issues:
+        issues.extend(local_error_handling_issues)
+        logger.info(
+            "Added %d Local error_handling supplement finding(s) after AI review",
+            len(local_error_handling_issues),
+        )
+
+    local_data_validation_issues = _supplement_local_data_validation_findings(
+        effective_target_files,
+        combined_type,
+        issues,
+        client,
+    )
+    if local_data_validation_issues:
+        issues.extend(local_data_validation_issues)
+        logger.info(
+            "Added %d Local data_validation supplement finding(s) after AI review",
+            len(local_data_validation_issues),
+        )
+
+    local_testing_issues = _supplement_local_testing_findings(
+        effective_target_files,
+        combined_type,
+        issues,
+        client,
+    )
+    if local_testing_issues:
+        issues.extend(local_testing_issues)
+        logger.info(
+            "Added %d Local testing supplement finding(s) after AI review",
+            len(local_testing_issues),
+        )
+
+    local_regression_issues = _supplement_local_regression_findings(
+        effective_target_files,
+        combined_type,
+        issues,
+        client,
+    )
+    if local_regression_issues:
+        issues.extend(local_regression_issues)
+        logger.info(
+            "Added %d Local regression supplement finding(s) after AI review",
+            len(local_regression_issues),
+        )
+
+    local_accessibility_issues = _supplement_local_accessibility_findings(
+        effective_target_files,
+        combined_type,
+        issues,
+        client,
+    )
+    if local_accessibility_issues:
+        issues.extend(local_accessibility_issues)
+        logger.info(
+            "Added %d Local accessibility supplement finding(s) after AI review",
+            len(local_accessibility_issues),
+        )
+
+    architecture_supplements = _normalize_controller_repository_bypass_findings(
+        effective_target_files,
+        combined_type,
+        issues,
+    )
+    if architecture_supplements:
+        issues.extend(architecture_supplements)
+        logger.info(
+            "Added %d deterministic controller-boundary architecture finding(s) after AI review",
+            len(architecture_supplements),
+        )
 
     return issues
 
@@ -992,6 +1331,101 @@ def _supplement_stale_cache_findings(
                 ))
 
     return supplements
+
+
+def _supplement_n_plus_one_query_findings(
+    target_files: Sequence[FileInfo],
+    review_type: str,
+    issues: Sequence[ReviewIssue],
+) -> List[ReviewIssue]:
+    if "performance" not in review_type.split("+"):
+        return []
+
+    for issue in issues:
+        issue_type = issue.issue_type.lower()
+        if issue_type not in {"performance", "algorithmic efficiency", "algorithmic_efficiency"}:
+            continue
+        text = _issue_text(issue)
+        if any(marker in text for marker in ("n+1", "query per", "round trip", "execute_query", "fetch_order")):
+            return []
+
+    entries = _load_target_file_entries(target_files)
+    if len(entries) < 2:
+        return []
+
+    for service_entry in entries:
+        service_content = service_entry["content"]
+        import_match = re.search(
+            r"from\s+(?P<module>[a-zA-Z0-9_\.]+)\s+import\s+(?P<helper>fetch_[a-zA-Z0-9_]+)",
+            service_content,
+        )
+        loop_match = re.search(
+            r"for\s+(?P<item>[a-zA-Z0-9_]+)\s+in\s+(?P<iterable>[a-zA-Z0-9_]+)\s*:\s*(?P<body>(?:\n[ \t]+.*)+)",
+            service_content,
+        )
+        if import_match is None or loop_match is None:
+            continue
+
+        helper = import_match.group("helper")
+        loop_item = loop_match.group("item")
+        loop_body = loop_match.group("body")
+        if f"{helper}({loop_item})" not in loop_body:
+            continue
+
+        module_stem = import_match.group("module").split(".")[-1]
+        repository_entry = next(
+            (
+                entry for entry in entries
+                if entry["path"] != service_entry["path"] and Path(entry["path"]).stem == module_stem
+            ),
+            None,
+        )
+        if repository_entry is None:
+            continue
+
+        repository_content = repository_entry["content"]
+        plural_helper = f"{helper}s"
+        if f"def {helper}(" not in repository_content:
+            continue
+        if "execute_query(" not in repository_content:
+            continue
+        if f"def {plural_helper}(" not in repository_content:
+            continue
+
+        evidence_basis = (
+            f"{service_entry['name']} calls {helper} inside the loop while {repository_entry['name']} "
+            f"already exposes batch helper {plural_helper}."
+        )
+        systemic_impact = (
+            "Latency grows with input size because each item triggers another repository round trip instead of using the available batch path."
+        )
+        ai_feedback = "\n\n".join([
+            "**N+1 query pattern in a hot path**",
+            f"{service_entry['name']} iterates over items and calls {helper} for each one, even though {repository_entry['name']} already exposes {plural_helper} for batched loading.",
+            f"Code: for ... in ...: {helper}(...) / def {plural_helper}(...)",
+            "Suggestion: Load the records through the batch helper or refactor the service so the loop does not trigger one query per item.",
+            "Context Scope: cross_file",
+            f"Related Files: {repository_entry['path']}",
+            f"Systemic Impact: {systemic_impact}",
+            "Confidence: medium",
+            f"Evidence Basis: {evidence_basis}",
+        ])
+        return [ReviewIssue(
+            file_path=service_entry["path"],
+            line_number=_line_number_from_offset(service_content, loop_match.start()),
+            issue_type="performance",
+            severity="medium",
+            description="The service performs one repository query per item instead of using the available batch load.",
+            code_snippet=_code_snippet(service_content, loop_match.start()),
+            ai_feedback=ai_feedback,
+            context_scope="cross_file",
+            related_files=[repository_entry["path"]],
+            systemic_impact=systemic_impact,
+            confidence="medium",
+            evidence_basis=evidence_basis,
+        )]
+
+    return []
 
 
 def _normalize_cache_issue_context(issues: Sequence[ReviewIssue]) -> None:
@@ -1193,6 +1627,1547 @@ def _supplement_return_shape_mismatch_findings(
                 ))
 
     return supplements
+
+
+def _select_service_entry_for_controller_bypass(
+    service_entries: Sequence[Dict[str, str]],
+    repository_module_stem: str,
+) -> Dict[str, str] | None:
+    if not service_entries:
+        return None
+
+    repository_prefix = repository_module_stem.removesuffix("_repository")
+    for service_entry in service_entries:
+        service_stem = Path(service_entry["path"]).stem.lower()
+        if repository_prefix and repository_prefix in service_stem:
+            return service_entry
+
+    return service_entries[0]
+
+
+def _normalize_controller_repository_bypass_findings(
+    target_files: Sequence[FileInfo],
+    review_type: str,
+    issues: Sequence[ReviewIssue],
+) -> List[ReviewIssue]:
+    if "architecture" not in review_type.split("+"):
+        return []
+
+    entries = _load_target_file_entries(target_files)
+    if len(entries) < 3:
+        return []
+
+    service_entries = [
+        entry for entry in entries
+        if "/services/" in entry["path"].replace("\\", "/").lower()
+    ]
+    if not service_entries:
+        return []
+
+    supplements: List[ReviewIssue] = []
+    for controller_entry in entries:
+        controller_path = controller_entry["path"].replace("\\", "/").lower()
+        controller_name = Path(controller_entry["path"]).name.lower()
+        if "/web/" not in controller_path and "controller" not in controller_name:
+            continue
+
+        import_match = re.search(
+            r"from\s+(?P<module>[a-zA-Z0-9_\.]*repositories\.(?P<repository>[a-zA-Z0-9_]+))\s+import\s+(?P<helper>[a-zA-Z0-9_]+)",
+            controller_entry["content"],
+        )
+        if import_match is None:
+            continue
+
+        helper = import_match.group("helper")
+        if f"{helper}(" not in controller_entry["content"]:
+            continue
+
+        repository_module_stem = import_match.group("repository")
+        service_entry = _select_service_entry_for_controller_bypass(
+            service_entries,
+            repository_module_stem,
+        )
+        if service_entry is None:
+            continue
+
+        repository_entry = next(
+            (
+                entry for entry in entries
+                if Path(entry["path"]).stem.lower() == repository_module_stem
+            ),
+            None,
+        )
+        service_name = service_entry["name"]
+        related_paths = [service_entry["path"]]
+        if repository_entry is not None:
+            related_paths.append(repository_entry["path"])
+
+        matched_existing = False
+        for issue in issues:
+            if issue.issue_type.lower() != "architecture":
+                continue
+
+            issue_path = str(issue.file_path).replace("\\", "/").lower()
+            issue_text = _issue_text(issue)
+            same_controller_file = issue_path == controller_path or issue_path.endswith(f"/{controller_name}")
+            project_level_match = issue_path == "project" and "controller" in issue_text and "repository" in issue_text
+            if not same_controller_file and not project_level_match:
+                continue
+
+            matched_existing = True
+            if issue.context_scope == "local":
+                issue.context_scope = "project"
+            for related_path in related_paths:
+                if related_path not in issue.related_files:
+                    issue.related_files.append(related_path)
+
+            evidence_basis = issue.evidence_basis or ""
+            evidence_lower = evidence_basis.lower()
+            if "service" not in evidence_lower and service_name.lower() not in evidence_lower:
+                addition = (
+                    f" The controller bypasses service layer {service_name} by importing the repository directly."
+                )
+                issue.evidence_basis = (evidence_basis.rstrip(".") + "." + addition).strip()
+
+            systemic_impact = issue.systemic_impact or ""
+            if not systemic_impact or "layer" not in systemic_impact.lower():
+                issue.systemic_impact = (
+                    "Layer boundaries become inconsistent because the controller now couples directly to repository code instead of delegating through the service layer."
+                )
+            break
+
+        if matched_existing:
+            continue
+
+        evidence_basis = (
+            f"{Path(controller_entry['path']).name} imports repository helper {helper} directly instead of delegating through service layer {service_name}."
+        )
+        systemic_impact = (
+            "Layer boundaries become inconsistent because controllers now couple directly to repository code instead of the service layer."
+        )
+        ai_feedback = "\n\n".join([
+            "**Controller bypasses the service boundary and reaches the repository directly**",
+            f"{Path(controller_entry['path']).name} imports {helper} from the repository and calls it directly even though {service_name} should own the workflow boundary.",
+            f"Code: from ...repositories.{repository_module_stem} import {helper}",
+            "Suggestion: Route the controller through the service layer and keep repository access behind the service boundary.",
+            "Context Scope: project",
+            f"Related Files: {', '.join(related_paths)}",
+            f"Systemic Impact: {systemic_impact}",
+            "Confidence: medium",
+            f"Evidence Basis: {evidence_basis}",
+        ])
+        supplements.append(ReviewIssue(
+            file_path=controller_entry["path"],
+            line_number=_line_number_from_offset(controller_entry["content"], import_match.start()),
+            issue_type="architecture",
+            severity="high",
+            description="The controller bypasses the service layer and imports the repository directly.",
+            code_snippet=_code_snippet(controller_entry["content"], import_match.start()),
+            ai_feedback=ai_feedback,
+            context_scope="project",
+            related_files=related_paths,
+            systemic_impact=systemic_impact,
+            confidence="medium",
+            evidence_basis=evidence_basis,
+        ))
+
+    return supplements
+
+
+def _is_local_backend(client: AIBackend) -> bool:
+    backend_hint = str(
+        getattr(client, "_backend_kind", "")
+        or getattr(client, "backend_name", "")
+    ).strip().lower()
+    if backend_hint == "local":
+        return True
+
+    client_class = client.__class__
+    return (
+        client_class.__name__ == "LocalLLMBackend"
+        or client_class.__module__.endswith(".local_llm")
+    )
+
+
+def _issue_text(issue: ReviewIssue) -> str:
+    return "\n".join(
+        part
+        for part in [
+            issue.description,
+            issue.ai_feedback,
+            issue.systemic_impact or "",
+            issue.evidence_basis or "",
+        ]
+        if part
+    ).lower()
+
+
+def _line_number_from_offset(content: str, offset: int) -> int:
+    return content[:offset].count("\n") + 1
+
+
+def _code_snippet(content: str, start: int = 0, width: int = 220) -> str:
+    snippet = content[start:start + width].strip()
+    if not snippet:
+        return content[:width] + ("…" if len(content) > width else "")
+    return snippet + ("…" if start + width < len(content) else "")
+
+
+def _supplement_local_ui_ux_findings(
+    target_files: Sequence[FileInfo],
+    review_type: str,
+    issues: Sequence[ReviewIssue],
+    client: AIBackend,
+) -> List[ReviewIssue]:
+    if "ui_ux" not in review_type.split("+"):
+        return []
+    if not _is_local_backend(client):
+        return []
+
+    entries = _load_target_file_entries(target_files)
+    if len(entries) < 2:
+        return []
+
+    supplements: List[ReviewIssue] = []
+    supplements.extend(_supplement_local_confirmation_ui_ux(entries, issues))
+    supplements.extend(_supplement_local_cross_tab_ui_ux(entries, issues))
+    supplements.extend(_supplement_local_wizard_ui_ux(entries, issues))
+    supplements.extend(_supplement_local_form_recovery_ui_ux(entries, issues))
+    return supplements
+
+
+def _supplement_local_confirmation_ui_ux(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> List[ReviewIssue]:
+    for issue in issues:
+        if issue.issue_type.lower() != "ui_ux":
+            continue
+        related_files = [Path(path).name for path in issue.related_files]
+        evidence_basis = (issue.evidence_basis or "").lower()
+        systemic_impact = (issue.systemic_impact or "").lower()
+        if (
+            "reset_all_settings" in evidence_basis
+            and "accidental" in systemic_impact
+            and "settings_store.py" in related_files
+        ):
+            return []
+
+    for primary in entries:
+        content = primary["content"]
+        import_match = re.search(
+            r"from\s+\.(?P<module>[A-Za-z0-9_]+)\s+import\s+(?P<symbol>reset_all_settings)",
+            content,
+        )
+        if import_match is None:
+            continue
+
+        reset_match = re.search(
+            r"def\s+(?P<method>reset_[A-Za-z0-9_]+)\(self\)\s*->\s*None:\s*(?P<body>.*?)(?:\n\s*def\s|\Z)",
+            content,
+            re.DOTALL,
+        )
+        if reset_match is None:
+            continue
+
+        body = reset_match.group("body")
+        if "reset_all_settings()" not in body or "self.destroy()" not in body:
+            continue
+
+        related_stem = import_match.group("module")
+        related_entry = next(
+            (
+                entry for entry in entries
+                if entry["path"] != primary["path"] and Path(entry["path"]).stem == related_stem
+            ),
+            None,
+        )
+        if related_entry is None:
+            continue
+
+        evidence_basis = (
+            f"{Path(primary['path']).name} calls reset_all_settings directly and destroys the window immediately afterward."
+        )
+        systemic_impact = (
+            "An accidental click can wipe user preferences without a recovery path, which makes the confirmation flow feel unsafe."
+        )
+        ai_feedback = "\n\n".join([
+            "**Destructive reset runs immediately without confirmation or recovery context**",
+            f"{Path(primary['path']).name} wires the reset action straight to {import_match.group('symbol')} and then closes the dialog, so users cannot confirm the impact before the destructive action commits.",
+            f"Code: command=self.{reset_match.group('method')} / {import_match.group('symbol')}() / self.destroy()",
+            "Suggestion: Add a confirmation dialog or undo path before committing the destructive reset so users can review the impact first.",
+            "Context Scope: cross_file",
+            f"Related Files: {related_entry['path']}",
+            f"Systemic Impact: {systemic_impact}",
+            "Confidence: medium",
+            f"Evidence Basis: {evidence_basis}",
+        ])
+        return [ReviewIssue(
+            file_path=primary["path"],
+            line_number=_line_number_from_offset(content, reset_match.start()),
+            issue_type="ui_ux",
+            severity="medium",
+            description="The destructive settings reset runs immediately without a confirmation step or recovery path.",
+            code_snippet=_code_snippet(content, reset_match.start()),
+            ai_feedback=ai_feedback,
+            context_scope="cross_file",
+            related_files=[related_entry["path"]],
+            systemic_impact=systemic_impact,
+            confidence="medium",
+            evidence_basis=evidence_basis,
+        )]
+
+    return []
+
+
+def _supplement_local_cross_tab_ui_ux(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> List[ReviewIssue]:
+    for issue in issues:
+        if issue.issue_type.lower() != "ui_ux":
+            continue
+        related_files = [Path(path).name for path in issue.related_files]
+        evidence_basis = (issue.evidence_basis or "").lower()
+        systemic_impact = (issue.systemic_impact or "").lower()
+        if (
+            issue.context_scope == "cross_file"
+            and "sync_enabled" in evidence_basis
+            and "silently" in systemic_impact
+            and "sync_tab.py" in related_files
+        ):
+            return []
+
+    for primary in entries:
+        content = primary["content"]
+        collect_match = re.search(
+            r"payload\s*=\s*self\.(?P<collector>\w+)\.collect_settings\(\)",
+            content,
+        )
+        override_match = re.search(
+            r"if\s+self\.(?P<mode>\w+)\.get\(\)\s*==\s*[\"'](?P<value>[^\"']+)[\"']\s*:\s*payload\[[\"'](?P<key>[a-zA-Z0-9_]+)[\"']\]\s*=\s*(?P<flag>False|True)",
+            content,
+            re.DOTALL,
+        )
+        if collect_match is None or override_match is None:
+            continue
+
+        override_key = override_match.group("key")
+        related_entry = next(
+            (
+                entry for entry in entries
+                if entry["path"] != primary["path"] and override_key in entry["content"]
+            ),
+            None,
+        )
+        if related_entry is None:
+            continue
+
+        mode_name = override_match.group("mode")
+        mode_value = override_match.group("value")
+        evidence_basis = (
+            f"save_settings collects values from {Path(related_entry['path']).name} and then forces {override_key} to False "
+            f"when {mode_name} is '{mode_value}'."
+        )
+        systemic_impact = (
+            f"Users can set a preference in one tab and have it silently overridden at save time, which makes the settings model hard to trust."
+        )
+        ai_feedback = "\n\n".join([
+            "**Cross-tab preference is silently overridden at save time**",
+            f"{Path(primary['path']).name} collects settings from {Path(related_entry['path']).name} and then overwrites {override_key} based on a preference in another tab, without any visible explanation in the UI.",
+            f"Code: payload = self.{collect_match.group('collector')}.collect_settings() / payload['{override_key}'] = False",
+            "Suggestion: Reflect the dependency in the UI before save, or disable and explain the affected control when the other tab's mode makes the value inapplicable.",
+            "Context Scope: cross_file",
+            f"Related Files: {related_entry['path']}",
+            f"Systemic Impact: {systemic_impact}",
+            "Confidence: medium",
+            f"Evidence Basis: {evidence_basis}",
+        ])
+        return [ReviewIssue(
+            file_path=primary["path"],
+            line_number=_line_number_from_offset(content, override_match.start()),
+            issue_type="ui_ux",
+            severity="medium",
+            description="A preference from one tab is changed by a silent override in another tab at save time.",
+            code_snippet=_code_snippet(content, collect_match.start()),
+            ai_feedback=ai_feedback,
+            context_scope="cross_file",
+            related_files=[related_entry["path"]],
+            systemic_impact=systemic_impact,
+            confidence="medium",
+            evidence_basis=evidence_basis,
+        )]
+
+    return []
+
+
+def _supplement_local_wizard_ui_ux(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> List[ReviewIssue]:
+    for issue in issues:
+        text = _issue_text(issue)
+        if issue.issue_type.lower() != "ui_ux":
+            continue
+        if issue.context_scope != "cross_file":
+            continue
+        if "wizard" in text and "disabled" in text:
+            return []
+
+    import_pattern = re.compile(
+        r"from\s+\.([a-zA-Z0-9_]+)\s+import\s+(?P<class_name>[A-Z][A-Za-z0-9_]*)"
+    )
+    call_pattern = re.compile(
+        r"(?P<class_name>[A-Z][A-Za-z0-9_]*)\(\s*self\s*,\s*(?P<param>[a-zA-Z0-9_]+)\s*=\s*self\.(?P<source>[a-zA-Z0-9_]+)\.get\(\)\s*\)",
+        re.DOTALL,
+    )
+
+    for primary in entries:
+        content = primary["content"]
+        import_match = import_pattern.search(content)
+        call_match = call_pattern.search(content)
+        if import_match is None or call_match is None:
+            continue
+        if import_match.group("class_name") != call_match.group("class_name"):
+            continue
+
+        related_stem = import_match.group(1)
+        related_entry = next(
+            (
+                entry for entry in entries
+                if entry["path"] != primary["path"] and Path(entry["path"]).stem == related_stem
+            ),
+            None,
+        )
+        if related_entry is None:
+            continue
+
+        param_name = call_match.group("param")
+        related_content = related_entry["content"]
+        if not re.search(
+            rf"state\s*=\s*[\"']normal[\"']\s+if\s+{param_name}\s+else\s+[\"']disabled[\"']",
+            related_content,
+        ):
+            continue
+
+        source_name = call_match.group("source")
+        label_match = re.search(
+            rf"text=[\"'](?P<label>[^\"']+)[\"'][^\n]*variable=self\.{source_name}",
+            content,
+        )
+        prerequisite_label = label_match.group("label") if label_match else source_name.replace("_", " ")
+        evidence_basis = (
+            f"{Path(primary['path']).name} passes the '{prerequisite_label}' choice into {Path(related_entry['path']).name}, "
+            f"which disables its dependent controls when {param_name} is false."
+        )
+        systemic_impact = (
+            f"Users can reach a later wizard step and see disabled controls without understanding that '{prerequisite_label}' was the prerequisite."
+        )
+        ai_feedback = "\n\n".join([
+            "**Wizard step dependency is hidden behind disabled controls**",
+            f"The wizard sends users into {Path(related_entry['path']).name} without showing progress or explaining that the earlier '{prerequisite_label}' choice controls whether the later options are enabled.",
+            f"Code: {call_match.group('class_name')}(self, {param_name}=self.{source_name}.get()) / state='normal' if {param_name} else 'disabled'",
+            "Suggestion: Add explicit step orientation and explain the prerequisite before showing disabled follow-on controls.",
+            "Context Scope: cross_file",
+            f"Related Files: {related_entry['path']}",
+            f"Systemic Impact: {systemic_impact}",
+            "Confidence: medium",
+            f"Evidence Basis: {evidence_basis}",
+        ])
+        return [ReviewIssue(
+            file_path=primary["path"],
+            line_number=_line_number_from_offset(content, call_match.start()),
+            issue_type="ui_ux",
+            severity="medium",
+            description="The wizard hides a step dependency, so later controls appear disabled without enough orientation.",
+            code_snippet=_code_snippet(content, call_match.start()),
+            ai_feedback=ai_feedback,
+            context_scope="cross_file",
+            related_files=[related_entry["path"]],
+            systemic_impact=systemic_impact,
+            confidence="medium",
+            evidence_basis=evidence_basis,
+        )]
+
+    return []
+
+
+def _supplement_local_form_recovery_ui_ux(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> List[ReviewIssue]:
+    for issue in issues:
+        text = _issue_text(issue)
+        if issue.issue_type.lower() != "ui_ux":
+            continue
+        if issue.context_scope != "cross_file":
+            continue
+        if "re-enter" in text and "validate" in text:
+            return []
+
+    import_pattern = re.compile(
+        r"import\s*\{\s*(?P<validator>[A-Za-z0-9_]+)\s*\}\s*from\s*[\"']\./(?P<module>[^\"']+)[\"']"
+    )
+
+    for primary in entries:
+        content = primary["content"]
+        import_match = import_pattern.search(content)
+        if import_match is None:
+            continue
+
+        validator_name = import_match.group("validator")
+        module_stem = Path(import_match.group("module")).stem
+        validator_entry = next(
+            (
+                entry for entry in entries
+                if entry["path"] != primary["path"] and Path(entry["path"]).stem == module_stem
+            ),
+            None,
+        )
+        if validator_entry is None:
+            continue
+
+        error_block_match = re.search(
+            rf"{validator_name}\([^\n]*\);\s*if\s*\(\s*\w+\.length\s*>\s*0\s*\)\s*\{{(?P<body>.*?)\n\s*\}}",
+            content,
+            re.DOTALL,
+        )
+        if error_block_match is None:
+            continue
+        error_block = error_block_match.group("body")
+        cleared_fields = re.findall(r"set[A-Z][A-Za-z0-9_]*\(\s*[\"']\s*[\"']\s*\)", error_block)
+        if len(cleared_fields) < 2:
+            continue
+        status_match = re.search(r"setStatus\(\s*[\"'](?P<message>[^\"']+)[\"']\s*\)", error_block)
+        if status_match is None:
+            continue
+
+        validator_content = validator_entry["content"]
+        if validator_name not in validator_content or "errors.push" not in validator_content:
+            continue
+
+        evidence_basis = (
+            f"handleSubmit calls {validator_name}, clears the current input values, and falls back to the generic status message '{status_match.group('message')}'."
+        )
+        systemic_impact = (
+            "Users have to re-enter their values after validation fails and still do not get concrete guidance about what to fix."
+        )
+        ai_feedback = "\n\n".join([
+            "**Validation failure clears input and falls back to a generic recovery message**",
+            f"{Path(primary['path']).name} throws away the user's current form values after {validator_name} reports errors, instead of preserving input and surfacing the validator's messages inline.",
+            f"Code: {validator_name}(...) / {cleared_fields[0]} / setStatus('{status_match.group('message')}')",
+            "Suggestion: Keep the entered values on screen and render the validator output near the affected fields so users can recover without starting over.",
+            "Context Scope: cross_file",
+            f"Related Files: {validator_entry['path']}",
+            f"Systemic Impact: {systemic_impact}",
+            "Confidence: medium",
+            f"Evidence Basis: {evidence_basis}",
+        ])
+        return [ReviewIssue(
+            file_path=primary["path"],
+            line_number=_line_number_from_offset(content, error_block_match.start()),
+            issue_type="ui_ux",
+            severity="medium",
+            description="Validation failure clears user input and leaves only a generic recovery path.",
+            code_snippet=_code_snippet(content, error_block_match.start()),
+            ai_feedback=ai_feedback,
+            context_scope="cross_file",
+            related_files=[validator_entry["path"]],
+            systemic_impact=systemic_impact,
+            confidence="medium",
+            evidence_basis=evidence_basis,
+        )]
+
+    return []
+
+
+def _supplement_local_dead_code_findings(
+    target_files: Sequence[FileInfo],
+    review_type: str,
+    issues: Sequence[ReviewIssue],
+    client: AIBackend,
+) -> List[ReviewIssue]:
+    if "dead_code" not in review_type.split("+"):
+        return []
+    if not _is_local_backend(client):
+        return []
+
+    entries = _load_target_file_entries(target_files)
+    if not entries:
+        return []
+
+    supplements: List[ReviewIssue] = []
+    fallback_issue = _supplement_local_dead_code_unreachable_fallback(entries, issues)
+    if fallback_issue is not None:
+        supplements.append(fallback_issue)
+    stale_flag_issue = _supplement_local_dead_code_stale_feature_flag(entries, issues)
+    if stale_flag_issue is not None:
+        supplements.append(stale_flag_issue)
+    compat_issue = _supplement_local_dead_code_obsolete_compat_shim(entries, issues)
+    if compat_issue is not None:
+        supplements.append(compat_issue)
+    return supplements
+
+
+def _has_dead_code_issue_covering(issues: Sequence[ReviewIssue], *markers: str) -> bool:
+    lowered_markers = tuple(marker.lower() for marker in markers)
+    for issue in issues:
+        if issue.issue_type.lower() != "dead_code":
+            continue
+        text = _issue_text(issue)
+        if all(marker in text for marker in lowered_markers):
+            return True
+    return False
+
+
+def _supplement_local_dead_code_unreachable_fallback(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    if _has_dead_code_issue_covering(issues, "unreachable", "legacy"):
+        return None
+
+    for entry in entries:
+        content = entry["content"]
+        flag_match = re.search(r"^(?P<flag>[A-Z][A-Z0-9_]+)\s*=\s*False\s*$", content, re.MULTILINE)
+        if flag_match is None:
+            continue
+        flag_name = flag_match.group("flag")
+        branch_match = re.search(
+            rf"if\s+{flag_name}\s*:\s*return\s+(?P<target>_[A-Za-z0-9_]+)\(",
+            content,
+            re.DOTALL,
+        )
+        if branch_match is None:
+            continue
+        target_name = branch_match.group("target")
+        if target_name not in content:
+            continue
+
+        evidence_basis = (
+            f"{flag_name} is permanently false, so the branch that returns {target_name}(...) is unreachable."
+        )
+        systemic_impact = (
+            "This obsolete legacy fallback can mislead future maintenance because developers may update a path that never runs."
+        )
+        ai_feedback = "\n\n".join([
+            "**Unreachable legacy fallback is still kept behind a permanently false flag**",
+            f"{Path(entry['path']).name} keeps a legacy fallback behind {flag_name} even though that flag is permanently false, so the old path no longer runs.",
+            f"Code: {flag_name} = False / if {flag_name}: return {target_name}(...)",
+            "Suggestion: Remove the permanently disabled fallback branch and its legacy helper, or re-enable it only if there is still a supported live path.",
+            f"Systemic Impact: {systemic_impact}",
+            "Confidence: medium",
+            f"Evidence Basis: {evidence_basis}",
+        ])
+        return ReviewIssue(
+            file_path=entry["path"],
+            line_number=_line_number_from_offset(content, branch_match.start()),
+            issue_type="dead_code",
+            severity="medium",
+            description="An unreachable legacy fallback remains behind a permanently false flag.",
+            code_snippet=_code_snippet(content, flag_match.start()),
+            ai_feedback=ai_feedback,
+            context_scope="local",
+            related_files=[],
+            systemic_impact=systemic_impact,
+            confidence="medium",
+            evidence_basis=evidence_basis,
+        )
+
+    return None
+
+
+def _supplement_local_dead_code_stale_feature_flag(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    if _has_dead_code_issue_covering(issues, "obsolete", "feature flag"):
+        return None
+
+    flags_by_name: Dict[str, Dict[str, str]] = {}
+    for entry in entries:
+        for match in re.finditer(r"^(?P<flag>ENABLE_[A-Z0-9_]+)\s*=\s*False\s*$", entry["content"], re.MULTILINE):
+            flags_by_name[match.group("flag")] = {
+                "path": entry["path"],
+                "content": entry["content"],
+            }
+
+    if not flags_by_name:
+        return None
+
+    for entry in entries:
+        content = entry["content"]
+        for flag_name, flag_entry in flags_by_name.items():
+            if entry["path"] == flag_entry["path"]:
+                continue
+            branch_match = re.search(
+                rf"if\s+{flag_name}\s*:\s*(?P<body>.*?)(?:\n\S|\Z)",
+                content,
+                re.DOTALL,
+            )
+            if branch_match is None:
+                continue
+            body = branch_match.group("body")
+            if "bulk archive" not in body.lower() and "_handle_" not in body:
+                continue
+
+            evidence_basis = (
+                f"{Path(flag_entry['path']).name} sets {flag_name} to False, so the guarded UI branch and its handler in {Path(entry['path']).name} are obsolete."
+            )
+            systemic_impact = (
+                "This obsolete feature-flag path strands dormant UI behavior, so future changes can keep touching handlers that users can no longer reach."
+            )
+            ai_feedback = "\n\n".join([
+                "**Stale feature flag leaves a dormant UI handler behind**",
+                f"{Path(entry['path']).name} still keeps a UI branch and handler behind {flag_name}, but {Path(flag_entry['path']).name} permanently disables that feature.",
+                f"Code: if {flag_name}: ...",
+                "Suggestion: Remove the stale feature flag and the dormant handler path, or reconnect the feature if it is still supposed to ship.",
+                "Context Scope: cross_file",
+                f"Related Files: {flag_entry['path']}",
+                f"Systemic Impact: {systemic_impact}",
+                "Confidence: medium",
+                f"Evidence Basis: {evidence_basis}",
+            ])
+            return ReviewIssue(
+                file_path=entry["path"],
+                line_number=_line_number_from_offset(content, branch_match.start()),
+                issue_type="dead_code",
+                severity="medium",
+                description="A stale feature flag leaves a dormant UI handler on an obsolete path.",
+                code_snippet=_code_snippet(content, branch_match.start()),
+                ai_feedback=ai_feedback,
+                context_scope="cross_file",
+                related_files=[flag_entry["path"]],
+                systemic_impact=systemic_impact,
+                confidence="medium",
+                evidence_basis=evidence_basis,
+            )
+
+    return None
+
+
+def _supplement_local_dead_code_obsolete_compat_shim(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        if issue.issue_type.lower() != "dead_code":
+            continue
+        text = _issue_text(issue)
+        related_files = [Path(path).name for path in issue.related_files]
+        if (
+            "render_legacy_csv" in text
+            and "obsolete" in text
+            and "report_service.py" in related_files
+        ):
+            return None
+
+    api_entry = next((entry for entry in entries if Path(entry["path"]).stem == "api"), None)
+    report_service_entry = next((entry for entry in entries if Path(entry["path"]).stem == "report_service"), None)
+    legacy_entry = next((entry for entry in entries if Path(entry["path"]).stem == "legacy_export"), None)
+    if api_entry is None or report_service_entry is None or legacy_entry is None:
+        return None
+
+    legacy_content = legacy_entry["content"]
+    if "render_legacy_csv" not in legacy_content:
+        return None
+    if "LEGACY_EXPORT_ENABLED = False" not in legacy_content:
+        return None
+
+    report_service_content = report_service_entry["content"]
+    if "render_modern_csv" not in report_service_content or "generate_report" not in report_service_content:
+        return None
+
+    api_content = api_entry["content"]
+    if "generate_report" not in api_content:
+        return None
+
+    evidence_basis = (
+        f"report_service.py routes generate_report through render_modern_csv, while render_legacy_csv remains behind LEGACY_EXPORT_ENABLED = False and has no live caller."
+    )
+    systemic_impact = (
+        "This obsolete compatibility shim keeps a dead export path in the tree, which increases cleanup risk because future changes may update code that no longer runs."
+    )
+    ai_feedback = "\n\n".join([
+        "**Obsolete compatibility shim remains after the live export flow moved elsewhere**",
+        "The live report path now runs through the modern exporter, but the legacy compatibility shim is still kept in the project even though the old route is permanently disabled.",
+        "Code: LEGACY_EXPORT_ENABLED = False / generate_report(...) -> render_modern_csv(...) / render_legacy_csv(...) remains defined",
+        "Suggestion: Remove the obsolete compatibility shim and its helper once the modern export path is the only supported route.",
+        "Context Scope: cross_file",
+        f"Related Files: {report_service_entry['path']}, {api_entry['path']}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: medium",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=legacy_entry["path"],
+        line_number=_line_number_from_offset(legacy_content, legacy_content.index("render_legacy_csv")),
+        issue_type="dead_code",
+        severity="medium",
+        description="An unused legacy compatibility shim remains even though the live export flow uses the modern path.",
+        code_snippet=_code_snippet(legacy_content, legacy_content.index("LEGACY_EXPORT_ENABLED")),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=[report_service_entry["path"], api_entry["path"]],
+        systemic_impact=systemic_impact,
+        confidence="medium",
+        evidence_basis=evidence_basis,
+    )
+
+
+def _supplement_local_error_handling_findings(
+    target_files: Sequence[FileInfo],
+    review_type: str,
+    issues: Sequence[ReviewIssue],
+    client: AIBackend,
+) -> List[ReviewIssue]:
+    if "error_handling" not in review_type.split("+"):
+        return []
+    if not _is_local_backend(client):
+        return []
+
+    entries = _load_target_file_entries(target_files)
+    if len(entries) < 2:
+        return []
+
+    supplements: List[ReviewIssue] = []
+    false_success_supplement = _supplement_local_false_success_error_handling(entries, issues)
+    if false_success_supplement is not None:
+        supplements.append(false_success_supplement)
+    timeout_supplement = _supplement_local_retryless_timeout_error_handling(entries, issues)
+    if timeout_supplement is not None:
+        supplements.append(timeout_supplement)
+    return supplements
+
+
+def _supplement_local_false_success_error_handling(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        if issue.issue_type.lower() != "error_handling":
+            continue
+        related_files = [Path(path).name for path in issue.related_files]
+        evidence_basis = (issue.evidence_basis or "").lower()
+        systemic_impact = (issue.systemic_impact or "").lower()
+        if (
+            issue.context_scope == "cross_file"
+            and "except" in evidence_basis
+            and "completed" in evidence_basis
+            and ("false success" in systemic_impact or "believ" in systemic_impact)
+            and related_files
+        ):
+            return None
+
+    for caller_entry in entries:
+        caller_content = caller_entry["content"]
+        import_match = re.search(
+            r"from\s+\.?+(?P<module>[A-Za-z0-9_\.]+)\s+import\s+(?P<symbol>[A-Za-z0-9_]+)",
+            caller_content,
+        )
+        if import_match is None:
+            continue
+
+        symbol_name = import_match.group("symbol")
+        assignment_match = re.search(
+            rf"(?P<result>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*{symbol_name}\(",
+            caller_content,
+        )
+        if assignment_match is None:
+            continue
+
+        result_name = assignment_match.group("result")
+        status_match = re.search(
+            rf"if\s+{result_name}\[[\"']status[\"']\]\s*==\s*[\"']completed[\"']\s*:\s*(?P<body>.*?)(?:\n\S|\Z)",
+            caller_content,
+            re.DOTALL,
+        )
+        if status_match is None:
+            continue
+
+        success_body = status_match.group("body")
+        success_message_match = re.search(r"[\"'](?P<message>[^\"']*finished[^\"']*)[\"']", success_body, re.IGNORECASE)
+        success_message = success_message_match.group("message") if success_message_match else "success"
+
+        related_stem = Path(import_match.group("module").split(".")[-1]).stem
+        callee_entry = next(
+            (
+                entry for entry in entries
+                if entry["path"] != caller_entry["path"] and Path(entry["path"]).stem == related_stem
+            ),
+            None,
+        )
+        if callee_entry is None:
+            continue
+
+        callee_content = callee_entry["content"]
+        if symbol_name not in callee_content:
+            continue
+        if "except Exception" not in callee_content:
+            continue
+        if '"status": "completed"' not in callee_content and "'status': 'completed'" not in callee_content:
+            continue
+
+        evidence_basis = (
+            f"{Path(caller_entry['path']).name} returns '{success_message}' when {result_name}['status'] == 'completed', "
+            f"while {Path(callee_entry['path']).name} has except Exception returning {{'status': 'completed'}}."
+        )
+        systemic_impact = (
+            "False success can reach operators and callers because an upstream exception is converted into a completed status and then surfaced as a successful result."
+        )
+        ai_feedback = "\n\n".join([
+            "**Caller reports success even when an upstream exception is swallowed into a completed status**",
+            f"{Path(caller_entry['path']).name} treats {result_name}['status'] == 'completed' as success and returns '{success_message}', but {Path(callee_entry['path']).name} can reach that same status from except Exception.",
+            f"Code: {result_name} = {symbol_name}(...) / if {result_name}['status'] == 'completed': return ... / except Exception: return {{'status': 'completed'}}",
+            "Suggestion: Propagate the failure explicitly from the worker, return a distinct failed status or error payload, and make the caller require a trustworthy success signal before showing success to users or operators.",
+            "Context Scope: cross_file",
+            f"Related Files: {callee_entry['path']}",
+            f"Systemic Impact: {systemic_impact}",
+            "Confidence: medium",
+            f"Evidence Basis: {evidence_basis}",
+        ])
+        return ReviewIssue(
+            file_path=caller_entry["path"],
+            line_number=_line_number_from_offset(caller_content, status_match.start()),
+            issue_type="error_handling",
+            severity="high",
+            description="The caller reports success even though the upstream import path can swallow an exception into a completed status.",
+            code_snippet=_code_snippet(caller_content, assignment_match.start()),
+            ai_feedback=ai_feedback,
+            context_scope="cross_file",
+            related_files=[callee_entry["path"]],
+            systemic_impact=systemic_impact,
+            confidence="medium",
+            evidence_basis=evidence_basis,
+        )
+
+    return None
+
+
+def _supplement_local_retryless_timeout_error_handling(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        if issue.issue_type.lower() != "error_handling":
+            continue
+        related_files = [Path(path).name for path in issue.related_files]
+        evidence_basis = (issue.evidence_basis or "").lower()
+        systemic_impact = (issue.systemic_impact or "").lower()
+        if (
+            issue.context_scope == "cross_file"
+            and "timeouterror" in evidence_basis
+            and "retryable" in evidence_basis
+            and ("recovery" in systemic_impact or "outage" in systemic_impact)
+            and "sync_worker.py" in related_files
+        ):
+            return None
+
+    for caller_entry in entries:
+        caller_content = caller_entry["content"]
+        import_match = re.search(
+            r"from\s+\.?+(?P<module>[A-Za-z0-9_\.]+)\s+import\s+(?P<symbol>[A-Za-z0-9_]+)",
+            caller_content,
+        )
+        if import_match is None:
+            continue
+
+        symbol_name = import_match.group("symbol")
+        assignment_match = re.search(
+            rf"(?P<result>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*{symbol_name}\(",
+            caller_content,
+        )
+        if assignment_match is None:
+            continue
+
+        result_name = assignment_match.group("result")
+        failed_match = re.search(
+            rf"if\s+{result_name}\[[\"']status[\"']\]\s*==\s*[\"']failed[\"']\s*:\s*(?P<body>.*?)(?:\n\S|\Z)",
+            caller_content,
+            re.DOTALL,
+        )
+        if failed_match is None:
+            continue
+
+        failed_body = failed_match.group("body")
+        if "disable_background_sync()" not in failed_body:
+            continue
+        message_match = re.search(r"[\"'](?P<message>[^\"']*disabled[^\"']*)[\"']", failed_body, re.IGNORECASE)
+        disabled_message = message_match.group("message") if message_match else "disabled"
+
+        related_stem = Path(import_match.group("module").split(".")[-1]).stem
+        callee_entry = next(
+            (
+                entry for entry in entries
+                if entry["path"] != caller_entry["path"] and Path(entry["path"]).stem == related_stem
+            ),
+            None,
+        )
+        if callee_entry is None:
+            continue
+
+        callee_content = callee_entry["content"]
+        if symbol_name not in callee_content:
+            continue
+        if "except TimeoutError" not in callee_content:
+            continue
+        if "retryable" not in callee_content:
+            continue
+
+        evidence_basis = (
+            f"{Path(callee_entry['path']).name} catches TimeoutError and returns retryable=True, while "
+            f"{Path(caller_entry['path']).name} disables background sync and returns '{disabled_message}' as soon as {result_name}['status'] == 'failed'."
+        )
+        systemic_impact = (
+            "Delayed recovery can follow a transient timeout because the caller converts a retryable failure into terminal disablement instead of preserving the automatic retry path."
+        )
+        ai_feedback = "\n\n".join([
+            "**Retryable timeout is converted into terminal disablement instead of a recovery path**",
+            f"{Path(callee_entry['path']).name} marks TimeoutError as retryable, but {Path(caller_entry['path']).name} disables background sync immediately and returns '{disabled_message}' instead of retrying or preserving recovery.",
+            f"Code: except TimeoutError: return {{'status': 'failed', 'retryable': True}} / if {result_name}['status'] == 'failed': disable_background_sync()",
+            "Suggestion: Preserve transient-failure recovery semantics by checking the retryable flag, retrying with backoff, or escalating the timeout without disabling the feature until retries are exhausted or the failure is known to be permanent.",
+            "Context Scope: cross_file",
+            f"Related Files: {callee_entry['path']}",
+            f"Systemic Impact: {systemic_impact}",
+            "Confidence: medium",
+            f"Evidence Basis: {evidence_basis}",
+        ])
+        return ReviewIssue(
+            file_path=caller_entry["path"],
+            line_number=_line_number_from_offset(caller_content, failed_match.start()),
+            issue_type="error_handling",
+            severity="high",
+            description="The caller disables background sync even though the upstream timeout path is explicitly marked retryable.",
+            code_snippet=_code_snippet(caller_content, assignment_match.start()),
+            ai_feedback=ai_feedback,
+            context_scope="cross_file",
+            related_files=[callee_entry["path"]],
+            systemic_impact=systemic_impact,
+            confidence="medium",
+            evidence_basis=evidence_basis,
+        )
+
+    return None
+
+
+def _supplement_local_data_validation_findings(
+    target_files: Sequence[FileInfo],
+    review_type: str,
+    issues: Sequence[ReviewIssue],
+    client: AIBackend,
+) -> List[ReviewIssue]:
+    if "data_validation" not in review_type.split("+"):
+        return []
+    if not _is_local_backend(client):
+        return []
+
+    entries = _load_target_file_entries(target_files)
+    if len(entries) < 2:
+        return []
+
+    supplements: List[ReviewIssue] = []
+
+    inverted_window = _supplement_local_inverted_window_data_validation(entries, issues)
+    if inverted_window is not None:
+        supplements.append(inverted_window)
+
+    rollout_percent_range = _supplement_local_rollout_percent_range_data_validation(entries, issues)
+    if rollout_percent_range is not None:
+        supplements.append(rollout_percent_range)
+
+    return supplements
+
+
+def _supplement_local_inverted_window_data_validation(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        if issue.issue_type.lower().replace(" ", "_") != "data_validation":
+            continue
+        related_files = [Path(path).name for path in issue.related_files]
+        evidence_basis = (issue.evidence_basis or "").lower()
+        systemic_impact = (issue.systemic_impact or "").lower()
+        if (
+            issue.context_scope == "cross_file"
+            and "end_hour" in evidence_basis
+            and "start_hour" in evidence_basis
+            and ("invalid" in systemic_impact or "negative" in systemic_impact)
+            and "validation.py" in related_files
+        ):
+            return None
+
+    validator_entry = next((entry for entry in entries if Path(entry["path"]).name == "validation.py"), None)
+    api_entry = next((entry for entry in entries if Path(entry["path"]).name == "api.py"), None)
+    if validator_entry is None or api_entry is None:
+        return None
+
+    validator_content = validator_entry["content"]
+    api_content = api_entry["content"]
+    if "validate_window(payload)" not in api_content:
+        return None
+    if 'int(payload["end_hour"]) - int(payload["start_hour"])' not in api_content:
+        return None
+    if 'int(payload["start_hour"])' not in validator_content or 'int(payload["end_hour"])' not in validator_content:
+        return None
+    if re.search(
+        r"start_hour\s*(?:<|<=|>|>=|==|!=).*end_hour|end_hour\s*(?:<|<=|>|>=|==|!=).*start_hour",
+        validator_content,
+    ):
+        return None
+
+    evidence_basis = (
+        "validation.py coerces start_hour and end_hour to int but never checks that end_hour is greater than start_hour before api.py computes duration_hours."
+    )
+    systemic_impact = (
+        "Invalid maintenance windows can reach runtime use, so inverted time ranges produce negative durations and incorrect scheduling state instead of being rejected."
+    )
+    ai_feedback = "\n\n".join([
+        "**Validator accepts an inverted time window that the API treats as schedulable**",
+        "validation.py only checks field presence and integer coercion for start_hour and end_hour, but api.py subtracts those fields immediately, so an end before start still becomes a scheduled maintenance window.",
+        "Code: validate_window(payload) / int(payload['end_hour']) - int(payload['start_hour']) / validation only calls int(...) on both fields",
+        "Suggestion: Enforce the ordering constraint in validate_window after parsing the hours, or define explicit overnight-window semantics before callers compute duration_hours.",
+        "Context Scope: cross_file",
+        f"Related Files: {validator_entry['path']}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: medium",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=api_entry["path"],
+        line_number=_line_number_from_offset(api_content, api_content.index("validate_window(payload)")),
+        issue_type="data_validation",
+        severity="high",
+        description="The validator never rejects an end_hour that comes before start_hour, so invalid maintenance windows reach the scheduling path.",
+        code_snippet=_code_snippet(api_content, api_content.index("validate_window(payload)")),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=[validator_entry["path"]],
+        systemic_impact=systemic_impact,
+        confidence="medium",
+        evidence_basis=evidence_basis,
+    )
+
+
+def _supplement_local_rollout_percent_range_data_validation(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        if issue.issue_type.lower().replace(" ", "_") != "data_validation":
+            continue
+        related_files = [Path(path).name for path in issue.related_files]
+        evidence_basis = (issue.evidence_basis or "").lower()
+        systemic_impact = (issue.systemic_impact or "").lower()
+        if (
+            issue.context_scope == "cross_file"
+            and "rollout_percent" in evidence_basis
+            and "validation.py" in related_files
+            and "invalid" in systemic_impact
+        ):
+            return None
+
+    validator_entry = next((entry for entry in entries if Path(entry["path"]).name == "validation.py"), None)
+    api_entry = next((entry for entry in entries if Path(entry["path"]).name == "api.py"), None)
+    if validator_entry is None or api_entry is None:
+        return None
+
+    validator_content = validator_entry["content"]
+    api_content = api_entry["content"]
+    if "validate_rollout(payload)" not in api_content:
+        return None
+    if 'int(payload["target_hosts"]) * int(payload["rollout_percent"]) // 100' not in api_content:
+        return None
+    if 'int(payload["rollout_percent"])' not in validator_content:
+        return None
+    if re.search(
+        r"rollout_percent\s*(?:<|<=|>|>=|==|!=)|(?:<|<=|>|>=|==|!=)\s*rollout_percent|0\s*<=\s*rollout_percent|rollout_percent\s*<=\s*100|100\s*>=\s*rollout_percent",
+        validator_content,
+    ):
+        return None
+
+    evidence_basis = (
+        "validation.py coerces rollout_percent with int(payload['rollout_percent']) but never constrains it to 0..100 before api.py computes batch_size from rollout_percent and target_hosts."
+    )
+    systemic_impact = (
+        "Invalid rollout percentages can reach runtime use, so out-of-range rollout_percent values produce incorrect batch sizes and invalid rollout state instead of being rejected."
+    )
+    ai_feedback = "\n\n".join([
+        "**Validator accepts rollout_percent values outside the deployment contract**",
+        "validation.py only checks presence and integer coercion for rollout_percent, but api.py multiplies rollout_percent into batch_size immediately, so values below 0 or above 100 still drive rollout logic.",
+        "Code: validate_rollout(payload) / int(payload['target_hosts']) * int(payload['rollout_percent']) // 100 / validation only calls int(...) on rollout_percent",
+        "Suggestion: Parse rollout_percent once in validate_rollout and enforce 0 <= rollout_percent <= 100 before callers compute batch_size or persist rollout settings.",
+        "Context Scope: cross_file",
+        f"Related Files: {validator_entry['path']}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: medium",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=api_entry["path"],
+        line_number=_line_number_from_offset(api_content, api_content.index("validate_rollout(payload)")),
+        issue_type="data_validation",
+        severity="high",
+        description="The validator never constrains rollout_percent to 0..100, so invalid rollout percentages reach batch-size calculations.",
+        code_snippet=_code_snippet(api_content, api_content.index("validate_rollout(payload)")),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=[validator_entry["path"]],
+        systemic_impact=systemic_impact,
+        confidence="medium",
+        evidence_basis=evidence_basis,
+    )
+
+
+def _supplement_local_testing_findings(
+    target_files: Sequence[FileInfo],
+    review_type: str,
+    issues: Sequence[ReviewIssue],
+    client: AIBackend,
+) -> List[ReviewIssue]:
+    if "testing" not in review_type.split("+"):
+        return []
+    if not _is_local_backend(client):
+        return []
+
+    entries = _load_target_file_entries(target_files)
+    if len(entries) < 2:
+        return []
+
+    supplement = _supplement_local_rollout_percent_range_testing(entries, issues)
+    return [supplement] if supplement is not None else []
+
+
+def _supplement_local_rollout_percent_range_testing(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = issue.issue_type.lower().replace(" ", "_")
+        related_files = [Path(path).name for path in issue.related_files]
+        evidence_basis = (issue.evidence_basis or "").lower()
+        systemic_impact = (issue.systemic_impact or "").lower()
+        if (
+            normalized_issue_type == "testing"
+            and issue.context_scope == "cross_file"
+            and "validation.py" in related_files
+            and "rollout_percent" in evidence_basis
+            and ("regress" in systemic_impact or "regression" in systemic_impact)
+        ):
+            return None
+
+    validator_entry = next((entry for entry in entries if Path(entry["path"]).name == "validation.py"), None)
+    api_entry = next((entry for entry in entries if Path(entry["path"]).name == "api.py"), None)
+    test_entry = next((entry for entry in entries if Path(entry["path"]).name == "test_api.py"), None)
+    if validator_entry is None or api_entry is None or test_entry is None:
+        return None
+
+    validator_content = validator_entry["content"]
+    api_content = api_entry["content"]
+    test_content = test_entry["content"]
+    if "validate_rollout(payload)" not in api_content:
+        return None
+    if 'if rollout_percent < 0 or rollout_percent > 100' not in validator_content:
+        return None
+    if 'test_create_rollout_returns_batch_size_for_valid_payload' not in test_content:
+        return None
+    if 'test_create_rollout_rejects_missing_rollout_percent' not in test_content:
+        return None
+    if re.search(r"rollout_percent[^\n]*(?:-1|101)", test_content) or "between 0 and 100" in test_content:
+        return None
+
+    evidence_basis = (
+        "tests/test_api.py covers the happy path and a missing-field case, but never asserts that validate_rollout rejects rollout_percent outside 0..100 before create_rollout uses the validated payload."
+    )
+    systemic_impact = (
+        "The rollout_percent boundary contract is unpinned, so a regression in the 0..100 check could ship unnoticed during refactors without a failing test."
+    )
+    ai_feedback = "\n\n".join([
+        "**The test suite leaves the rollout_percent range contract untested**",
+        "validation.py already rejects rollout_percent values outside 0..100, but tests/test_api.py only covers the happy path and a missing-field failure, so the range guard can regress without any test failure.",
+        "Code: test_create_rollout_returns_batch_size_for_valid_payload / test_create_rollout_rejects_missing_rollout_percent / if rollout_percent < 0 or rollout_percent > 100",
+        "Suggestion: Add a parametrized pytest.raises case that exercises rollout_percent values such as -1 and 101, and keep the assertion tied to the current boundary contract in validate_rollout.",
+        "Context Scope: cross_file",
+        f"Related Files: {validator_entry['path']}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: medium",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=test_entry["path"],
+        line_number=_line_number_from_offset(test_content, test_content.index("def test_create_rollout_returns_batch_size_for_valid_payload")),
+        issue_type="testing",
+        severity="medium",
+        description="The test suite never exercises the rollout_percent range guard, so the existing boundary contract can regress without a failing test.",
+        code_snippet=_code_snippet(test_content, test_content.index("def test_create_rollout_returns_batch_size_for_valid_payload")),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=[validator_entry["path"]],
+        systemic_impact=systemic_impact,
+        confidence="medium",
+        evidence_basis=evidence_basis,
+    )
+
+
+def _supplement_local_regression_findings(
+    target_files: Sequence[FileInfo],
+    review_type: str,
+    issues: Sequence[ReviewIssue],
+    client: AIBackend,
+) -> List[ReviewIssue]:
+    if "regression" not in review_type.split("+"):
+        return []
+    if not _is_local_backend(client):
+        return []
+
+    entries = _load_target_file_entries(target_files)
+    if not entries:
+        return []
+
+    supplements: List[ReviewIssue] = []
+
+    default_sync_disabled = _supplement_local_default_sync_disabled_regression(entries, issues)
+    if default_sync_disabled is not None:
+        supplements.append(default_sync_disabled)
+
+    inverted_sync_guard = _supplement_local_inverted_sync_start_guard_regression(entries, issues)
+    if inverted_sync_guard is not None:
+        supplements.append(inverted_sync_guard)
+
+    return supplements
+
+
+def _supplement_local_default_sync_disabled_regression(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = issue.issue_type.lower().replace(" ", "_")
+        related_files = [Path(path).name for path in issue.related_files]
+        evidence_basis = (issue.evidence_basis or "").lower()
+        systemic_impact = (issue.systemic_impact or "").lower()
+        if (
+            normalized_issue_type == "regression"
+            and issue.context_scope == "cross_file"
+            and "app_startup.py" in related_files
+            and "sync_enabled" in evidence_basis
+            and "disabled" in systemic_impact
+        ):
+            return None
+
+    changed_entry = next((entry for entry in entries if Path(entry["path"]).name == "settings_defaults.py"), None)
+    if changed_entry is None:
+        return None
+
+    settings_path = Path(changed_entry["path"])
+    try:
+        settings_content = _read_file_content(settings_path)
+    except Exception:
+        settings_content = changed_entry.get("content", "")
+    if '"sync_enabled": False' not in settings_content:
+        return None
+
+    app_startup_path = settings_path.parent / "app_startup.py"
+    if not app_startup_path.exists():
+        return None
+
+    app_startup_content = _read_file_content(app_startup_path)
+    if 'preferences["sync_enabled"]' not in app_startup_content:
+        return None
+    if 'sync_scheduler.start()' not in app_startup_content:
+        return None
+
+    evidence_basis = (
+        "settings_defaults.py changes sync_enabled from True to False, and app_startup.py only starts background sync when preferences['sync_enabled'] is true."
+    )
+    systemic_impact = (
+        "Background sync becomes disabled by default, so an existing startup workflow silently stops running for users who rely on the prior default behavior."
+    )
+    ai_feedback = "\n\n".join([
+        "**The diff disables background sync for default-configured users**",
+        "settings_defaults.py now returns sync_enabled=False, and app_startup.py gates scheduler startup directly on that default, so the existing sync flow no longer starts unless users opt back in.",
+        "Code: load_default_preferences / \"sync_enabled\": False / if preferences['sync_enabled']: sync_scheduler.start()",
+        "Suggestion: Preserve the previous default unless the behavior change is intentional and migrated explicitly, or add a migration path plus tests that pin the new startup behavior.",
+        "Context Scope: cross_file",
+        f"Related Files: {app_startup_path}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: medium",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=str(settings_path),
+        line_number=_line_number_from_offset(settings_content, settings_content.index('"sync_enabled": False')),
+        issue_type="regression",
+        severity="medium",
+        description="Changing the sync_enabled default to false disables the existing background sync startup path for default-configured users.",
+        code_snippet=_code_snippet(settings_content, settings_content.index('"sync_enabled": False')),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=[str(app_startup_path)],
+        systemic_impact=systemic_impact,
+        confidence="medium",
+        evidence_basis=evidence_basis,
+    )
+
+
+def _supplement_local_inverted_sync_start_guard_regression(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = issue.issue_type.lower().replace(" ", "_")
+        related_files = [Path(path).name for path in issue.related_files]
+        evidence_basis = (issue.evidence_basis or "").lower()
+        systemic_impact = (issue.systemic_impact or "").lower()
+        if (
+            normalized_issue_type == "regression"
+            and issue.context_scope == "cross_file"
+            and "settings_defaults.py" in related_files
+            and "sync_enabled" in evidence_basis
+            and "disabled" in systemic_impact
+        ):
+            return None
+
+    changed_entry = next((entry for entry in entries if Path(entry["path"]).name == "app_startup.py"), None)
+    if changed_entry is None:
+        return None
+
+    startup_path = Path(changed_entry["path"])
+    try:
+        startup_content = _read_file_content(startup_path)
+    except Exception:
+        startup_content = changed_entry.get("content", "")
+    if 'if not preferences["sync_enabled"]' not in startup_content:
+        return None
+    if 'sync_scheduler.start()' not in startup_content:
+        return None
+
+    settings_path = startup_path.parent / "settings_defaults.py"
+    if not settings_path.exists():
+        return None
+
+    settings_content = _read_file_content(settings_path)
+    if '"sync_enabled": True' not in settings_content:
+        return None
+
+    evidence_basis = (
+        "settings_defaults.py still returns sync_enabled=True, but app_startup.py changed the startup guard to if not preferences['sync_enabled'] before calling sync_scheduler.start()."
+    )
+    systemic_impact = (
+        "Background sync is effectively disabled for the default-enabled path, so an existing startup workflow silently stops running for users who keep the prior sync setting."
+    )
+    ai_feedback = "\n\n".join([
+        "**The diff inverts the sync startup guard and disables the existing enabled path**",
+        "settings_defaults.py still enables sync by default, but app_startup.py now starts the scheduler only when sync_enabled is false, so the previously enabled startup flow no longer runs.",
+        "Code: \"sync_enabled\": True / if not preferences['sync_enabled'] / sync_scheduler.start()",
+        "Suggestion: Restore the original guard or add a migration and tests only if the behavior change is intentional; otherwise the current diff silently disables the existing startup path.",
+        "Context Scope: cross_file",
+        f"Related Files: {settings_path}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: medium",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=str(startup_path),
+        line_number=_line_number_from_offset(startup_content, startup_content.index('if not preferences["sync_enabled"]')),
+        issue_type="regression",
+        severity="medium",
+        description="The diff inverts the sync_enabled startup guard, so background sync no longer starts for the default-enabled path.",
+        code_snippet=_code_snippet(startup_content, startup_content.index('if not preferences["sync_enabled"]')),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=[str(settings_path)],
+        systemic_impact=systemic_impact,
+        confidence="medium",
+        evidence_basis=evidence_basis,
+    )
+
+
+def _supplement_local_accessibility_findings(
+    target_files: Sequence[FileInfo],
+    review_type: str,
+    issues: Sequence[ReviewIssue],
+    client: AIBackend,
+) -> List[ReviewIssue]:
+    if "accessibility" not in review_type.split("+"):
+        return []
+    if not _is_local_backend(client):
+        return []
+
+    entries = _load_target_file_entries(target_files)
+    if not entries:
+        return []
+
+    supplements: List[ReviewIssue] = []
+    dialog_semantics = _supplement_local_dialog_semantics_accessibility(entries, issues)
+    if dialog_semantics is not None:
+        supplements.append(dialog_semantics)
+    return supplements
+
+
+def _supplement_local_dialog_semantics_accessibility(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = issue.issue_type.lower().replace(" ", "_")
+        description = (issue.description or "").lower()
+        evidence_basis = (issue.evidence_basis or "").lower()
+        if (
+            normalized_issue_type == "accessibility"
+            and "dialog" in description
+            and ("role" in evidence_basis or "aria-modal" in evidence_basis)
+        ):
+            return None
+
+    changed_entry = next((entry for entry in entries if Path(entry["path"]).name == "SettingsModal.tsx"), None)
+    if changed_entry is None:
+        return None
+
+    modal_path = Path(changed_entry["path"])
+    try:
+        modal_content = _read_file_content(modal_path)
+    except Exception:
+        modal_content = changed_entry.get("content", "")
+
+    if 'className="modal-panel"' not in modal_content:
+        return None
+    if '<h2>' not in modal_content:
+        return None
+    if 'role="dialog"' in modal_content or 'aria-modal=' in modal_content:
+        return None
+
+    evidence_basis = (
+        "SettingsModal.tsx renders the modal panel as a plain div without role='dialog' or aria-modal, so assistive technology never gets dialog semantics for the open settings surface."
+    )
+    systemic_impact = (
+        "Screen reader users may not realize they entered a modal dialog or that the surrounding page is temporarily inactive, which makes the settings flow harder to understand and navigate."
+    )
+    panel_offset = modal_content.index('className="modal-panel"')
+    ai_feedback = "\n\n".join([
+        "**The settings modal is missing dialog semantics**",
+        "The modal opens visually, but the panel is only a div and never exposes role='dialog' or aria-modal to assistive technology, so screen reader users are not told they entered a modal context.",
+        "Code: className=\"modal-panel\" / <h2>Sync settings</h2> / missing role='dialog' and aria-modal",
+        "Suggestion: Add role='dialog', aria-modal='true', and connect the heading with aria-labelledby so assistive technology can announce the modal context correctly.",
+        "Context Scope: local",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: medium",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=str(modal_path),
+        line_number=_line_number_from_offset(modal_content, panel_offset),
+        issue_type="accessibility",
+        severity="medium",
+        description="The settings modal lacks dialog semantics, so screen reader users are not told they entered a modal context.",
+        code_snippet=_code_snippet(modal_content, panel_offset),
+        ai_feedback=ai_feedback,
+        context_scope="local",
+        related_files=[],
+        systemic_impact=systemic_impact,
+        confidence="medium",
+        evidence_basis=evidence_basis,
+    )
 
 
 # ── batch helper ───────────────────────────────────────────────────────────
@@ -1488,6 +3463,19 @@ def _merge_combined_with_fallback(
     when the entire batch is genuinely clean.
     """
     issues = parse_review_response(feedback, file_entries, review_type)
+
+    # Small combined batches are prone to backend-level false negatives where the
+    # model returns an empty combined result even though per-file review finds issues.
+    # Retry these batches individually before accepting a clean outcome.
+    if not issues and len(file_entries) <= 3:
+        logger.warning(
+            "Empty combined response for %d-file batch [%s] – retrying individually",
+            len(file_entries),
+            review_type,
+        )
+        return _process_files_individually(
+            target_files, review_type, client, lang, spec_content, cancel_check
+        )
 
     # Build the set of file paths/names that appear in the parsed results
     attributed: set[str] = set()

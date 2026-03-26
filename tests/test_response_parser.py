@@ -283,6 +283,93 @@ class TestJsonParse:
         assert "Context Scope: cross_file" in issues[0].ai_feedback
         assert "Related Files: src/utils.py" in issues[0].ai_feedback
 
+    def test_json_ui_ux_related_findings_promote_scope_to_cross_file(self, file_entries):
+        response = json.dumps({
+            "files": [
+                {
+                    "filename": "src/app.py",
+                    "findings": [
+                        {
+                            "issue_id": "issue-0001",
+                            "severity": "medium",
+                            "category": "ui_ux",
+                            "title": "Primary flow hides save impact",
+                            "description": "A save path changes behavior without clear feedback.",
+                            "context_scope": "local",
+                            "related_issues": [1],
+                        }
+                    ],
+                },
+                {
+                    "filename": "src/utils.py",
+                    "findings": [
+                        {
+                            "issue_id": "issue-0002",
+                            "severity": "low",
+                            "category": "ui_ux",
+                            "title": "Secondary tab obscures the setting",
+                            "description": "The collaborating tab hides the affected preference.",
+                            "context_scope": "local",
+                            "systemic_impact": "Users can lose trust when settings appear to change in another view.",
+                            "evidence_basis": "The related tab owns the collaborating setting.",
+                            "related_issues": [0],
+                        }
+                    ],
+                },
+            ],
+        })
+
+        issues = _try_json_parse(response, file_entries, "ui_ux")
+
+        assert len(issues) == 2
+        assert issues[0].context_scope == "cross_file"
+        assert issues[0].related_files == ["/project/src/utils.py"]
+        assert issues[0].systemic_impact == "Users can lose trust when settings appear to change in another view."
+        assert issues[0].evidence_basis == "The related tab owns the collaborating setting."
+        assert "Context Scope: cross_file" in issues[0].ai_feedback
+        assert "Related Files: /project/src/utils.py" in issues[0].ai_feedback
+
+    def test_json_dead_code_subtypes_normalize_to_dead_code(self, file_entries):
+        response = json.dumps({
+            "files": [{
+                "filename": "src/app.py",
+                "findings": [{
+                    "severity": "info",
+                    "category": "dead_function",
+                    "title": "Legacy helper has no callers",
+                    "description": "The obsolete fallback path is unreachable and has no call sites.",
+                    "evidence_basis": "USE_LEGACY_RENDERER is permanently false.",
+                }],
+            }],
+        })
+
+        issues = _try_json_parse(response, file_entries, "dead_code")
+
+        assert len(issues) == 1
+        assert issues[0].issue_type == "dead_code"
+        assert issues[0].severity == "medium"
+
+    def test_json_dormant_feature_normalizes_to_dead_code(self, file_entries):
+        response = json.dumps({
+            "files": [{
+                "filename": "src/app.py",
+                "findings": [{
+                    "severity": "low",
+                    "category": "dormant_feature",
+                    "title": "Dormant feature flag",
+                    "description": "The feature flag stays disabled so the handler never runs.",
+                    "systemic_impact": "This obsolete path can mislead future maintenance.",
+                    "evidence_basis": "ENABLE_BULK_ARCHIVE is set to false.",
+                }],
+            }],
+        })
+
+        issues = _try_json_parse(response, file_entries, "dead_code")
+
+        assert len(issues) == 1
+        assert issues[0].issue_type == "dead_code"
+        assert issues[0].severity == "medium"
+
     def test_json_architecture_metadata_promotes_cross_file_scope_to_project(self, file_entries):
         response = json.dumps({
             "files": [{

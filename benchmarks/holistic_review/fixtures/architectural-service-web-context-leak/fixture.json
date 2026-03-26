@@ -1,0 +1,20 @@
+{
+  "id": "architectural-service-web-context-leak",
+  "title": "Architectural Controller Repository Bypass",
+  "description": "A controller bypasses the service layer and imports the repository module directly instead of delegating through the service boundary.",
+  "scope": "project",
+  "review_types": ["architecture"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "controller-bypasses-service-for-repository",
+      "file_path_contains": "orders_controller.py",
+      "issue_type": "architecture",
+      "minimum_severity": "medium",
+      "context_scope": "project",
+      "systemic_impact_contains": "layer",
+      "evidence_basis_contains": "service"
+    }
+  ]
+}

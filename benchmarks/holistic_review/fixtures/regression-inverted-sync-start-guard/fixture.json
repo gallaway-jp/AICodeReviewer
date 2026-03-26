@@ -1,0 +1,23 @@
+{
+  "id": "regression-inverted-sync-start-guard",
+  "title": "Regression Inverted Sync Start Guard",
+  "description": "A diff inverts the startup guard for background sync, so the existing sync flow no longer starts for users whose preferences still enable sync.",
+  "scope": "diff",
+  "review_types": ["regression"],
+  "project_dir": "project",
+  "diff_file": "changes.diff",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "inverted-sync-start-guard-regression",
+      "description_keywords": ["sync", "guard"],
+      "file_path_contains_any": ["app_startup.py", "settings_defaults.py"],
+      "issue_type": "regression",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["settings_defaults.py"],
+      "systemic_impact_contains": "disabled",
+      "evidence_basis_contains": "sync_enabled"
+    }
+  ]
+}
