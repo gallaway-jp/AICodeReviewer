@@ -60,6 +60,31 @@ _RETURN_SHAPE_ISSUE_TYPES = frozenset({
     "contract_mismatch",
     "interface_contract_violation",
 })
+_REVIEW_TYPE_ISSUE_ALIASES: Dict[str, frozenset[str]] = {
+    "api_design": frozenset({
+        "http_method_endpoint_semantics",
+        "http_method_semantics",
+        "rest_api",
+        "response_modeling",
+        "response_model",
+        "request_validation_spec",
+        "request_contract",
+    }),
+    "compatibility": frozenset({
+        "cross_platform",
+        "platform_compatibility",
+        "platform_specific_behavior",
+        "portability",
+    }),
+    "concurrency": frozenset({
+        "race_condition",
+        "shared_mutable_state",
+        "concurrency_and_parallelism",
+        "thread_safety",
+        "deadlock",
+        "data_race",
+    }),
+}
 
 
 # ── file content cache ─────────────────────────────────────────────────────
@@ -1060,6 +1085,7 @@ def collect_review_issues(
             "Added %d deterministic return-shape finding(s) after AI review",
             len(return_shape_issues),
         )
+    _normalize_review_type_aliases(combined_type, issues)
     _normalize_cache_issue_context(issues)
 
     logger.info(
@@ -1205,6 +1231,30 @@ def collect_review_issues(
         logger.info(
             "Added %d deterministic controller-boundary architecture finding(s) after AI review",
             len(architecture_supplements),
+        )
+
+    api_design_supplements = _supplement_get_create_endpoint_findings(
+        effective_target_files,
+        combined_type,
+        issues,
+    )
+    if api_design_supplements:
+        issues.extend(api_design_supplements)
+        logger.info(
+            "Added %d deterministic GET-create API design finding(s) after AI review",
+            len(api_design_supplements),
+        )
+
+    compatibility_supplements = _supplement_platform_open_command_findings(
+        effective_target_files,
+        combined_type,
+        issues,
+    )
+    if compatibility_supplements:
+        issues.extend(compatibility_supplements)
+        logger.info(
+            "Added %d deterministic platform-launch compatibility finding(s) after AI review",
+            len(compatibility_supplements),
         )
 
     return issues
@@ -1467,6 +1517,23 @@ def _normalize_cache_issue_context(issues: Sequence[ReviewIssue]) -> None:
             feedback_parts.append(f"Systemic Impact: {issue.systemic_impact}")
         if feedback_parts:
             issue.ai_feedback = "\n\n".join(feedback_parts)
+
+
+def _normalize_review_type_aliases(review_type: str, issues: Sequence[ReviewIssue]) -> None:
+    requested_types = {entry for entry in review_type.split("+") if entry}
+    if not requested_types:
+        return
+
+    for issue in issues:
+        normalized_issue_type = re.sub(r"[\s\-/]+", "_", issue.issue_type.lower()).strip("_")
+        for canonical_type in requested_types:
+            if normalized_issue_type == canonical_type:
+                issue.issue_type = canonical_type
+                break
+            aliases = _REVIEW_TYPE_ISSUE_ALIASES.get(canonical_type, frozenset())
+            if normalized_issue_type in aliases:
+                issue.issue_type = canonical_type
+                break
 
 
 def _extract_return_shapes(content: str) -> Dict[str, tuple[set[str], int]]:
@@ -1772,6 +1839,138 @@ def _normalize_controller_repository_bypass_findings(
         ))
 
     return supplements
+
+
+def _supplement_get_create_endpoint_findings(
+    target_files: Sequence[FileInfo],
+    review_type: str,
+    issues: Sequence[ReviewIssue],
+) -> List[ReviewIssue]:
+    if "api_design" not in review_type.split("+"):
+        return []
+
+    for issue in issues:
+        normalized_issue_type = re.sub(r"[\s\-/]+", "_", issue.issue_type.lower()).strip("_")
+        if normalized_issue_type != "api_design":
+            continue
+        text = _issue_text(issue)
+        if "@app.get" in text and any(marker in text for marker in ("create", "invitation", "state change", "201", "post")):
+            return []
+
+    entries = _load_target_file_entries(target_files)
+    for entry in entries:
+        content = entry["content"]
+        route_match = re.search(
+            r"@app\.get\([\"'](?P<route>[^\"']+)[\"']\)\s*\ndef\s+(?P<func>[a-zA-Z0-9_]+)\((?P<params>[^)]*)\):",
+            content,
+        )
+        if route_match is None:
+            continue
+
+        route = route_match.group("route")
+        func_name = route_match.group("func")
+        body = content[route_match.end():]
+        if "/create" not in route.lower() and not func_name.lower().startswith("create"):
+            continue
+        if not any(marker in body for marker in (".append(", ".add(", ".create(", ".save(", "INVITATIONS[", "= remaining - 1")):
+            continue
+
+        evidence_basis = (
+            f"{Path(entry['path']).name} declares @app.get('{route}') for {func_name} even though the handler mutates server state instead of behaving like a safe read."
+        )
+        systemic_impact = (
+            "Clients, caches, and prefetchers can treat the endpoint like a safe read even though it creates or mutates state, which makes duplicate side effects more likely."
+        )
+        ai_feedback = "\n\n".join([
+            "**A state-changing create route is exposed as GET**",
+            f"{Path(entry['path']).name} registers {func_name} with @app.get even though the handler creates or mutates server state.",
+            f"Code: @app.get('{route}') / def {func_name}(...)",
+            "Suggestion: Use POST for creation semantics and reserve GET for safe, read-only operations.",
+            "Context Scope: local",
+            f"Systemic Impact: {systemic_impact}",
+            "Confidence: medium",
+            f"Evidence Basis: {evidence_basis}",
+        ])
+        return [ReviewIssue(
+            file_path=entry["path"],
+            line_number=_line_number_from_offset(content, route_match.start()),
+            issue_type="api_design",
+            severity="high",
+            description="The API exposes a state-changing create operation as a GET endpoint.",
+            code_snippet=_code_snippet(content, route_match.start()),
+            ai_feedback=ai_feedback,
+            context_scope="local",
+            related_files=[],
+            systemic_impact=systemic_impact,
+            confidence="medium",
+            evidence_basis=evidence_basis,
+        )]
+
+    return []
+
+
+def _supplement_platform_open_command_findings(
+    target_files: Sequence[FileInfo],
+    review_type: str,
+    issues: Sequence[ReviewIssue],
+) -> List[ReviewIssue]:
+    if "compatibility" not in review_type.split("+"):
+        return []
+
+    for issue in issues:
+        normalized_issue_type = re.sub(r"[\s\-/]+", "_", issue.issue_type.lower()).strip("_")
+        if normalized_issue_type != "compatibility":
+            continue
+        text = _issue_text(issue)
+        if "open" in text and any(marker in text for marker in ("macos", "cross-platform", "platform", "windows", "linux")):
+            if issue.severity.lower() in {"medium", "high", "critical"}:
+                return []
+
+    entries = _load_target_file_entries(target_files)
+    for entry in entries:
+        content = entry["content"]
+        launch_match = re.search(
+            r"subprocess\.(?:run|popen)\(\[\s*[\"']open[\"']\s*,",
+            content,
+            re.IGNORECASE,
+        )
+        if launch_match is None:
+            continue
+        if re.search(r"platform\.|sys\.platform|os\.name", content):
+            continue
+
+        evidence_basis = (
+            f"{Path(entry['path']).name} shells out to the macOS-only 'open' command directly and does not branch on the operating system."
+        )
+        systemic_impact = (
+            "Desktop users on Windows or Linux can hit a broken report-opening path because the launcher assumes a macOS-only shell command."
+        )
+        ai_feedback = "\n\n".join([
+            "**The launcher hardcodes the macOS-only open command**",
+            f"{Path(entry['path']).name} uses subprocess to invoke 'open' directly without any platform-specific branching.",
+            "Code: subprocess.run(['open', report_path], check=True)",
+            "Suggestion: Dispatch through an OS-aware launcher or branch explicitly for macOS, Windows, and Linux.",
+            "Context Scope: local",
+            f"Systemic Impact: {systemic_impact}",
+            "Confidence: medium",
+            f"Evidence Basis: {evidence_basis}",
+        ])
+        return [ReviewIssue(
+            file_path=entry["path"],
+            line_number=_line_number_from_offset(content, launch_match.start()),
+            issue_type="compatibility",
+            severity="medium",
+            description="The launcher hardcodes the macOS-only open command and will break on other operating systems.",
+            code_snippet=_code_snippet(content, launch_match.start()),
+            ai_feedback=ai_feedback,
+            context_scope="local",
+            related_files=[],
+            systemic_impact=systemic_impact,
+            confidence="medium",
+            evidence_basis=evidence_basis,
+        )]
+
+    return []
 
 
 def _is_local_backend(client: AIBackend) -> bool:

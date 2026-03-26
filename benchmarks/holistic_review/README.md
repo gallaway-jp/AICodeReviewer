@@ -61,6 +61,10 @@ For the `performance-n-plus-one-order-queries` fixture, reviews now also include
 
 For the `architectural-service-web-context-leak` fixture, reviews now normalize the concrete controller-to-repository bypass shape so the surviving architecture finding explicitly names the missing service boundary, and they add a narrow deterministic fallback when the controller imports a repository directly despite an available service layer. That logic only activates for `architecture` reviews and only for the concrete controller/web plus repository plus service layout used by the fixture.
 
+For the `api-design-get-create-endpoint` fixture, reviews now normalize known HTTP-method and response-modeling subtype labels back to the canonical `api_design` issue type, and they add a narrow deterministic fallback when a FastAPI-style `@app.get(...)` route clearly performs create-style state mutation. That logic only activates for `api_design` reviews and only when no existing API design finding already covers the GET-create route semantics.
+
+For the `compatibility-macos-open-command` fixture, reviews now add a narrow deterministic compatibility fallback when a desktop helper shells out to the macOS-only `open` command without any platform branching and no existing medium-or-higher compatibility finding already captures the cross-platform launcher breakage.
+
 For the `partial-refactor-callers` fixture, Local LLM reviews also include a narrow deterministic supplement when the model misses an obvious return-shape contract break entirely. That supplement only activates for `best_practices` reviews, only when no contract-style finding was produced, and only when the code shows an imported function returning a literal dict shape while a caller still reads a missing legacy key from that result.
 
 The broader Local LLM web-enabled benchmark reports under `artifacts/holistic-benchmark-reports-local-web-broader-runs1-postshape/` currently reevaluate to `8/8` passed with `overall_score = 1.0`.

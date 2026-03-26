@@ -4,6 +4,8 @@ AICodeReviewer includes a small holistic benchmark suite for review-quality regr
 
 These benchmarks are not unit tests for one helper or parser branch. They model realistic review scenarios, run the tool against known fixture projects, and score whether the resulting findings match the expected issue shape.
 
+Some benchmark categories also rely on narrow reviewer-side normalization or deterministic supplements when a backend drifts into subtype labels or entirely misses an obvious, fixture-specific structural problem. Current examples include cache invalidation, cross-file N+1 query loops, controller-to-repository boundary bypasses, GET-based create routes in `api_design`, macOS-only `open` launch helpers in `compatibility`, and stale return-shape caller mismatches.
+
 ## What The Benchmarks Cover
 
 The fixture catalog lives under `benchmarks/holistic_review/fixtures/`.

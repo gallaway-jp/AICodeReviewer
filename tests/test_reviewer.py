@@ -293,6 +293,167 @@ class TestCollectReviewIssues:
         assert cache_issue.systemic_impact is not None
         assert "stale" in cache_issue.systemic_impact.lower()
 
+    def test_collect_review_issues_normalizes_api_design_subtype_category(self):
+        """API design reviews should collapse known subtype labels back to the canonical api_design type."""
+        mock_client = MagicMock()
+        mock_client.get_review.return_value = json.dumps({
+            "files": [
+                {
+                    "filename": "api.py",
+                    "findings": [
+                        {
+                            "issue_id": "issue-api-0001",
+                            "severity": "high",
+                            "category": "HTTP method / endpoint semantics",
+                            "title": "Create exposed as GET",
+                            "description": "The endpoint uses GET even though it creates data.",
+                            "evidence_basis": "@app.get is used on a create handler.",
+                        }
+                    ],
+                }
+            ]
+        })
+
+        target_files: List[FileInfo] = [  # type: ignore[list-item]
+            {
+                'path': Path('/path/to/api.py'),
+                'content': '@app.get("/api/invitations/create")\ndef create_invitation(payload):\n    INVITATIONS.append(payload)\n',
+                'filename': 'api.py'
+            }
+        ]
+
+        issues = collect_review_issues(target_files, ["api_design"], mock_client, "en")
+
+        assert len(issues) == 1
+        assert issues[0].issue_type == "api_design"
+
+    def test_collect_review_issues_adds_get_create_api_design_finding_when_model_misses_it(self):
+        """API design reviews add a deterministic finding for obvious GET create routes when the model misses the route semantics."""
+        mock_client = MagicMock()
+        mock_client.get_review.return_value = json.dumps({
+            "files": [
+                {
+                    "filename": "api.py",
+                    "findings": [
+                        {
+                            "issue_id": "issue-api-0002",
+                            "severity": "low",
+                            "category": "Security",
+                            "title": "Missing auth",
+                            "description": "The endpoint is unauthenticated.",
+                            "evidence_basis": "No authentication guard exists.",
+                        }
+                    ],
+                }
+            ]
+        })
+
+        target_files: List[FileInfo] = [  # type: ignore[list-item]
+            {
+                'path': Path('/path/to/api.py'),
+                'content': (
+                    'from fastapi import FastAPI\n\n'
+                    'app = FastAPI()\n'
+                    'INVITATIONS = []\n\n'
+                    '@app.get("/api/invitations/create")\n'
+                    'def create_invitation(payload):\n'
+                    '    invitation = {"email": payload["email"]}\n'
+                    '    INVITATIONS.append(invitation)\n'
+                    '    return invitation\n'
+                ),
+                'filename': 'api.py'
+            }
+        ]
+
+        issues = collect_review_issues(target_files, ["api_design"], mock_client, "en")
+
+        api_issue = next(issue for issue in issues if issue.issue_type == "api_design")
+        assert api_issue.severity == "high"
+        assert "@app.get('/api/invitations/create')" in (api_issue.ai_feedback or "")
+        assert "mutates server state" in (api_issue.evidence_basis or "")
+
+    def test_collect_review_issues_adds_platform_open_compatibility_finding_when_model_misses_it(self):
+        """Compatibility reviews add a deterministic finding for macOS-only open-command launchers when the model misses the OS breakage."""
+        mock_client = MagicMock()
+        mock_client.get_review.return_value = json.dumps({
+            "files": [
+                {
+                    "filename": "report_viewer.py",
+                    "findings": [
+                        {
+                            "issue_id": "issue-comp-0001",
+                            "severity": "low",
+                            "category": "Compatibility",
+                            "title": "check=True issue",
+                            "description": "check=True may be unsupported.",
+                            "evidence_basis": "subprocess.run uses check=True.",
+                        }
+                    ],
+                }
+            ]
+        })
+
+        target_files: List[FileInfo] = [  # type: ignore[list-item]
+            {
+                'path': Path('/path/to/report_viewer.py'),
+                'content': (
+                    'import subprocess\n\n'
+                    'def open_exported_report(report_path):\n'
+                    '    subprocess.run(["open", report_path], check=True)\n'
+                ),
+                'filename': 'report_viewer.py'
+            }
+        ]
+
+        issues = collect_review_issues(target_files, ["compatibility"], mock_client, "en")
+
+        compatibility_issue = next(
+            issue for issue in issues
+            if issue.issue_type == "compatibility" and issue.severity == "medium"
+        )
+        assert "macOS-only 'open' command" in (compatibility_issue.evidence_basis or "")
+        assert "Windows or Linux" in (compatibility_issue.systemic_impact or "")
+
+    def test_collect_review_issues_normalizes_concurrency_parallelism_label(self):
+        """Concurrency reviews should collapse generic concurrency subtype labels back to the canonical concurrency type."""
+        mock_client = MagicMock()
+        mock_client.get_review.return_value = json.dumps({
+            "files": [
+                {
+                    "filename": "reservations.py",
+                    "findings": [
+                        {
+                            "issue_id": "issue-con-0001",
+                            "severity": "high",
+                            "category": "Concurrency and Parallelism",
+                            "title": "Slot race",
+                            "description": "Coroutines race on shared slot state.",
+                            "evidence_basis": "available_slots is updated without synchronization.",
+                        }
+                    ],
+                }
+            ]
+        })
+
+        target_files: List[FileInfo] = [  # type: ignore[list-item]
+            {
+                'path': Path('/path/to/reservations.py'),
+                'content': (
+                    'class SlotAllocator:\n'
+                    '    async def reserve_slot(self, request):\n'
+                    '        remaining = self.available_slots.get(request["slot_id"], 0)\n'
+                    '        await self._load_policy(request["user_id"])\n'
+                    '        self.available_slots[request["slot_id"]] = remaining - 1\n'
+                ),
+                'filename': 'reservations.py'
+            }
+        ]
+
+        issues = collect_review_issues(target_files, ["concurrency"], mock_client, "en")
+
+        assert len(issues) == 1
+        assert issues[0].issue_type == "concurrency"
+
     def test_collect_review_issues_adds_n_plus_one_performance_finding_when_model_misses_it(self):
         """Performance reviews add a narrow supplement for obvious cross-file query-in-loop patterns."""
         mock_client = MagicMock()
