@@ -16,7 +16,7 @@ def test_discover_fixtures_returns_expected_catalog():
 
     ids = {fixture.id for fixture in fixtures}
 
-    assert len(fixtures) == 55
+    assert len(fixtures) == 56
     assert ids == {
         "accessibility-dialog-semantic-gap",
         "accessibility-icon-button-label-gap",
@@ -62,6 +62,7 @@ def test_discover_fixtures_returns_expected_catalog():
         "regression-inverted-sync-start-guard",
         "scalability-instance-local-rate-limit-state",
         "scalability-unbounded-pending-events-buffer",
+        "security-path-traversal-download",
         "security-shell-command-injection",
         "security-sql-query-interpolation",
         "security-unsafe-yaml-load",
@@ -99,6 +100,44 @@ def test_evaluate_security_fixture_matches_shell_command_injection(tmp_path):
                             "related_files": ["src/report_export.py"],
                             "systemic_impact": "An attacker can inject shell metacharacters and execute arbitrary commands on the host through the export flow.",
                             "evidence_basis": "report_export.py builds one command string from username, output_format, and output_path before calling subprocess.run(..., shell=True).",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_security_fixture_matches_path_traversal_download(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "security-path-traversal-download" / "fixture.json"
+    )
+    report_path = tmp_path / "security-path-traversal-download.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-sec-0004",
+                            "file_path": "src/attachment_store.py",
+                            "issue_type": "path_traversal",
+                            "severity": "high",
+                            "description": "Request-controlled filename values can trigger path traversal because the download helper joins them directly onto the attachment root before opening the file.",
+                            "ai_feedback": "api.py forwards filename into attachment_store.py, which opens ATTACHMENTS_ROOT / account_id / filename without constraining traversal segments.",
+                            "context_scope": "cross_file",
+                            "related_files": ["src/api.py"],
+                            "systemic_impact": "An attacker can escape the account attachment directory and read arbitrary files that the process can access.",
+                            "evidence_basis": "attachment_store.py opens ATTACHMENTS_ROOT / account_id / filename directly, so traversal sequences in filename can reach unexpected files.",
                         }
                     ]
                 },

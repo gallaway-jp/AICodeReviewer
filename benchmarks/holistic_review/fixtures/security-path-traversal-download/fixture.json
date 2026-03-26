@@ -1,0 +1,21 @@
+{
+  "id": "security-path-traversal-download",
+  "title": "Path Traversal In Attachment Download",
+  "description": "An API handler forwards a request-controlled filename into a storage helper that joins it onto an attachment root and opens the resulting path without constraining traversal.",
+  "scope": "project",
+  "review_types": ["security"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "path-traversal-download",
+      "description_keywords": ["path", "traversal"],
+      "file_path_contains_any": ["api.py", "attachment_store.py"],
+      "issue_type": "security",
+      "minimum_severity": "high",
+      "context_scope": "cross_file",
+      "systemic_impact_contains": "file",
+      "evidence_basis_contains": "filename"
+    }
+  ]
+}

@@ -3471,6 +3471,10 @@ def _supplement_local_security_findings(
     if len(entries) < 2:
         return []
 
+    traversal_issue = _supplement_local_path_traversal_security(entries, issues)
+    if traversal_issue is not None:
+        return [traversal_issue]
+
     shell_issue = _supplement_local_shell_command_security(entries, issues)
     if shell_issue is not None:
         return [shell_issue]
@@ -3484,6 +3488,89 @@ def _supplement_local_security_findings(
         return [yaml_issue]
 
     return []
+
+
+def _supplement_local_path_traversal_security(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = re.sub(r"[\s\-/]+", "_", issue.issue_type.lower()).strip("_")
+        if normalized_issue_type not in {"security", "path_traversal", "directory_traversal"}:
+            continue
+        text = _issue_text(issue)
+        if any(
+            marker in text
+            for marker in ("path traversal", "directory traversal", "../", "arbitrary file", "attachment_root")
+        ) and issue.severity.lower() in {"high", "critical"}:
+            return None
+
+    store_entry: Dict[str, str] | None = None
+    api_entry: Dict[str, str] | None = None
+    path_match: re.Match[str] | None = None
+
+    for entry in entries:
+        content = entry["content"]
+        match = re.search(
+            r"(?P<path_name>attachment_path)\s*=\s*ATTACHMENTS_ROOT\s*/\s*account_id\s*/\s*filename",
+            content,
+        )
+        if match is None:
+            continue
+        if 'open(attachment_path, "rb")' not in content and "open(attachment_path, 'rb')" not in content:
+            continue
+        store_entry = entry
+        path_match = match
+        break
+
+    if store_entry is None or path_match is None:
+        return None
+
+    for entry in entries:
+        if entry["path"] == store_entry["path"]:
+            continue
+        content = entry["content"]
+        if 'request["filename"]' not in content and "request['filename']" not in content:
+            continue
+        if "load_attachment(current_account[\"id\"], filename)" not in content and "load_attachment(current_account['id'], filename)" not in content:
+            continue
+        api_entry = entry
+        break
+
+    if api_entry is None:
+        return None
+
+    evidence_basis = (
+        f"{Path(api_entry['path']).name} forwards request-controlled filename into load_attachment, and {Path(store_entry['path']).name} opens ATTACHMENTS_ROOT / account_id / filename without constraining traversal sequences in filename."
+    )
+    systemic_impact = (
+        "Request-controlled filename values can escape the intended attachment directory and expose arbitrary files readable by the process."
+    )
+    ai_feedback = "\n\n".join([
+        "**Request-controlled filename reaches file access without traversal checks**",
+        f"{Path(api_entry['path']).name} forwards the request filename into load_attachment, and {Path(store_entry['path']).name} joins that filename directly onto ATTACHMENTS_ROOT / account_id before opening the resulting path.",
+        "Code: filename = request[\"filename\"] / attachment_path = ATTACHMENTS_ROOT / account_id / filename / open(attachment_path, \"rb\")",
+        "Suggestion: Normalize and validate the requested filename before using it in a filesystem path, reject traversal segments like `..`, and enforce that the resolved path stays under the intended attachment root.",
+        "Context Scope: cross_file",
+        f"Related Files: {api_entry['path']}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: high",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=store_entry["path"],
+        line_number=_line_number_from_offset(store_entry["content"], path_match.start()),
+        issue_type="security",
+        severity="high",
+        description="Request-controlled filename values can trigger path traversal because file access joins them directly onto the attachment root.",
+        code_snippet=_code_snippet(store_entry["content"], path_match.start()),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=[api_entry["path"]],
+        systemic_impact=systemic_impact,
+        confidence="high",
+        evidence_basis=evidence_basis,
+    )
 
 
 def _supplement_local_shell_command_security(

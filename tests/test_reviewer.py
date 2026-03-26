@@ -1945,6 +1945,54 @@ class TestCollectReviewIssues:
         assert [Path(path).name for path in supplement.related_files] == ["api.py"]
         assert "arbitrary command" in (supplement.systemic_impact or "").lower()
 
+    def test_collect_review_issues_adds_local_path_traversal_security_supplement(self):
+        mock_client = MagicMock()
+        mock_client._backend_kind = "local"
+        mock_client.get_review.return_value = json.dumps({
+            "files": [
+                {"filename": "api.py", "findings": []},
+                {"filename": "attachment_store.py", "findings": []},
+            ],
+        })
+
+        target_files: List[FileInfo] = [  # type: ignore[list-item]
+            {
+                'path': Path('/path/to/api.py'),
+                'content': (
+                    'from .attachment_store import load_attachment\n\n'
+                    'def download_attachment(request, current_account):\n'
+                    '    filename = request["filename"]\n'
+                    '    return load_attachment(current_account["id"], filename)\n'
+                ),
+                'filename': 'api.py'
+            },
+            {
+                'path': Path('/path/to/attachment_store.py'),
+                'content': (
+                    'from pathlib import Path\n\n'
+                    'ATTACHMENTS_ROOT = Path("/srv/app/attachments")\n\n'
+                    'def load_attachment(account_id, filename):\n'
+                    '    attachment_path = ATTACHMENTS_ROOT / account_id / filename\n'
+                    '    with open(attachment_path, "rb") as attachment_file:\n'
+                    '        return attachment_file.read()\n'
+                ),
+                'filename': 'attachment_store.py'
+            },
+        ]
+
+        issues = collect_review_issues(target_files, ["security"], mock_client, "en")
+
+        supplement = next(
+            issue for issue in issues
+            if issue.issue_type == "security"
+            and issue.context_scope == "cross_file"
+            and "filename" in (issue.evidence_basis or "").lower()
+            and "path traversal" in issue.description.lower()
+        )
+        assert Path(supplement.file_path).name == "attachment_store.py"
+        assert [Path(path).name for path in supplement.related_files] == ["api.py"]
+        assert "file" in (supplement.systemic_impact or "").lower()
+
     def test_collect_review_issues_adds_local_sql_query_interpolation_security_supplement(self):
         mock_client = MagicMock()
         mock_client._backend_kind = "local"
