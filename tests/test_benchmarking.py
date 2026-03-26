@@ -16,7 +16,7 @@ def test_discover_fixtures_returns_expected_catalog():
 
     ids = {fixture.id for fixture in fixtures}
 
-    assert len(fixtures) == 58
+    assert len(fixtures) == 59
     assert ids == {
         "accessibility-dialog-semantic-gap",
         "accessibility-icon-button-label-gap",
@@ -62,6 +62,7 @@ def test_discover_fixtures_returns_expected_catalog():
         "regression-inverted-sync-start-guard",
         "scalability-instance-local-rate-limit-state",
         "scalability-unbounded-pending-events-buffer",
+        "security-jwt-signature-bypass",
         "security-path-traversal-download",
         "security-shell-command-injection",
         "security-ssrf-avatar-fetch",
@@ -140,6 +141,44 @@ def test_evaluate_security_fixture_matches_path_traversal_download(tmp_path):
                             "related_files": ["src/api.py"],
                             "systemic_impact": "An attacker can escape the account attachment directory and read arbitrary files that the process can access.",
                             "evidence_basis": "attachment_store.py opens ATTACHMENTS_ROOT / account_id / filename directly, so traversal sequences in filename can reach unexpected files.",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_security_fixture_matches_jwt_signature_bypass(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "security-jwt-signature-bypass" / "fixture.json"
+    )
+    report_path = tmp_path / "security-jwt-signature-bypass.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-sec-0007",
+                            "file_path": "src/token_service.py",
+                            "issue_type": "cryptographic-weakness",
+                            "severity": "high",
+                            "description": "JWT decoding disables signature verification, which lets attackers forge tokens and bypass authentication.",
+                            "ai_feedback": "api.py forwards the bearer token into token_service.py, which calls jwt.decode with verify_signature disabled.",
+                            "context_scope": "cross_file",
+                            "related_files": ["src/api.py"],
+                            "systemic_impact": "An attacker can forge session tokens and bypass authentication because the server accepts unsigned or tampered claims.",
+                            "evidence_basis": "token_service.py disables signature verification in jwt.decode before api.py trusts the resulting role claim.",
                         }
                     ]
                 },

@@ -44,6 +44,8 @@ _ISSUE_TYPE_ALIASES = {
     "security": {
         "security",
         "authentication",
+        "authentication bypass",
+        "authentication_bypass",
         "authorization",
         "injection",
         "ssrf",
@@ -77,6 +79,9 @@ _ISSUE_TYPE_ALIASES = {
         "injection_risk",
         "insecure_configuration",
         "sensitive_data_exposure",
+        "cryptographic weakness",
+        "cryptographic_weakness",
+        "cryptographic-weakness",
     },
     "performance": {
         "performance",

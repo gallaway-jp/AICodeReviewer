@@ -1,0 +1,20 @@
+{
+  "id": "security-jwt-signature-bypass",
+  "title": "JWT Signature Verification Disabled",
+  "description": "An API handler forwards a bearer token into a helper that decodes it with signature verification disabled, then trusts the forged claims for a protected dashboard decision.",
+  "scope": "project",
+  "review_types": ["security"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "jwt-signature-bypass",
+      "description_keywords": ["token", "signature"],
+      "file_path_contains_any": ["api.py", "token_service.py"],
+      "issue_type": "security",
+      "minimum_severity": "high",
+      "context_scope": "cross_file",
+      "evidence_basis_contains": "signature verification"
+    }
+  ]
+}
