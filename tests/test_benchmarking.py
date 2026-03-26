@@ -16,7 +16,7 @@ def test_discover_fixtures_returns_expected_catalog():
 
     ids = {fixture.id for fixture in fixtures}
 
-    assert len(fixtures) == 60
+    assert len(fixtures) == 61
     assert ids == {
         "accessibility-dialog-semantic-gap",
         "accessibility-icon-button-label-gap",
@@ -65,6 +65,7 @@ def test_discover_fixtures_returns_expected_catalog():
         "security-idor-invoice-download",
         "security-jwt-signature-bypass",
         "security-path-traversal-download",
+        "security-predictable-reset-token",
         "security-shell-command-injection",
         "security-ssrf-avatar-fetch",
         "security-sql-query-interpolation",
@@ -180,6 +181,44 @@ def test_evaluate_security_fixture_matches_jwt_signature_bypass(tmp_path):
                             "related_files": ["src/api.py"],
                             "systemic_impact": "An attacker can forge session tokens and bypass authentication because the server accepts unsigned or tampered claims.",
                             "evidence_basis": "token_service.py disables signature verification in jwt.decode before api.py trusts the resulting role claim.",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_security_fixture_matches_predictable_reset_token(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "security-predictable-reset-token" / "fixture.json"
+    )
+    report_path = tmp_path / "security-predictable-reset-token.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-sec-0009",
+                            "file_path": "src/password_reset.py",
+                            "issue_type": "cryptographic-weakness",
+                            "severity": "high",
+                            "description": "Password reset tokens are deterministic because they are derived directly from the email address, which lets attackers forge valid reset links for known users.",
+                            "ai_feedback": "api.py forwards email into password_reset.py, which computes the reset token with hashlib.sha256(email.encode(...)).hexdigest() instead of using an unpredictable secret token.",
+                            "context_scope": "cross_file",
+                            "related_files": ["src/api.py"],
+                            "systemic_impact": "Anyone who can guess or know a victim email address can generate a valid reset link and take over that account.",
+                            "evidence_basis": "password_reset.py builds a deterministic token directly from the email address and api.py returns that token in the reset link.",
                         }
                     ]
                 },

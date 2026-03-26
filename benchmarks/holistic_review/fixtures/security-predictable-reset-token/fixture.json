@@ -1,0 +1,19 @@
+{
+  "id": "security-predictable-reset-token",
+  "title": "Predictable Password Reset Token",
+  "description": "An API handler requests a password reset token from a helper that derives the token deterministically from the email address, allowing attackers to forge valid reset links for known accounts.",
+  "scope": "project",
+  "review_types": ["security"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "predictable-reset-token",
+      "description_keywords": ["predictable", "token"],
+      "file_path_contains_any": ["api.py", "password_reset.py"],
+      "issue_type": "security",
+      "minimum_severity": "high",
+      "context_scope": "cross_file"
+    }
+  ]
+}
