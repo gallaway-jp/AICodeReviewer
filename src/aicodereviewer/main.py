@@ -4,7 +4,7 @@ CLI entry point for AICodeReviewer.
 
 Supports:
 - Multiple review types per session (``--type security,performance``)
-- Backend selection (``--backend bedrock|kiro|copilot|local``)
+- Backend selection with canonical names or aliases (for example ``--backend bedrock`` or ``--backend ollama``)
 - Full-project and diff-based scopes
 - Dry-run mode
 - Profile management
@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any, Callable, Sequence, cast
 
 from aicodereviewer.auth import get_system_language, set_profile_name, clear_profile
-from aicodereviewer.backends import create_backend, resolve_backend_type
+from aicodereviewer.backends import BACKEND_CHOICES, create_backend, resolve_backend_type
 from aicodereviewer.backends.health import check_backend, HealthReport
 from aicodereviewer.backends.base import REVIEW_TYPE_KEYS, REVIEW_TYPE_META
 from aicodereviewer.config import config
@@ -145,7 +145,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         help=t("cli.help_spec_file"))
 
     # ── backend ────────────────────────────────────────────────────────────
-    parser.add_argument("--backend", choices=["bedrock", "kiro", "copilot", "local"],
+    parser.add_argument("--backend", choices=BACKEND_CHOICES,
                         default=None,
                         help=t("cli.help_backend"))
 
@@ -288,7 +288,7 @@ def _build_tool_parser() -> argparse.ArgumentParser:
     )
     health_parser.add_argument(
         "--backend",
-        choices=["bedrock", "kiro", "copilot", "local"],
+        choices=BACKEND_CHOICES,
         default=None,
         help="Backend override",
     )
@@ -313,7 +313,7 @@ def _build_tool_parser() -> argparse.ArgumentParser:
     fix_plan_parser.add_argument("--issue-id", action="append", dest="issue_ids", default=[])
     fix_plan_parser.add_argument(
         "--backend",
-        choices=["bedrock", "kiro", "copilot", "local"],
+        choices=BACKEND_CHOICES,
         default=None,
     )
     fix_plan_parser.add_argument("--lang", choices=["en", "ja", "default"], default="default")
@@ -349,7 +349,7 @@ def _add_common_review_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--spec-file", metavar="FILE")
     parser.add_argument(
         "--backend",
-        choices=["bedrock", "kiro", "copilot", "local"],
+        choices=BACKEND_CHOICES,
         default=None,
     )
     parser.add_argument("--lang", choices=["en", "ja", "default"], default="default")

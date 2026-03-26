@@ -178,6 +178,23 @@ def test_check_connection_is_standalone(monkeypatch):
     assert run_main_with_args(["--check-connection", "--backend", "kiro"]) == 0
 
 
+def test_check_connection_accepts_backend_alias(monkeypatch):
+    received_names = []
+    mock_backend = MagicMock()
+    mock_backend.validate_connection.return_value = True
+
+    def _fake_create_backend(name):
+        received_names.append(name)
+        return mock_backend
+
+    monkeypatch.setattr(cli, "create_backend", _fake_create_backend)
+
+    exit_code = run_main_with_args(["--check-connection", "--backend", "ollama"])
+
+    assert exit_code == 0
+    assert received_names == ["local"]
+
+
 def test_backend_startup_failure_returns_nonzero(monkeypatch, capsys):
     """Backend creation failures should be reported cleanly and stop the run."""
     monkeypatch.setattr(cli, "create_backend", lambda _name: (_ for _ in ()).throw(RuntimeError("boom")))

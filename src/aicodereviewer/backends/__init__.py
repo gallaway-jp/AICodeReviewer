@@ -30,6 +30,7 @@ __all__ = [
     "KiroBackend",
     "CopilotBackend",
     "LocalLLMBackend",
+    "BACKEND_CHOICES",
     "create_backend",
     "resolve_backend_type",
 ]
@@ -51,6 +52,10 @@ _BACKEND_ALIASES: Dict[str, str] = {
 }
 
 _LOCAL_PROVIDER_ALIASES = {"lmstudio", "ollama", "openai", "anthropic"}
+
+BACKEND_CHOICES = tuple(
+    ["bedrock", "kiro", "copilot", "local", *_BACKEND_ALIASES.keys(), *_LOCAL_PROVIDER_ALIASES]
+)
 
 
 def __getattr__(name: str) -> Type[AIBackend]:

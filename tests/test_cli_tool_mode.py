@@ -341,6 +341,94 @@ def test_tool_health_can_enable_local_web_search(monkeypatch, capsys):
     assert ("local_llm", "enable_web_search", "true") in set_calls
 
 
+def test_tool_health_accepts_backend_alias(monkeypatch, capsys):
+    seen = []
+
+    def _record_set(section, key, value):
+        seen.append((section, key, value))
+
+    monkeypatch.setattr(cli.config, "set_value", _record_set)
+    monkeypatch.setattr(
+        cli,
+        "check_backend",
+        lambda backend: HealthReport(backend=backend, ready=True, checks=[], summary="ok"),
+    )
+
+    exit_code = run_main_with_args([
+        "health",
+        "--backend",
+        "ollama",
+    ])
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert exit_code == 0
+    assert payload["backend"] == "local"
+    assert ("backend", "type", "local") in seen
+    assert ("local_llm", "api_type", "ollama") in seen
+
+
+def test_tool_review_accepts_backend_alias(monkeypatch, capsys):
+    created = []
+
+    report = ReviewReport(
+        project_path="./proj",
+        review_type="best_practices",
+        scope="project",
+        total_files_scanned=1,
+        issues_found=[],
+        generated_at=datetime(2026, 3, 26, 12, 0, 0),
+        language="en",
+        review_types=["best_practices"],
+        programmers=["dev"],
+        reviewers=["rev"],
+        backend="copilot",
+    )
+
+    class FakeRunner:
+        def __init__(self, client, *, scan_fn, backend_name):
+            self.client = client
+            self.scan_fn = scan_fn
+            self.backend_name = backend_name
+            self._last_run_state = {}
+
+        def run(self, **kwargs):
+            self._last_run_state = {
+                "status": "no_issues",
+                "files_scanned": 1,
+                "target_paths": ["./proj/file.py"],
+            }
+            return []
+
+        def build_report(self, issues=None):
+            return report
+
+        def generate_report(self, issues=None, output_file=None):
+            return output_file or "review_report.json"
+
+    def _fake_create_backend(name):
+        created.append(name)
+        return MagicMock()
+
+    monkeypatch.setattr(cli, "create_backend", _fake_create_backend)
+    monkeypatch.setattr(cli, "AppRunner", FakeRunner)
+
+    exit_code = run_main_with_args([
+        "review",
+        "./proj",
+        "--backend",
+        "github-copilot",
+        "--programmers",
+        "dev",
+        "--reviewers",
+        "rev",
+    ])
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert exit_code == 0
+    assert payload["backend"] == "copilot"
+    assert created == ["copilot"]
+
+
 def test_tool_fix_plan_generates_fixes_from_report_artifact(monkeypatch, capsys, tmp_path):
     report_path = tmp_path / "report.json"
     report = ReviewReport(
