@@ -1,0 +1,22 @@
+{
+  "id": "documentation-deployment-topology-docs-incomplete",
+  "title": "Documentation Deployment Topology Incomplete",
+  "description": "The deployment guide tells operators the worker is stateless and can be scaled horizontally across multiple replicas, but the implementation stores job leases in process-local memory so multi-replica deployments can duplicate work.",
+  "scope": "project",
+  "review_types": ["documentation"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "deployment-topology-docs-gap",
+      "description_keywords": ["deployment", "stateless"],
+      "file_path_contains_any": ["deployment.md", "worker.py", "lease_store.py"],
+      "issue_type": "documentation",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["lease_store.py"],
+      "systemic_impact_contains": "operator",
+      "evidence_basis_contains": "lease state is not stored locally"
+    }
+  ]
+}

@@ -16,7 +16,7 @@ def test_discover_fixtures_returns_expected_catalog():
 
     ids = {fixture.id for fixture in fixtures}
 
-    assert len(fixtures) == 62
+    assert len(fixtures) == 63
     assert ids == {
         "accessibility-dialog-semantic-gap",
         "accessibility-icon-button-label-gap",
@@ -47,6 +47,7 @@ def test_discover_fixtures_returns_expected_catalog():
         "desktop-settings-discoverability-gap",
         "desktop-wizard-orientation-gap",
         "diff-signature-break",
+        "documentation-deployment-topology-docs-incomplete",
         "documentation-stale-dry-run-flag",
         "documentation-stale-sync-token-doc",
         "error-handling-retryless-sync-timeout",
@@ -258,6 +259,44 @@ def test_evaluate_security_fixture_matches_open_redirect_login(tmp_path):
                             "related_files": ["src/redirects.py"],
                             "systemic_impact": "Attackers can use trusted login links to bounce users to phishing pages or malicious domains immediately after sign-in.",
                             "evidence_basis": "login() passes the untrusted return_to parameter into build_post_login_redirect(), which returns the external destination without validation.",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_documentation_fixture_matches_deployment_topology_gap(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "documentation-deployment-topology-docs-incomplete" / "fixture.json"
+    )
+    report_path = tmp_path / "documentation-deployment-topology-docs-incomplete.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-doc-0003",
+                            "file_path": "docs/deployment.md",
+                            "issue_type": "documentation",
+                            "severity": "medium",
+                            "description": "The deployment guide incorrectly describes the worker as stateless and safe to scale across replicas even though job leases live in process-local memory.",
+                            "ai_feedback": "docs/deployment.md tells operators to run multiple worker replicas without shared coordination, but worker.py relies on lease_store.py where lease state is held in a local LEASES dictionary.",
+                            "context_scope": "cross_file",
+                            "related_files": ["src/lease_store.py", "src/worker.py"],
+                            "systemic_impact": "Operators following the deployment guide can roll out multiple workers that each maintain independent lease state, causing duplicate job processing in production.",
+                            "evidence_basis": "deployment.md says the worker is stateless and that lease state is not stored locally, while lease_store.py keeps claims in the process-local LEASES dictionary used by worker.py.",
                         }
                     ]
                 },
