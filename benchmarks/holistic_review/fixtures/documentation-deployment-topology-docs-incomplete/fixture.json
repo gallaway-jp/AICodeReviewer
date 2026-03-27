@@ -13,7 +13,6 @@
       "file_path_contains_any": ["deployment.md", "worker.py", "lease_store.py"],
       "issue_type": "documentation",
       "minimum_severity": "medium",
-      "context_scope": "cross_file",
       "related_files_contains": ["lease_store.py"],
       "systemic_impact_contains": "operator",
       "evidence_basis_contains": "lease state is not stored locally"
