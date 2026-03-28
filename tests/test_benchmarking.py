@@ -16,7 +16,7 @@ def test_discover_fixtures_returns_expected_catalog():
 
     ids = {fixture.id for fixture in fixtures}
 
-    assert len(fixtures) == 76
+    assert len(fixtures) == 77
     assert ids == {
         "accessibility-dialog-semantic-gap",
         "accessibility-fieldset-without-legend",
@@ -73,6 +73,7 @@ def test_discover_fixtures_returns_expected_catalog():
         "regression-inverted-sync-start-guard",
         "regression-stale-caller-utility-signature-change",
         "scalability-instance-local-rate-limit-state",
+        "scalability-connection-pool-exhaustion-under-burst",
         "scalability-unbounded-pending-events-buffer",
         "security-idor-invoice-download",
         "security-jwt-signature-bypass",
@@ -855,6 +856,44 @@ def test_evaluate_scalability_fixture_matches_unbounded_pending_events_buffer(tm
                             "related_files": [],
                             "systemic_impact": "Memory usage rises with traffic because the process has no bounded queue or backpressure when send_batch stalls.",
                             "evidence_basis": "event_buffer.py appends every payload into pending_events and only drains up to 100 entries per flush.",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_scalability_fixture_matches_connection_pool_exhaustion_under_burst(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "scalability-connection-pool-exhaustion-under-burst" / "fixture.json"
+    )
+    report_path = tmp_path / "scalability-connection-pool-exhaustion-under-burst.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-scale-0006",
+                            "file_path": "src/api.py",
+                            "issue_type": "scalability",
+                            "severity": "high",
+                            "description": "Burst export processing can exhaust the shared connection pool because the executor fans out 64 workers while each job holds one of only 8 database connections across a slow remote fetch.",
+                            "ai_feedback": "EXPORT_EXECUTOR submits up to 64 concurrent jobs, but db_pool.py exposes only 8 connections and borrow_connection blocks indefinitely. Because process_export_job acquires a connection before fetch_remote_snapshot, burst traffic can starve the pool and stall throughput.",
+                            "context_scope": "cross_file",
+                            "related_files": ["src/db_pool.py"],
+                            "systemic_impact": "Throughput can collapse under burst load because workers pile up waiting for connections while the limited pool is held across slow remote work.",
+                            "evidence_basis": "api.py configures ThreadPoolExecutor(max_workers=64) and acquires a connection before fetch_remote_snapshot(...), while db_pool.py limits the pool with DB_POOL_SIZE = 8 and BoundedSemaphore(DB_POOL_SIZE).",
                         }
                     ]
                 },

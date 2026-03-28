@@ -1,0 +1,21 @@
+{
+  "id": "scalability-connection-pool-exhaustion-under-burst",
+  "title": "Scalability Connection Pool Exhaustion Under Burst",
+  "description": "Burst job processing fans out far more concurrent workers than the database pool can sustain, and each job holds a scarce connection across slow remote work with no timeout or backpressure, so throughput collapses once traffic spikes.",
+  "scope": "project",
+  "review_types": ["scalability"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "connection-pool-exhaustion-under-burst",
+      "description_keywords": ["connection", "pool"],
+      "file_path_contains_any": ["api.py", "db_pool.py"],
+      "issue_type": "scalability",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["db_pool.py"],
+      "evidence_basis_contains": "max_workers"
+    }
+  ]
+}
