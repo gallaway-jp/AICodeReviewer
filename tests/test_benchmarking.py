@@ -16,7 +16,7 @@ def test_discover_fixtures_returns_expected_catalog():
 
     ids = {fixture.id for fixture in fixtures}
 
-    assert len(fixtures) == 72
+    assert len(fixtures) == 73
     assert ids == {
         "accessibility-dialog-semantic-gap",
         "accessibility-icon-button-label-gap",
@@ -47,6 +47,7 @@ def test_discover_fixtures_returns_expected_catalog():
         "dependency-runtime-imports-dev-only-pytest",
         "license-apache-notice-omission",
         "license-agpl-notice-conflict",
+        "license-embedded-mit-code-without-attribution",
         "desktop-cross-tab-preference-gap",
         "desktop-confirmation-gap",
         "desktop-busy-feedback-gap",
@@ -2257,6 +2258,82 @@ def test_evaluate_fixture_accepts_license_alias_for_apache_notice_omission(tmp_p
                             "related_files": ["THIRD_PARTY_NOTICES.md", "pyproject.toml"],
                             "systemic_impact": "Distributed binaries can ship with incomplete attribution and licensing materials.",
                             "evidence_basis": "licenses_check.csv lists telemetry-sdk as Apache-2.0 and THIRD_PARTY_NOTICES.md says the upstream NOTICE file will not be included in binaries.",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_license_fixture_matches_embedded_mit_code_without_attribution(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "license-embedded-mit-code-without-attribution" / "fixture.json"
+    )
+    report_path = tmp_path / "license-embedded-mit-code-without-attribution.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-lic-0005",
+                            "file_path": "src/vendor/markdown_table.py",
+                            "issue_type": "license",
+                            "severity": "medium",
+                            "description": "The project vendors code copied from the MIT-licensed tinytable package, but the distributed source tree does not preserve tinytable's copyright and permission notice anywhere in the shipped notices or file header.",
+                            "ai_feedback": "MIT allows bundling this helper, but the copied code still needs the original copyright and permission notice. THIRD_PARTY_NOTICES.md currently says no third-party source is bundled even though markdown_table.py says it was copied from tinytable.",
+                            "context_scope": "cross_file",
+                            "related_files": ["THIRD_PARTY_NOTICES.md", "LICENSE", "src/report_builder.py"],
+                            "systemic_impact": "Shipped source bundles can omit required third-party attribution and distribute copied MIT code under incomplete notice terms.",
+                            "evidence_basis": "src/vendor/markdown_table.py says it was copied from tinytable 1.4.0 (MIT), but THIRD_PARTY_NOTICES.md says the distribution does not bundle third-party source files and no preserved tinytable copyright or permission notice is shipped.",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_fixture_accepts_license_alias_for_embedded_mit_code_without_attribution(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "license-embedded-mit-code-without-attribution" / "fixture.json"
+    )
+    report_path = tmp_path / "license-embedded-mit-code-without-attribution-alias.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-lic-0006",
+                            "file_path": "THIRD_PARTY_NOTICES.md",
+                            "issue_type": "license attribution",
+                            "severity": "medium",
+                            "description": "Bundled tinytable code is missing the MIT notice and attribution that should travel with the copied source.",
+                            "ai_feedback": "The shipped notice package says no third-party source is bundled, but markdown_table.py is explicitly copied from tinytable under MIT.",
+                            "context_scope": "cross_file",
+                            "related_files": ["src/vendor/markdown_table.py", "src/report_builder.py"],
+                            "systemic_impact": "Released artifacts can ship copied third-party source with incomplete attribution materials.",
+                            "evidence_basis": "THIRD_PARTY_NOTICES.md denies bundling third-party source, while src/vendor/markdown_table.py says the helper was copied from tinytable 1.4.0 (MIT).",
                         }
                     ]
                 },

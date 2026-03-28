@@ -1,0 +1,23 @@
+{
+  "id": "license-embedded-mit-code-without-attribution",
+  "title": "License Embedded MIT Code Without Attribution",
+  "description": "The project vendors a utility copied from an MIT-licensed package, but the distributed source tree and third-party notices do not preserve the original copyright and permission notice.",
+  "scope": "project",
+  "review_types": ["license"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "embedded-mit-code-without-attribution",
+      "file_path_contains_any": [
+        "THIRD_PARTY_NOTICES.md",
+        "markdown_table.py",
+        "report_builder.py"
+      ],
+      "issue_type": "license",
+      "minimum_severity": "medium",
+      "description_keywords": ["MIT", "notice"],
+      "evidence_basis_contains": "tinytable"
+    }
+  ]
+}
