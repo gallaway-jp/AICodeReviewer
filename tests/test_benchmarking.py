@@ -16,7 +16,7 @@ def test_discover_fixtures_returns_expected_catalog():
 
     ids = {fixture.id for fixture in fixtures}
 
-    assert len(fixtures) == 74
+    assert len(fixtures) == 75
     assert ids == {
         "accessibility-dialog-semantic-gap",
         "accessibility-icon-button-label-gap",
@@ -65,6 +65,7 @@ def test_discover_fixtures_returns_expected_catalog():
         "localization-us-only-receipt-format",
         "maintainability-duplicated-sync-window-rules",
         "maintainability-overloaded-settings-controller",
+        "maintainability-parallel-parser-variants-drift",
         "performance-n-plus-one-order-queries",
         "partial-refactor-callers",
         "regression-default-sync-disabled",
@@ -1271,6 +1272,82 @@ def test_evaluate_fixture_accepts_maintainability_alias_for_overloaded_settings_
                             "related_files": [],
                             "systemic_impact": "Changes to one responsibility can destabilize unrelated settings behavior because multiple concerns are coupled in the same class.",
                             "evidence_basis": "SettingsController includes load_settings, save_settings, export_debug_snapshot, and build_summary for separate concerns.",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_maintainability_fixture_matches_parallel_parser_variants_drift(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "maintainability-parallel-parser-variants-drift" / "fixture.json"
+    )
+    report_path = tmp_path / "maintainability-parallel-parser-variants-drift.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-main-0005",
+                            "file_path": "src/cli_selector_parser.py",
+                            "issue_type": "maintainability",
+                            "severity": "medium",
+                            "description": "parse_sync_selector is implemented in parallel parser modules that have already diverged, which leaves manual and scheduled sync entry points with different selector rules to maintain.",
+                            "ai_feedback": "The manual and scheduled sync flows each maintain their own parse_sync_selector logic, but only the CLI variant supports the wildcard selector, the tag alias, lowercasing values, and broader truthy handling. Future selector fixes now have to be applied in both places.",
+                            "context_scope": "cross_file",
+                            "related_files": ["src/job_selector_parser.py"],
+                            "systemic_impact": "Selector behavior can keep drifting between entry points because maintenance work has to be duplicated across the two parser variants.",
+                            "evidence_basis": "cli_selector_parser.py and job_selector_parser.py both define parse_sync_selector, but the CLI version treats * as all-projects, accepts tag as an alias for label, lowercases values, and accepts 1 or yes for all=true while the job parser does not.",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_fixture_accepts_maintainability_alias_for_parallel_parser_variants_drift(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "maintainability-parallel-parser-variants-drift" / "fixture.json"
+    )
+    report_path = tmp_path / "maintainability-parallel-parser-variants-drift-alias.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-main-0006",
+                            "file_path": "src/cli_selector_parser.py",
+                            "issue_type": "duplicate_logic",
+                            "severity": "medium",
+                            "description": "The selector parser logic is duplicated across manual and scheduled sync modules and the copies have drifted into different behavior.",
+                            "ai_feedback": "Both modules define parse_sync_selector, but one copy now supports wildcard and alias handling that the other copy lacks.",
+                            "context_scope": "cross_file",
+                            "related_files": ["src/job_selector_parser.py"],
+                            "systemic_impact": "Parser changes can drift across entry points because the same selector rules have to be maintained in multiple copies.",
+                            "evidence_basis": "parse_sync_selector exists in both cli_selector_parser.py and job_selector_parser.py with different wildcard, alias, and normalization rules.",
                         }
                     ]
                 },

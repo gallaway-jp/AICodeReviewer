@@ -1,0 +1,20 @@
+{
+  "id": "maintainability-parallel-parser-variants-drift",
+  "title": "Maintainability Parallel Parser Variants Drift",
+  "description": "Manual and scheduled sync entry points each implement parse_sync_selector, but the two active parser variants have drifted into different wildcard, alias, and normalization rules, so future selector fixes must be duplicated and behavior can diverge further.",
+  "scope": "project",
+  "review_types": ["maintainability"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "parallel-parser-variants-drift-maintainability",
+      "description_keywords": ["duplicat"],
+      "file_path_contains_any": ["cli_selector_parser.py", "job_selector_parser.py"],
+      "issue_type": "maintainability",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["job_selector_parser.py"]
+    }
+  ]
+}
