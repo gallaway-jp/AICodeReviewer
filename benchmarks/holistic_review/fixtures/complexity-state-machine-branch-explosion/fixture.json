@@ -1,0 +1,20 @@
+{
+  "id": "complexity-state-machine-branch-explosion",
+  "title": "Complexity State Machine Branch Explosion",
+  "description": "A workflow transition helper encodes draft, queued, running, failed, and paused state changes in one large nested branch structure across event type, retry mode, and feature flags, making the state machine difficult to reason about or safely modify.",
+  "scope": "project",
+  "review_types": ["complexity"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "state-machine-branch-explosion-complexity",
+      "description_keywords": ["state"],
+      "file_path_contains_any": ["workflow_state_machine.py"],
+      "issue_type": "complexity",
+      "minimum_severity": "medium",
+      "context_scope": "local",
+      "evidence_basis_contains": "state"
+    }
+  ]
+}

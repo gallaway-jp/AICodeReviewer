@@ -16,7 +16,7 @@ def test_discover_fixtures_returns_expected_catalog():
 
     ids = {fixture.id for fixture in fixtures}
 
-    assert len(fixtures) == 65
+    assert len(fixtures) == 66
     assert ids == {
         "accessibility-dialog-semantic-gap",
         "accessibility-icon-button-label-gap",
@@ -32,6 +32,7 @@ def test_discover_fixtures_returns_expected_catalog():
         "concurrency-shared-sequence-race",
         "complexity-notification-rule-ladder",
         "complexity-nested-sync-decision-tree",
+        "complexity-state-machine-branch-explosion",
         "data-validation-enum-field-not-constrained",
         "data-validation-inverted-time-window",
         "data-validation-rollout-percent-range",
@@ -641,6 +642,44 @@ def test_evaluate_complexity_fixture_matches_notification_rule_ladder(tmp_path):
                             "related_files": [],
                             "systemic_impact": "This concentrated decision logic is brittle during changes because policy updates can break neighboring branches.",
                             "evidence_basis": "plan_notification_delivery contains a long branch ladder across several policy dimensions including event kind, quiet hours, compliance mode, and account tier.",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_complexity_fixture_matches_state_machine_branch_explosion(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "complexity-state-machine-branch-explosion" / "fixture.json"
+    )
+    report_path = tmp_path / "complexity-state-machine-branch-explosion.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-cx-0005",
+                            "file_path": "src/workflow_state_machine.py",
+                            "issue_type": "complexity",
+                            "severity": "medium",
+                            "description": "The workflow state handler is overly complex because one function packs too many state and event branches into the same transition path.",
+                            "ai_feedback": "advance_workflow_state mixes draft, queued, running, paused, and failed state transitions with retry and feature-flag rules, which makes the state machine difficult to reason about or modify safely.",
+                            "context_scope": "local",
+                            "related_files": [],
+                            "systemic_impact": "This branch-heavy state machine is brittle to change because edits to one transition can easily break adjacent state paths without obvious coverage.",
+                            "evidence_basis": "workflow_state_machine.py implements advance_workflow_state as one large state-branch structure with nested event, retry_mode, and feature-flag checks instead of isolating transition rules.",
                         }
                     ]
                 },
