@@ -1,0 +1,6 @@
+[project]
+name = "transitive-api-removal-demo"
+version = "0.1.0"
+dependencies = [
+    "botocore==1.34.34",
+]

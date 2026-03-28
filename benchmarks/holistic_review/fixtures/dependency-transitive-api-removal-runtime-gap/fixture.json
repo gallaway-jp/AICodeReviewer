@@ -1,0 +1,18 @@
+{
+  "id": "dependency-transitive-api-removal-runtime-gap",
+  "title": "Dependency Transitive API Removal Runtime Gap",
+  "description": "A runtime helper imports `botocore.vendored.requests`, but the project metadata declares a modern botocore version where that vendored API is no longer available, so supported installs can fail at import time.",
+  "scope": "project",
+  "review_types": ["dependency"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "transitive-api-removal-runtime-gap",
+      "file_path_contains_any": ["aws_client.py"],
+      "issue_type": "dependency",
+      "minimum_severity": "medium",
+      "evidence_basis_contains": "vendored"
+    }
+  ]
+}

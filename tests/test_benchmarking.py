@@ -16,7 +16,7 @@ def test_discover_fixtures_returns_expected_catalog():
 
     ids = {fixture.id for fixture in fixtures}
 
-    assert len(fixtures) == 68
+    assert len(fixtures) == 69
     assert ids == {
         "accessibility-dialog-semantic-gap",
         "accessibility-icon-button-label-gap",
@@ -41,6 +41,7 @@ def test_discover_fixtures_returns_expected_catalog():
         "dead-code-stale-feature-flag",
         "dead-code-unreachable-fallback",
         "dependency-missing-pyyaml-declaration",
+        "dependency-transitive-api-removal-runtime-gap",
         "dependency-runtime-imports-dev-only-pytest",
         "license-apache-notice-omission",
         "license-agpl-notice-conflict",
@@ -1873,6 +1874,82 @@ def test_evaluate_fixture_accepts_dependency_alias_for_runtime_imports_dev_only_
                             "related_files": ["pyproject.toml"],
                             "systemic_impact": "Non-dev installations can fail when the module imports pytest.",
                             "evidence_basis": "pytest is imported by metrics.py, but the manifest only lists pytest under dev optional dependencies.",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_dependency_fixture_matches_transitive_api_removal_runtime_gap(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "dependency-transitive-api-removal-runtime-gap" / "fixture.json"
+    )
+    report_path = tmp_path / "dependency-transitive-api-removal-runtime-gap.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-dep-0005",
+                            "file_path": "src/aws_client.py",
+                            "issue_type": "dependency",
+                            "severity": "high",
+                            "description": "The runtime helper imports botocore.vendored.requests even though the declared botocore version no longer exposes that vendored API, so supported installs can fail at import time.",
+                            "ai_feedback": "aws_client.py depends on a vendored requests shim inside botocore, but pyproject.toml pins modern botocore versions where that compatibility path is no longer part of the supported runtime surface.",
+                            "context_scope": "cross_file",
+                            "related_files": ["pyproject.toml"],
+                            "systemic_impact": "Fresh installs or upgrades to the declared botocore version can fail before the client runs because the vendored import path is no longer available.",
+                            "evidence_basis": "aws_client.py imports botocore.vendored.requests, but pyproject.toml declares botocore==1.34.34 where the vendored requests API is not part of the supported dependency contract.",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_fixture_accepts_dependency_alias_for_transitive_api_removal_runtime_gap(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "dependency-transitive-api-removal-runtime-gap" / "fixture.json"
+    )
+    report_path = tmp_path / "dependency-transitive-api-removal-runtime-gap-alias.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-dep-0006",
+                            "file_path": "src/aws_client.py",
+                            "issue_type": "dependency_management",
+                            "severity": "medium",
+                            "description": "The code depends on a vendored botocore requests API that is no longer available in the declared runtime dependency version.",
+                            "ai_feedback": "This is a dependency contract gap caused by relying on a removed vendored API surface instead of a supported direct dependency.",
+                            "context_scope": "cross_file",
+                            "related_files": ["pyproject.toml"],
+                            "systemic_impact": "Supported runtime environments can fail to import the client module after installs that use the declared botocore version.",
+                            "evidence_basis": "botocore.vendored.requests is imported by aws_client.py, but the manifest only declares a modern botocore version where that vendored API is gone.",
                         }
                     ]
                 },

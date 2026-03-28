@@ -37,6 +37,7 @@ The scorer also normalizes semantically equivalent issue types for broad benchma
 - `complexity-state-machine-branch-explosion`: one workflow transition helper packs too many state and event branches into a single state-machine function
 - `concurrency-map-mutation-during-iteration`: worker threads mutate a shared topic map while another path iterates it to build a snapshot
 - `data-validation-enum-field-not-constrained`: validator accepts any delivery_mode string without enforcing the supported enum values
+- `dependency-transitive-api-removal-runtime-gap`: runtime code imports a vendored botocore API path that is no longer available in the declared supported botocore version
 - `documentation-deployment-topology-docs-incomplete`: deployment docs claim workers are stateless and safe to scale horizontally even though lease state lives in process-local memory
 - `regression-stale-caller-utility-signature-change`: a reordered retry-delay helper signature leaves an unchanged caller using the old argument order and silently changes retry timing
 - `security-path-traversal-download`: request data is joined onto an attachment path before file access without traversal constraints

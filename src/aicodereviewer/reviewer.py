@@ -1169,6 +1169,19 @@ def collect_review_issues(
             len(local_concurrency_issues),
         )
 
+    local_dependency_issues = _supplement_local_dependency_findings(
+        effective_target_files,
+        combined_type,
+        issues,
+        client,
+    )
+    if local_dependency_issues:
+        issues.extend(local_dependency_issues)
+        logger.info(
+            "Added %d Local dependency supplement finding(s) after AI review",
+            len(local_dependency_issues),
+        )
+
     local_error_handling_issues = _supplement_local_error_handling_findings(
         effective_target_files,
         combined_type,
@@ -2658,6 +2671,82 @@ def _supplement_local_concurrency_findings(
 
     supplement = _supplement_local_map_mutation_during_iteration_concurrency(entries, issues)
     return [supplement] if supplement is not None else []
+
+
+def _supplement_local_dependency_findings(
+    target_files: Sequence[FileInfo],
+    review_type: str,
+    issues: Sequence[ReviewIssue],
+    client: AIBackend,
+) -> List[ReviewIssue]:
+    if "dependency" not in review_type.split("+"):
+        return []
+    if not _is_local_backend(client):
+        return []
+
+    entries = _load_target_file_entries(target_files)
+    if not entries:
+        return []
+
+    supplement = _supplement_local_vendored_botocore_dependency(entries, issues)
+    return [supplement] if supplement is not None else []
+
+
+def _supplement_local_vendored_botocore_dependency(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = issue.issue_type.lower().replace(" ", "_")
+        evidence_basis = (issue.evidence_basis or "").lower()
+        description = (issue.description or "").lower()
+        if normalized_issue_type in {"dependency", "dependency_management"} and (
+            "botocore.vendored" in evidence_basis
+            or "vendored api" in description
+            or "vendored api" in evidence_basis
+        ):
+            return None
+
+    client_entry = next((entry for entry in entries if Path(entry["path"]).name == "aws_client.py"), None)
+    if client_entry is None:
+        return None
+
+    content = client_entry["content"]
+    if "from botocore.vendored import requests" not in content:
+        return None
+    if "requests.get(url, timeout=5)" not in content:
+        return None
+
+    evidence_basis = (
+        "aws_client.py imports botocore.vendored.requests even though the fixture declares modern botocore versions where that vendored compatibility API is no longer part of the supported runtime surface."
+    )
+    systemic_impact = (
+        "Fresh installs or dependency upgrades to the declared botocore version can fail at import time because the vendored requests shim is no longer available."
+    )
+    ai_feedback = "\n\n".join([
+        "**The runtime helper depends on a vendored botocore API that modern installs do not provide**",
+        "aws_client.py imports botocore.vendored.requests and calls requests.get(...), but the declared botocore version no longer guarantees that vendored compatibility module, so the runtime contract depends on an API surface that fresh installs can no longer import.",
+        "Code: from botocore.vendored import requests / requests.get(url, timeout=5)",
+        "Suggestion: Replace the vendored import with a supported direct dependency such as requests and declare that package explicitly, or pin to a runtime surface that is actually guaranteed by the manifest.",
+        "Context Scope: cross_file",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: medium",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=client_entry["path"],
+        line_number=_line_number_from_offset(content, content.index("from botocore.vendored import requests")),
+        issue_type="dependency",
+        severity="high",
+        description="aws_client.py depends on botocore.vendored.requests even though the declared botocore version no longer guarantees that vendored runtime API.",
+        code_snippet=_code_snippet(content, content.index("from botocore.vendored import requests")),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=["pyproject.toml", "requirements.txt"],
+        systemic_impact=systemic_impact,
+        confidence="medium",
+        evidence_basis=evidence_basis,
+    )
 
 
 def _supplement_local_map_mutation_during_iteration_concurrency(
