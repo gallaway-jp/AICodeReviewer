@@ -16,12 +16,13 @@ def test_discover_fixtures_returns_expected_catalog():
 
     ids = {fixture.id for fixture in fixtures}
 
-    assert len(fixtures) == 71
+    assert len(fixtures) == 72
     assert ids == {
         "accessibility-dialog-semantic-gap",
         "accessibility-icon-button-label-gap",
         "api-design-create-missing-201-contract",
         "api-design-get-create-endpoint",
+        "api-design-patch-without-change-contract",
         "architectural-layer-leak",
         "architectural-service-web-context-leak",
         "auth-guard-regression",
@@ -1572,6 +1573,82 @@ def test_evaluate_fixture_accepts_api_design_alias_for_create_missing_201_contra
                             "related_files": [],
                             "systemic_impact": "API consumers can generate weaker client assumptions around creation responses and resource discovery.",
                             "evidence_basis": "The POST route lacks explicit 201 or response-model metadata and returns a raw dict from create_invitation.",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_api_design_fixture_matches_patch_without_change_contract(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "api-design-patch-without-change-contract" / "fixture.json"
+    )
+    report_path = tmp_path / "api-design-patch-without-change-contract.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-api-0005",
+                            "file_path": "src/api.py",
+                            "issue_type": "api_design",
+                            "severity": "medium",
+                            "description": "The PATCH settings route advertises partial-update semantics but replaces the entire stored object with the sparse request payload, so omitted fields are silently cleared.",
+                            "ai_feedback": "Clients generally expect PATCH to preserve unspecified fields, but patch_user_settings writes payload.model_dump() directly into USER_SETTINGS and turns missing values into nulls instead of merging changes.",
+                            "context_scope": "local",
+                            "related_files": [],
+                            "systemic_impact": "API consumers can lose existing settings when they send a partial PATCH request because omitted properties are overwritten rather than preserved.",
+                            "evidence_basis": "api.py registers patch_user_settings with @app.patch('/api/users/{user_id}/settings') but replaces USER_SETTINGS[user_id] with payload.model_dump() instead of merging only changed fields.",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_fixture_accepts_api_design_alias_for_patch_without_change_contract(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "api-design-patch-without-change-contract" / "fixture.json"
+    )
+    report_path = tmp_path / "api-design-patch-without-change-contract-alias.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-api-0006",
+                            "file_path": "src/api.py",
+                            "issue_type": "request_contract",
+                            "severity": "medium",
+                            "description": "This PATCH endpoint has a weak partial-update contract because omitted fields are not preserved and the handler behaves like full replacement.",
+                            "ai_feedback": "The route should define merge semantics or use PUT if the payload replaces the full resource.",
+                            "context_scope": "local",
+                            "related_files": [],
+                            "systemic_impact": "Clients can unintentionally erase existing settings when they send only the fields they mean to change.",
+                            "evidence_basis": "The @app.patch handler stores payload.model_dump() directly instead of merging changed attributes into the existing settings document.",
                         }
                     ]
                 },

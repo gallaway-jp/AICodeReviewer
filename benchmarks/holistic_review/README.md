@@ -33,6 +33,7 @@ The scorer also normalizes semantically equivalent issue types for broad benchma
 - `cache-invalidation-gap`: write path updates state without invalidating cache
 - `partial-refactor-callers`: refactor changed a return contract but callers still use the old shape
 - `diff-signature-break`: diff-only signature change leaves stale call sites in surrounding code
+- `api-design-patch-without-change-contract`: a PATCH endpoint replaces the stored object with the sparse payload instead of preserving omitted fields as a partial update
 - `architectural-layer-leak`: presentation layer reaches directly into storage concerns
 - `complexity-state-machine-branch-explosion`: one workflow transition helper packs too many state and event branches into a single state-machine function
 - `concurrency-map-mutation-during-iteration`: worker threads mutate a shared topic map while another path iterates it to build a snapshot

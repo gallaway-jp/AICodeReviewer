@@ -1908,6 +1908,8 @@ def _supplement_get_create_endpoint_findings(
         text = _issue_text(issue)
         if "@app.get" in text and any(marker in text for marker in ("create", "invitation", "state change", "201", "post")):
             return []
+        if "@app.patch" in text and any(marker in text for marker in ("model_dump", "partial", "merge", "replace", "omitted fields")):
+            return []
 
     entries = _load_target_file_entries(target_files)
     for entry in entries:
@@ -1916,28 +1918,68 @@ def _supplement_get_create_endpoint_findings(
             r"@app\.get\([\"'](?P<route>[^\"']+)[\"']\)\s*\ndef\s+(?P<func>[a-zA-Z0-9_]+)\((?P<params>[^)]*)\):",
             content,
         )
-        if route_match is None:
+        if route_match is not None:
+            route = route_match.group("route")
+            func_name = route_match.group("func")
+            body = content[route_match.end():]
+            if "/create" in route.lower() or func_name.lower().startswith("create"):
+                if any(marker in body for marker in (".append(", ".add(", ".create(", ".save(", "INVITATIONS[", "= remaining - 1")):
+                    evidence_basis = (
+                        f"{Path(entry['path']).name} declares @app.get('{route}') for {func_name} even though the handler mutates server state instead of behaving like a safe read."
+                    )
+                    systemic_impact = (
+                        "Clients, caches, and prefetchers can treat the endpoint like a safe read even though it creates or mutates state, which makes duplicate side effects more likely."
+                    )
+                    ai_feedback = "\n\n".join([
+                        "**A state-changing create route is exposed as GET**",
+                        f"{Path(entry['path']).name} registers {func_name} with @app.get even though the handler creates or mutates server state.",
+                        f"Code: @app.get('{route}') / def {func_name}(...)",
+                        "Suggestion: Use POST for creation semantics and reserve GET for safe, read-only operations.",
+                        "Context Scope: local",
+                        f"Systemic Impact: {systemic_impact}",
+                        "Confidence: medium",
+                        f"Evidence Basis: {evidence_basis}",
+                    ])
+                    return [ReviewIssue(
+                        file_path=entry["path"],
+                        line_number=_line_number_from_offset(content, route_match.start()),
+                        issue_type="api_design",
+                        severity="high",
+                        description="The API exposes a state-changing create operation as a GET endpoint.",
+                        code_snippet=_code_snippet(content, route_match.start()),
+                        ai_feedback=ai_feedback,
+                        context_scope="local",
+                        related_files=[],
+                        systemic_impact=systemic_impact,
+                        confidence="medium",
+                        evidence_basis=evidence_basis,
+                    )]
+
+        patch_match = re.search(
+            r"@app\.patch\([\"'](?P<route>[^\"']+)[\"']\)\s*\ndef\s+(?P<func>[a-zA-Z0-9_]+)\((?P<params>[^)]*)\):",
+            content,
+        )
+        if patch_match is None:
+            continue
+        body = content[patch_match.end():]
+        if "payload.model_dump()" not in body:
+            continue
+        if not re.search(r"[A-Z_]+\[[^\]]+\]\s*=\s*payload\.model_dump\(\)", body):
             continue
 
-        route = route_match.group("route")
-        func_name = route_match.group("func")
-        body = content[route_match.end():]
-        if "/create" not in route.lower() and not func_name.lower().startswith("create"):
-            continue
-        if not any(marker in body for marker in (".append(", ".add(", ".create(", ".save(", "INVITATIONS[", "= remaining - 1")):
-            continue
-
+        route = patch_match.group("route")
+        func_name = patch_match.group("func")
         evidence_basis = (
-            f"{Path(entry['path']).name} declares @app.get('{route}') for {func_name} even though the handler mutates server state instead of behaving like a safe read."
+            f"{Path(entry['path']).name} declares @app.patch('{route}') for {func_name} but replaces the stored object with payload.model_dump() instead of merging only the changed fields."
         )
         systemic_impact = (
-            "Clients, caches, and prefetchers can treat the endpoint like a safe read even though it creates or mutates state, which makes duplicate side effects more likely."
+            "Clients can unintentionally erase existing fields when they send a partial PATCH request because omitted properties are overwritten rather than preserved."
         )
         ai_feedback = "\n\n".join([
-            "**A state-changing create route is exposed as GET**",
-            f"{Path(entry['path']).name} registers {func_name} with @app.get even though the handler creates or mutates server state.",
-            f"Code: @app.get('{route}') / def {func_name}(...)",
-            "Suggestion: Use POST for creation semantics and reserve GET for safe, read-only operations.",
+            "**The PATCH route behaves like full replacement instead of a partial update**",
+            f"{Path(entry['path']).name} registers {func_name} under @app.patch but writes payload.model_dump() directly into the stored settings document, so omitted fields are cleared instead of merged.",
+            f"Code: @app.patch('{route}') / USER_SETTINGS[user_id] = payload.model_dump()",
+            "Suggestion: Merge only the provided fields for PATCH semantics, or switch to PUT if the request body replaces the entire resource.",
             "Context Scope: local",
             f"Systemic Impact: {systemic_impact}",
             "Confidence: medium",
@@ -1945,11 +1987,11 @@ def _supplement_get_create_endpoint_findings(
         ])
         return [ReviewIssue(
             file_path=entry["path"],
-            line_number=_line_number_from_offset(content, route_match.start()),
+            line_number=_line_number_from_offset(content, patch_match.start()),
             issue_type="api_design",
-            severity="high",
-            description="The API exposes a state-changing create operation as a GET endpoint.",
-            code_snippet=_code_snippet(content, route_match.start()),
+            severity="medium",
+            description="The PATCH endpoint replaces the stored object with the sparse payload instead of preserving omitted fields as a partial update.",
+            code_snippet=_code_snippet(content, patch_match.start()),
             ai_feedback=ai_feedback,
             context_scope="local",
             related_files=[],
