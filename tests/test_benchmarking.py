@@ -16,7 +16,7 @@ def test_discover_fixtures_returns_expected_catalog():
 
     ids = {fixture.id for fixture in fixtures}
 
-    assert len(fixtures) == 67
+    assert len(fixtures) == 68
     assert ids == {
         "accessibility-dialog-semantic-gap",
         "accessibility-icon-button-label-gap",
@@ -29,6 +29,7 @@ def test_discover_fixtures_returns_expected_catalog():
         "compatibility-macos-open-command",
         "compatibility-python311-tomllib-runtime-gap",
         "concurrency-async-slot-double-booking",
+        "concurrency-map-mutation-during-iteration",
         "concurrency-shared-sequence-race",
         "complexity-notification-rule-ladder",
         "complexity-nested-sync-decision-tree",
@@ -1340,6 +1341,82 @@ def test_evaluate_fixture_accepts_concurrency_alias_for_async_slot_double_bookin
                             "related_files": [],
                             "systemic_impact": "The same capacity can be promised to multiple users under load.",
                             "evidence_basis": "available_slots is checked before awaiting _load_policy and updated afterward, so two coroutines can observe the same remaining count.",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_concurrency_fixture_matches_map_muation_during_iteration(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "concurrency-map-mutation-during-iteration" / "fixture.json"
+    )
+    report_path = tmp_path / "concurrency-map-mutation-during-iteration.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-con-0005",
+                            "file_path": "src/subscription_index.py",
+                            "issue_type": "concurrency",
+                            "severity": "high",
+                            "description": "The subscription index iterates a shared topic dictionary while worker threads mutate that same map, so snapshots can race with topic additions and removals.",
+                            "ai_feedback": "refresh_and_snapshot launches worker threads and immediately iterates listeners_by_topic in _snapshot_topics without synchronization, which makes dictionary-size changes during iteration possible.",
+                            "context_scope": "local",
+                            "related_files": [],
+                            "systemic_impact": "Concurrent refreshes can fail during iteration or return inconsistent topic snapshots under load.",
+                            "evidence_basis": "_apply_event uses setdefault on listeners_by_topic while _snapshot_topics iterates self.listeners_by_topic.items() without a lock.",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_fixture_accepts_concurrency_alias_for_map_mutation_during_iteration(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "concurrency-map-mutation-during-iteration" / "fixture.json"
+    )
+    report_path = tmp_path / "concurrency-map-mutation-during-iteration-alias.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-con-0006",
+                            "file_path": "src/subscription_index.py",
+                            "issue_type": "race_condition",
+                            "severity": "medium",
+                            "description": "The subscription snapshot can race with concurrent topic-map mutations.",
+                            "ai_feedback": "The code iterates shared listeners_by_topic while other threads mutate it.",
+                            "context_scope": "local",
+                            "related_files": [],
+                            "systemic_impact": "Concurrent snapshots can observe inconsistent topic state or crash during iteration.",
+                            "evidence_basis": "listeners_by_topic is iterated in _snapshot_topics while _apply_event uses setdefault and mutates the same dictionary from worker threads.",
                         }
                     ]
                 },

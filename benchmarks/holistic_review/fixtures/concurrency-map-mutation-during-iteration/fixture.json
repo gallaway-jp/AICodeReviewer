@@ -1,0 +1,18 @@
+{
+  "id": "concurrency-map-mutation-during-iteration",
+  "title": "Concurrency Map Mutation During Iteration",
+  "description": "A threaded subscription index iterates shared topic maps while worker threads add and remove entries from the same dictionary, so iteration can observe inconsistent state or fail under concurrent load.",
+  "scope": "project",
+  "review_types": ["concurrency"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "map-mutation-during-iteration",
+      "file_path_contains_any": ["subscription_index.py"],
+      "issue_type": "concurrency",
+      "minimum_severity": "medium",
+      "evidence_basis_contains": "setdefault"
+    }
+  ]
+}

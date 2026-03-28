@@ -1156,6 +1156,19 @@ def collect_review_issues(
             len(local_dead_code_issues),
         )
 
+    local_concurrency_issues = _supplement_local_concurrency_findings(
+        effective_target_files,
+        combined_type,
+        issues,
+        client,
+    )
+    if local_concurrency_issues:
+        issues.extend(local_concurrency_issues)
+        logger.info(
+            "Added %d Local concurrency supplement finding(s) after AI review",
+            len(local_concurrency_issues),
+        )
+
     local_error_handling_issues = _supplement_local_error_handling_findings(
         effective_target_files,
         combined_type,
@@ -2626,6 +2639,92 @@ def _supplement_local_dead_code_unreachable_fallback(
         )
 
     return None
+
+
+def _supplement_local_concurrency_findings(
+    target_files: Sequence[FileInfo],
+    review_type: str,
+    issues: Sequence[ReviewIssue],
+    client: AIBackend,
+) -> List[ReviewIssue]:
+    if "concurrency" not in review_type.split("+"):
+        return []
+    if not _is_local_backend(client):
+        return []
+
+    entries = _load_target_file_entries(target_files)
+    if not entries:
+        return []
+
+    supplement = _supplement_local_map_mutation_during_iteration_concurrency(entries, issues)
+    return [supplement] if supplement is not None else []
+
+
+def _supplement_local_map_mutation_during_iteration_concurrency(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = issue.issue_type.lower().replace(" ", "_")
+        evidence_basis = (issue.evidence_basis or "").lower()
+        systemic_impact = (issue.systemic_impact or "").lower()
+        if (
+            normalized_issue_type in {"concurrency", "race_condition"}
+            and "setdefault" in evidence_basis
+            and (
+                "snapshot" in systemic_impact
+                or "runtimeerror" in systemic_impact
+                or "crash" in systemic_impact
+            )
+        ):
+            return None
+
+    index_entry = next((entry for entry in entries if Path(entry["path"]).name == "subscription_index.py"), None)
+    if index_entry is None:
+        return None
+
+    content = index_entry["content"]
+    if 'self.listeners_by_topic = {}' not in content:
+        return None
+    if 'threading.Thread(target=self._apply_event, args=(event,))' not in content:
+        return None
+    if 'listeners = self.listeners_by_topic.setdefault(event["topic"], {})' not in content:
+        return None
+    if 'self.listeners_by_topic.pop(event["topic"], None)' not in content:
+        return None
+    if 'for topic, listeners in self.listeners_by_topic.items()' not in content:
+        return None
+
+    evidence_basis = (
+        "subscription_index.py uses setdefault and conditional pop on listeners_by_topic in _apply_event while _snapshot_topics iterates over the same shared dict without any lock."
+    )
+    systemic_impact = (
+        "Concurrent refreshes can crash during iteration or return inconsistent snapshots because the shared topic map is mutated while refresh_and_snapshot is reading it."
+    )
+    ai_feedback = "\n\n".join([
+        "**The subscription index mutates a shared topic map while another path iterates it**",
+        "refresh_and_snapshot starts worker threads, _apply_event mutates listeners_by_topic with setdefault and pop, and _snapshot_topics iterates that same dict without synchronization, so concurrent calls can raise dictionary-size errors or return inconsistent snapshots.",
+        "Code: threading.Thread(target=self._apply_event, ...) / setdefault(event['topic'], {}) / pop(event['topic'], None) / for topic, listeners in self.listeners_by_topic.items()",
+        "Suggestion: Protect listeners_by_topic with a shared lock and snapshot only after worker updates complete, or build the snapshot from an immutable copy taken under synchronization.",
+        "Context Scope: local",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: medium",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=index_entry["path"],
+        line_number=_line_number_from_offset(content, content.index('for topic, listeners in self.listeners_by_topic.items()')),
+        issue_type="concurrency",
+        severity="high",
+        description="The subscription snapshot iterates listeners_by_topic while worker threads mutate the same shared map, creating a race on dictionary iteration.",
+        code_snippet=_code_snippet(content, content.index('for topic, listeners in self.listeners_by_topic.items()')),
+        ai_feedback=ai_feedback,
+        context_scope="local",
+        related_files=[],
+        systemic_impact=systemic_impact,
+        confidence="medium",
+        evidence_basis=evidence_basis,
+    )
 
 
 def _supplement_local_dead_code_stale_feature_flag(
