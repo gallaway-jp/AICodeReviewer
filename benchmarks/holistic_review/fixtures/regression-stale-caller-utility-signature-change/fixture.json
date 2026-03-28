@@ -1,0 +1,23 @@
+{
+  "id": "regression-stale-caller-utility-signature-change",
+  "title": "Regression Stale Caller Utility Signature Change",
+  "description": "A utility diff reorders the retry-delay helper signature, but an unchanged caller still passes arguments in the old order, silently changing the existing retry scheduling behavior.",
+  "scope": "diff",
+  "review_types": ["regression"],
+  "project_dir": "project",
+  "diff_file": "changes.diff",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "stale-caller-utility-signature-regression",
+      "description_keywords": ["retry", "delay"],
+      "file_path_contains_any": ["retry_policy.py", "sync_worker.py"],
+      "issue_type": "regression",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["sync_worker.py"],
+      "systemic_impact_contains": "existing",
+      "evidence_basis_contains": "build_retry_delay"
+    }
+  ]
+}

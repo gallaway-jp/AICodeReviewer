@@ -1,0 +1,9 @@
+def build_retry_delay(network_profile: str, retry_count: int) -> int:
+    if network_profile == "metered":
+        base_delay = 300
+    elif network_profile == "cellular":
+        base_delay = 120
+    else:
+        base_delay = 30
+
+    return base_delay * 2 if retry_count in (3, 4, 5) else base_delay

@@ -16,7 +16,7 @@ def test_discover_fixtures_returns_expected_catalog():
 
     ids = {fixture.id for fixture in fixtures}
 
-    assert len(fixtures) == 66
+    assert len(fixtures) == 67
     assert ids == {
         "accessibility-dialog-semantic-gap",
         "accessibility-icon-button-label-gap",
@@ -63,6 +63,7 @@ def test_discover_fixtures_returns_expected_catalog():
         "partial-refactor-callers",
         "regression-default-sync-disabled",
         "regression-inverted-sync-start-guard",
+        "regression-stale-caller-utility-signature-change",
         "scalability-instance-local-rate-limit-state",
         "scalability-unbounded-pending-events-buffer",
         "security-idor-invoice-download",
@@ -2631,6 +2632,44 @@ def test_evaluate_regression_fixture_matches_inverted_sync_start_guard(tmp_path)
                             "related_files": ["src/settings_defaults.py"],
                             "systemic_impact": "Background sync is effectively disabled for the default-enabled path, so an existing startup workflow silently stops running.",
                             "evidence_basis": "settings_defaults.py returns sync_enabled=True, but app_startup.py changed the startup guard to if not preferences['sync_enabled'] before calling sync_scheduler.start().",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_regression_fixture_matches_stale_caller_utility_signature_change(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "regression-stale-caller-utility-signature-change" / "fixture.json"
+    )
+    report_path = tmp_path / "regression-stale-caller-utility-signature-change.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-reg-utility-0001",
+                            "file_path": "src/retry_policy.py",
+                            "issue_type": "regression",
+                            "severity": "medium",
+                            "description": "The retry-delay helper signature now expects network_profile before retry_count, but sync_worker.py still calls it with the old argument order, which changes the existing retry delay behavior.",
+                            "ai_feedback": "build_retry_delay now treats the first positional argument as network_profile, yet schedule_retry still passes retry_count first, so metered and cellular jobs fall through to the default delay logic.",
+                            "context_scope": "cross_file",
+                            "related_files": ["src/sync_worker.py"],
+                            "systemic_impact": "Existing retry scheduling behavior changes because jobs no longer receive the intended metered or cellular delay values after the helper signature change.",
+                            "evidence_basis": "retry_policy.py changed build_retry_delay to build_retry_delay(network_profile, retry_count), but sync_worker.py still calls build_retry_delay(job['retry_count'], job['network_profile']).",
                         }
                     ]
                 },

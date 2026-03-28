@@ -37,6 +37,7 @@ The scorer also normalizes semantically equivalent issue types for broad benchma
 - `complexity-state-machine-branch-explosion`: one workflow transition helper packs too many state and event branches into a single state-machine function
 - `data-validation-enum-field-not-constrained`: validator accepts any delivery_mode string without enforcing the supported enum values
 - `documentation-deployment-topology-docs-incomplete`: deployment docs claim workers are stateless and safe to scale horizontally even though lease state lives in process-local memory
+- `regression-stale-caller-utility-signature-change`: a reordered retry-delay helper signature leaves an unchanged caller using the old argument order and silently changes retry timing
 - `security-path-traversal-download`: request data is joined onto an attachment path before file access without traversal constraints
 - `testing-timeout-retry-untested`: source code retries a transient timeout, but the tests only pin the first-attempt success path
 
