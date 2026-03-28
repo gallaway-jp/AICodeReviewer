@@ -50,6 +50,7 @@ The scorer also normalizes semantically equivalent issue types for broad benchma
 - `testing-timeout-retry-untested`: source code retries a transient timeout, but the tests only pin the first-attempt success path
 - `accessibility-fieldset-without-legend`: related form controls are grouped in fieldsets, but the groups have no legend for assistive technology to announce
 - `scalability-connection-pool-exhaustion-under-burst`: burst job processing fans out more workers than the shared connection pool can sustain, and each job holds a connection across slow remote work
+- `error-handling-context-manager-exception-not-cleaned`: a context manager only clears its active-job marker on the success path, so exceptions leak the running state and block later retries
 
 ## Evaluating Reports
 

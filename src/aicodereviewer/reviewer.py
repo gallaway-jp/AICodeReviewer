@@ -3154,6 +3154,9 @@ def _supplement_local_error_handling_findings(
     timeout_supplement = _supplement_local_retryless_timeout_error_handling(entries, issues)
     if timeout_supplement is not None:
         supplements.append(timeout_supplement)
+    cleanup_supplement = _supplement_local_context_manager_cleanup_error_handling(entries, issues)
+    if cleanup_supplement is not None:
+        supplements.append(cleanup_supplement)
     return supplements
 
 
@@ -3365,6 +3368,93 @@ def _supplement_local_retryless_timeout_error_handling(
         )
 
     return None
+
+
+def _supplement_local_context_manager_cleanup_error_handling(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        if issue.issue_type.lower() != "error_handling":
+            continue
+        related_files = [Path(path).name for path in issue.related_files]
+        evidence_basis = (issue.evidence_basis or "").lower()
+        systemic_impact = (issue.systemic_impact or "").lower()
+        if (
+            issue.context_scope == "cross_file"
+            and "__exit__" in evidence_basis
+            and "already-running" in evidence_basis
+            and ("stale" in systemic_impact or "blocked" in systemic_impact)
+            and "lease_store.py" in related_files
+        ):
+            return None
+
+    caller_entry = next(
+        (entry for entry in entries if Path(entry["path"]).name == "job_runner.py"),
+        None,
+    )
+    lease_entry = next(
+        (entry for entry in entries if Path(entry["path"]).name == "lease_store.py"),
+        None,
+    )
+    if caller_entry is None or lease_entry is None:
+        return None
+
+    caller_content = caller_entry["content"]
+    lease_content = lease_entry["content"]
+    if "with ExportLease(export_id):" not in caller_content:
+        return None
+    if '"status": "blocked"' not in caller_content and "'status': 'blocked'" not in caller_content:
+        return None
+    if '"reason": "already-running"' not in caller_content and "'reason': 'already-running'" not in caller_content:
+        return None
+    if "def __exit__(self, exc_type, exc, tb):" not in lease_content:
+        return None
+    if "if exc_type is None:" not in lease_content:
+        return None
+    if "ACTIVE_EXPORTS.discard(self.export_id)" not in lease_content:
+        return None
+
+    blocked_match = re.search(
+        r"return\s*\{\s*[\"']status[\"']\s*:\s*[\"']blocked[\"']\s*,\s*[\"']reason[\"']\s*:\s*[\"']already-running[\"']\s*\}",
+        caller_content,
+    )
+    lease_match = re.search(r"def\s+__exit__\(self,\s*exc_type,\s*exc,\s*tb\):", lease_content)
+    if blocked_match is None or lease_match is None:
+        return None
+
+    evidence_basis = (
+        "lease_store.py keeps ACTIVE_EXPORTS.discard(self.export_id) inside ExportLease.__exit__ only when exc_type is None, "
+        "while job_runner.py returns {'status': 'blocked', 'reason': 'already-running'} whenever export_is_running(export_id) stays set after a failed with ExportLease(export_id) block."
+    )
+    systemic_impact = (
+        "A failed export can remain stuck as already running, which blocks later retries and leaves recovery dependent on manual cleanup of stale state."
+    )
+    ai_feedback = "\n\n".join([
+        "**Context manager leaks running state when the protected work raises**",
+        "lease_store.py only clears the active export marker on the success path, so an exception inside job_runner.py's with ExportLease(export_id) block leaves stale running state behind.",
+        "Code: def __exit__(self, exc_type, exc, tb): if exc_type is None: ACTIVE_EXPORTS.discard(self.export_id) / if export_is_running(export_id): return {'status': 'blocked', 'reason': 'already-running'}",
+        "Suggestion: Always discard the active export marker in __exit__ regardless of whether an exception occurred, then let the exception propagate or convert it into an explicit failed status without leaving stale lease state behind.",
+        "Context Scope: cross_file",
+        f"Related Files: {lease_entry['path']}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: medium",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=caller_entry["path"],
+        line_number=_line_number_from_offset(caller_content, blocked_match.start()),
+        issue_type="error_handling",
+        severity="high",
+        description="The export lease is not cleaned up when the with-block raises, so failed exports remain stuck as already running.",
+        code_snippet=_code_snippet(caller_content, blocked_match.start()),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=[lease_entry["path"]],
+        systemic_impact=systemic_impact,
+        confidence="medium",
+        evidence_basis=evidence_basis,
+    )
 
 
 def _supplement_local_data_validation_findings(

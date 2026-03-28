@@ -16,7 +16,7 @@ def test_discover_fixtures_returns_expected_catalog():
 
     ids = {fixture.id for fixture in fixtures}
 
-    assert len(fixtures) == 77
+    assert len(fixtures) == 78
     assert ids == {
         "accessibility-dialog-semantic-gap",
         "accessibility-fieldset-without-legend",
@@ -46,6 +46,7 @@ def test_discover_fixtures_returns_expected_catalog():
         "dependency-missing-pyyaml-declaration",
         "dependency-transitive-api-removal-runtime-gap",
         "dependency-runtime-imports-dev-only-pytest",
+        "error-handling-context-manager-exception-not-cleaned",
         "license-apache-notice-omission",
         "license-agpl-notice-conflict",
         "license-embedded-mit-code-without-attribution",
@@ -3098,6 +3099,44 @@ def test_evaluate_error_handling_fixture_matches_retryless_sync_timeout(tmp_path
                             "related_files": ["src/sync_controller.py"],
                             "systemic_impact": "A transient outage can disable sync entirely and delay recovery because operators lose the automatic retry path after a single timeout.",
                             "evidence_basis": "sync_worker.py catches TimeoutError and returns retryable=True, while sync_controller.py disables background sync as soon as status is failed.",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_error_handling_fixture_matches_context_manager_exception_not_cleaned(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "error-handling-context-manager-exception-not-cleaned" / "fixture.json"
+    )
+    report_path = tmp_path / "error-handling-context-manager-exception-not-cleaned.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-err-0003",
+                            "file_path": "src/job_runner.py",
+                            "issue_type": "error_handling",
+                            "severity": "high",
+                            "description": "The export lease is not cleaned up when the with-block raises, so failed exports remain marked as running and later retries are blocked.",
+                            "ai_feedback": "lease_store.py only discards ACTIVE_EXPORTS inside ExportLease.__exit__ when exc_type is None. If send_archive(...) raises inside job_runner.py, the leaked active marker causes future run_export calls to return already-running instead of retrying cleanly.",
+                            "context_scope": "cross_file",
+                            "related_files": ["src/lease_store.py"],
+                            "systemic_impact": "A transient export failure can leave work permanently stuck because the leaked running marker blocks every later retry for the same export.",
+                            "evidence_basis": "ExportLease.__exit__ only calls ACTIVE_EXPORTS.discard(...) when exc_type is None, while job_runner.py performs send_archive(...) inside the with ExportLease(export_id) block.",
                         }
                     ]
                 },

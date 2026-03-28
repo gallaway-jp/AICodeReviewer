@@ -1,0 +1,21 @@
+{
+  "id": "error-handling-context-manager-exception-not-cleaned",
+  "title": "Error Handling Context Manager Exception Not Cleaned",
+  "description": "An export lease context manager only clears its active-job marker on the success path, so an exception inside the with-block leaves the export permanently marked as running and blocks later retries.",
+  "scope": "project",
+  "review_types": ["error_handling"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "context-manager-leaks-active-export-on-exception",
+      "description_keywords": ["running", "block"],
+      "file_path_contains_any": ["job_runner.py", "lease_store.py"],
+      "issue_type": "error_handling",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["lease_store.py"],
+      "evidence_basis_contains": "__exit__"
+    }
+  ]
+}
