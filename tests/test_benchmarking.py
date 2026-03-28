@@ -16,7 +16,7 @@ def test_discover_fixtures_returns_expected_catalog():
 
     ids = {fixture.id for fixture in fixtures}
 
-    assert len(fixtures) == 73
+    assert len(fixtures) == 74
     assert ids == {
         "accessibility-dialog-semantic-gap",
         "accessibility-icon-button-label-gap",
@@ -84,6 +84,7 @@ def test_discover_fixtures_returns_expected_catalog():
         "security-zip-slip-theme-import",
         "specification-batch-atomicity-contract",
         "specification-profile-display-name-contract",
+        "specification-type-mismatch-vs-spec-enum",
         "testing-rollout-percent-range-untested",
         "testing-order-rollback-untested",
         "testing-timeout-retry-untested",
@@ -966,6 +967,82 @@ def test_evaluate_specification_fixture_matches_profile_display_name_contract(tm
                             "related_files": [],
                             "systemic_impact": "Clients receive a response shape that diverges from the documented contract, so integrations can break when they expect display_name and email_verified.",
                             "evidence_basis": "build_profile_response returns name instead of display_name and never includes email_verified in the response object.",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_specification_fixture_matches_type_mismatch_vs_spec_enum(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "specification-type-mismatch-vs-spec-enum" / "fixture.json"
+    )
+    report_path = tmp_path / "specification-type-mismatch-vs-spec-enum.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-spec-0004",
+                            "file_path": "src/sync_api.py",
+                            "issue_type": "specification",
+                            "severity": "high",
+                            "description": "The response contract violates the spec because sync_mode is returned as a boolean instead of the required string enum values manual, scheduled, or disabled.",
+                            "ai_feedback": "The specification says build_sync_job_response must return sync_mode as a string enum, but sync_api.py serializes sync_mode with bool(job.schedule_enabled).",
+                            "context_scope": "local",
+                            "related_files": [],
+                            "systemic_impact": "Clients can break when they branch on the documented sync_mode enum values but receive booleans instead of the specified contract.",
+                            "evidence_basis": "build_sync_job_response returns sync_mode as bool(job.schedule_enabled) even though the specification requires sync_mode to be one of manual, scheduled, or disabled.",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_fixture_accepts_specification_alias_for_type_mismatch_vs_spec_enum(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "specification-type-mismatch-vs-spec-enum" / "fixture.json"
+    )
+    report_path = tmp_path / "specification-type-mismatch-vs-spec-enum-alias.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-spec-0005",
+                            "file_path": "src/sync_api.py",
+                            "issue_type": "spec_mismatch_return_value",
+                            "severity": "medium",
+                            "description": "The function returns the wrong response type for sync_mode because callers get a boolean where the spec documents a string enum.",
+                            "ai_feedback": "The implementation should map schedule state to one of the documented sync_mode strings instead of returning a bool.",
+                            "context_scope": "local",
+                            "related_files": [],
+                            "systemic_impact": "Integrations relying on the documented sync_mode values can mis-handle the response because the return type does not match the specification.",
+                            "evidence_basis": "sync_api.py returns sync_mode with bool(job.schedule_enabled) instead of one of the enum values listed in the specification.",
                         }
                     ]
                 },

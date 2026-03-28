@@ -1,0 +1,20 @@
+{
+  "id": "specification-type-mismatch-vs-spec-enum",
+  "title": "Specification Type Mismatch Vs Spec Enum",
+  "description": "A response builder returns a boolean in `sync_mode` even though the specification requires `sync_mode` to be a string enum with the values `manual`, `scheduled`, or `disabled`.",
+  "scope": "project",
+  "review_types": ["specification"],
+  "project_dir": "project",
+  "spec_file": "requirements.md",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "sync-mode-violates-enum-spec",
+      "file_path_contains": "sync_api.py",
+      "description_keywords": ["sync_mode", "enum"],
+      "issue_type": "specification",
+      "minimum_severity": "medium",
+      "evidence_basis_contains": "sync_mode"
+    }
+  ]
+}
