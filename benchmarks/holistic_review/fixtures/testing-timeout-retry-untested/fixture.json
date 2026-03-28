@@ -1,0 +1,22 @@
+{
+  "id": "testing-timeout-retry-untested",
+  "title": "Testing Timeout Retry Untested",
+  "description": "The sync helper already retries a transient TimeoutError from the upstream client, but the test suite only covers the successful first-attempt path and never pins the retry behavior.",
+  "scope": "project",
+  "review_types": ["testing"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "missing-timeout-retry-test",
+      "description_keywords": ["test", "timeout", "retry"],
+      "file_path_contains_any": ["test_sync.py", "sync.py"],
+      "issue_type": "testing",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["sync.py"],
+      "systemic_impact_contains": "regression",
+      "evidence_basis_contains": "TimeoutError"
+    }
+  ]
+}

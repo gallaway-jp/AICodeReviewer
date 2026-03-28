@@ -16,7 +16,7 @@ def test_discover_fixtures_returns_expected_catalog():
 
     ids = {fixture.id for fixture in fixtures}
 
-    assert len(fixtures) == 63
+    assert len(fixtures) == 64
     assert ids == {
         "accessibility-dialog-semantic-gap",
         "accessibility-icon-button-label-gap",
@@ -77,6 +77,7 @@ def test_discover_fixtures_returns_expected_catalog():
         "specification-profile-display-name-contract",
         "testing-rollout-percent-range-untested",
         "testing-order-rollback-untested",
+        "testing-timeout-retry-untested",
         "transaction-split",
         "ui-form-recovery-gap",
         "ui-loading-feedback-gap",
@@ -297,6 +298,44 @@ def test_evaluate_documentation_fixture_matches_deployment_topology_gap(tmp_path
                             "related_files": ["src/lease_store.py", "src/worker.py"],
                             "systemic_impact": "Operators following the deployment guide can roll out multiple workers that each maintain independent lease state, causing duplicate job processing in production.",
                             "evidence_basis": "deployment.md says the worker is stateless and that lease state is not stored locally, while lease_store.py keeps claims in the process-local LEASES dictionary used by worker.py.",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_testing_fixture_matches_timeout_retry_gap(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "testing-timeout-retry-untested" / "fixture.json"
+    )
+    report_path = tmp_path / "testing-timeout-retry-untested.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-test-0003",
+                            "file_path": "tests/test_sync.py",
+                            "issue_type": "testing",
+                            "severity": "medium",
+                            "description": "The tests never exercise the TimeoutError retry path even though sync.py already retries the first timeout before surfacing a failure.",
+                            "ai_feedback": "test_sync.py only verifies the immediate success case, but fetch_profile_with_retry in sync.py catches TimeoutError and retries once, leaving that regression-prone branch unpinned.",
+                            "context_scope": "cross_file",
+                            "related_files": ["src/sync.py"],
+                            "systemic_impact": "A future refactor can break the timeout retry path without a failing test, letting transient upstream outages regress unnoticed.",
+                            "evidence_basis": "test_fetch_profile_returns_profile_on_first_attempt covers only the happy path while fetch_profile_with_retry has a TimeoutError retry branch that no test exercises.",
                         }
                     ]
                 },

@@ -36,6 +36,7 @@ The scorer also normalizes semantically equivalent issue types for broad benchma
 - `architectural-layer-leak`: presentation layer reaches directly into storage concerns
 - `documentation-deployment-topology-docs-incomplete`: deployment docs claim workers are stateless and safe to scale horizontally even though lease state lives in process-local memory
 - `security-path-traversal-download`: request data is joined onto an attachment path before file access without traversal constraints
+- `testing-timeout-retry-untested`: source code retries a transient timeout, but the tests only pin the first-attempt success path
 
 ## Evaluating Reports
 
