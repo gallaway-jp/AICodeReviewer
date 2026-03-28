@@ -1964,6 +1964,9 @@ def _supplement_platform_open_command_findings(
         if "open" in text and any(marker in text for marker in ("macos", "cross-platform", "platform", "windows", "linux")):
             if issue.severity.lower() in {"medium", "high", "critical"}:
                 return []
+        if "split('/')" in text and any(marker in text for marker in ("windows", "backslash", "path separator", "cross-platform", "platform")):
+            if issue.severity.lower() in {"medium", "high", "critical"}:
+                return []
 
     entries = _load_target_file_entries(target_files)
     for entry in entries:
@@ -1973,22 +1976,60 @@ def _supplement_platform_open_command_findings(
             content,
             re.IGNORECASE,
         )
-        if launch_match is None:
+        if launch_match is not None:
+            if re.search(r"platform\.|sys\.platform|os\.name", content):
+                continue
+
+            evidence_basis = (
+                f"{Path(entry['path']).name} shells out to the macOS-only 'open' command directly and does not branch on the operating system."
+            )
+            systemic_impact = (
+                "Desktop users on Windows or Linux can hit a broken report-opening path because the launcher assumes a macOS-only shell command."
+            )
+            ai_feedback = "\n\n".join([
+                "**The launcher hardcodes the macOS-only open command**",
+                f"{Path(entry['path']).name} uses subprocess to invoke 'open' directly without any platform-specific branching.",
+                "Code: subprocess.run(['open', report_path], check=True)",
+                "Suggestion: Dispatch through an OS-aware launcher or branch explicitly for macOS, Windows, and Linux.",
+                "Context Scope: local",
+                f"Systemic Impact: {systemic_impact}",
+                "Confidence: medium",
+                f"Evidence Basis: {evidence_basis}",
+            ])
+            return [ReviewIssue(
+                file_path=entry["path"],
+                line_number=_line_number_from_offset(content, launch_match.start()),
+                issue_type="compatibility",
+                severity="medium",
+                description="The launcher hardcodes the macOS-only open command and will break on other operating systems.",
+                code_snippet=_code_snippet(content, launch_match.start()),
+                ai_feedback=ai_feedback,
+                context_scope="local",
+                related_files=[],
+                systemic_impact=systemic_impact,
+                confidence="medium",
+                evidence_basis=evidence_basis,
+            )]
+
+        separator_match = re.search(r"\.split\(\s*[\"']/[\"']\s*\)", content)
+        if separator_match is None:
             continue
-        if re.search(r"platform\.|sys\.platform|os\.name", content):
+        if "path_parts[-3]" not in content:
+            continue
+        if re.search(r"pathlib|os\.path", content):
             continue
 
         evidence_basis = (
-            f"{Path(entry['path']).name} shells out to the macOS-only 'open' command directly and does not branch on the operating system."
+            f"{Path(entry['path']).name} parses the incoming path with split('/') and then indexes path_parts[-3], which assumes POSIX separators instead of native Windows backslashes."
         )
         systemic_impact = (
-            "Desktop users on Windows or Linux can hit a broken report-opening path because the launcher assumes a macOS-only shell command."
+            "Windows users can hit broken labels or index errors when the desktop flow passes native backslash-separated paths into this helper."
         )
         ai_feedback = "\n\n".join([
-            "**The launcher hardcodes the macOS-only open command**",
-            f"{Path(entry['path']).name} uses subprocess to invoke 'open' directly without any platform-specific branching.",
-            "Code: subprocess.run(['open', report_path], check=True)",
-            "Suggestion: Dispatch through an OS-aware launcher or branch explicitly for macOS, Windows, and Linux.",
+            "**The path parser assumes forward slashes instead of using OS-aware path handling**",
+            f"{Path(entry['path']).name} splits export_path on '/' and reads a fixed segment index, so native Windows paths that use backslashes will not produce the expected path layout.",
+            "Code: path_parts = export_path.split('/') / account_id = path_parts[-3]",
+            "Suggestion: Use pathlib.Path or os.path helpers to extract path segments instead of manual slash splitting.",
             "Context Scope: local",
             f"Systemic Impact: {systemic_impact}",
             "Confidence: medium",
@@ -1996,11 +2037,11 @@ def _supplement_platform_open_command_findings(
         ])
         return [ReviewIssue(
             file_path=entry["path"],
-            line_number=_line_number_from_offset(content, launch_match.start()),
+            line_number=_line_number_from_offset(content, separator_match.start()),
             issue_type="compatibility",
             severity="medium",
-            description="The launcher hardcodes the macOS-only open command and will break on other operating systems.",
-            code_snippet=_code_snippet(content, launch_match.start()),
+            description="The path parser assumes forward-slash separators and will break when Windows supplies native backslash-separated paths.",
+            code_snippet=_code_snippet(content, separator_match.start()),
             ai_feedback=ai_feedback,
             context_scope="local",
             related_files=[],

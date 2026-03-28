@@ -1,0 +1,18 @@
+{
+  "id": "compatibility-windows-path-separator-assumption",
+  "title": "Compatibility Windows Path Separator Assumption",
+  "description": "A desktop helper parses selected export paths by splitting on forward slashes, so the feature breaks on Windows when native paths use backslashes instead.",
+  "scope": "project",
+  "review_types": ["compatibility"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "windows-path-separator-assumption",
+      "file_path_contains_any": ["export_history.py"],
+      "issue_type": "compatibility",
+      "minimum_severity": "medium",
+      "evidence_basis_contains": "split('/')"
+    }
+  ]
+}

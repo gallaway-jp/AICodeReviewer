@@ -16,7 +16,7 @@ def test_discover_fixtures_returns_expected_catalog():
 
     ids = {fixture.id for fixture in fixtures}
 
-    assert len(fixtures) == 69
+    assert len(fixtures) == 70
     assert ids == {
         "accessibility-dialog-semantic-gap",
         "accessibility-icon-button-label-gap",
@@ -28,6 +28,7 @@ def test_discover_fixtures_returns_expected_catalog():
         "cache-invalidation-gap",
         "compatibility-macos-open-command",
         "compatibility-python311-tomllib-runtime-gap",
+        "compatibility-windows-path-separator-assumption",
         "concurrency-async-slot-double-booking",
         "concurrency-map-mutation-during-iteration",
         "concurrency-shared-sequence-race",
@@ -1722,6 +1723,82 @@ def test_evaluate_fixture_accepts_compatibility_alias_for_python311_tomllib_runt
                             "related_files": ["pyproject.toml"],
                             "systemic_impact": "Supported environments below Python 3.11 will fail before the application can parse configuration.",
                             "evidence_basis": "tomllib is imported directly while the project metadata still allows Python 3.9 and 3.10.",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_compatibility_fixture_matches_windows_path_separator_assumption(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "compatibility-windows-path-separator-assumption" / "fixture.json"
+    )
+    report_path = tmp_path / "compatibility-windows-path-separator-assumption.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-comp-0005",
+                            "file_path": "src/export_history.py",
+                            "issue_type": "compatibility",
+                            "severity": "high",
+                            "description": "The export parser assumes forward-slash path separators, so native Windows paths will be parsed incorrectly or crash when this helper indexes the expected segments.",
+                            "ai_feedback": "describe_export splits the incoming path with '/' and then indexes fixed positions, which only works when paths already use POSIX separators instead of Windows backslashes.",
+                            "context_scope": "local",
+                            "related_files": [],
+                            "systemic_impact": "Windows users can hit broken export history labels or runtime index errors when the desktop flow passes native paths into this helper.",
+                            "evidence_basis": "export_history.py calls export_path.split('/') and then reads path_parts[-3], which assumes slash-delimited paths rather than OS-aware path handling.",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_fixture_accepts_compatibility_alias_for_windows_path_separator_assumption(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "compatibility-windows-path-separator-assumption" / "fixture.json"
+    )
+    report_path = tmp_path / "compatibility-windows-path-separator-assumption-alias.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-comp-0006",
+                            "file_path": "src/export_history.py",
+                            "issue_type": "cross_platform",
+                            "severity": "medium",
+                            "description": "This helper is not cross-platform because it parses file paths as if every environment used forward slashes.",
+                            "ai_feedback": "The implementation should use pathlib or os.path semantics instead of manual slash splitting.",
+                            "context_scope": "local",
+                            "related_files": [],
+                            "systemic_impact": "Desktop exports can break on Windows when native backslash-separated paths reach the history formatter.",
+                            "evidence_basis": "The function invokes split('/') on the input path and indexes the resulting segments directly.",
                         }
                     ]
                 },
