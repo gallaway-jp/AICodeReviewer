@@ -1,0 +1,18 @@
+{
+  "id": "localization-concatenated-translation-grammar-break",
+  "title": "Localization Concatenated Translation Grammar Break",
+  "description": "A UI banner builds a sentence by concatenating multiple translated fragments around dynamic values, which prevents translators from changing word order or grammar for other locales.",
+  "scope": "project",
+  "review_types": ["localization"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "concatenated-translation-grammar-break",
+      "file_path_contains_any": ["renewal_banner.py"],
+      "issue_type": "localization",
+      "minimum_severity": "medium",
+      "evidence_basis_contains": "renewal_prefix"
+    }
+  ]
+}

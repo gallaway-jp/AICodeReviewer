@@ -39,6 +39,7 @@ The scorer also normalizes semantically equivalent issue types for broad benchma
 - `data-validation-enum-field-not-constrained`: validator accepts any delivery_mode string without enforcing the supported enum values
 - `compatibility-windows-path-separator-assumption`: desktop path parsing assumes forward slashes and breaks when Windows passes native backslash-separated paths
 - `dependency-transitive-api-removal-runtime-gap`: runtime code imports a vendored botocore API path that is no longer available in the declared supported botocore version
+- `localization-concatenated-translation-grammar-break`: a UI banner concatenates translation fragments around dynamic values instead of using one template translators can reorder grammatically
 - `documentation-deployment-topology-docs-incomplete`: deployment docs claim workers are stateless and safe to scale horizontally even though lease state lives in process-local memory
 - `regression-stale-caller-utility-signature-change`: a reordered retry-delay helper signature leaves an unchanged caller using the old argument order and silently changes retry timing
 - `security-path-traversal-download`: request data is joined onto an attachment path before file access without traversal constraints

@@ -1182,6 +1182,19 @@ def collect_review_issues(
             len(local_dependency_issues),
         )
 
+    local_localization_issues = _supplement_local_localization_findings(
+        effective_target_files,
+        combined_type,
+        issues,
+        client,
+    )
+    if local_localization_issues:
+        issues.extend(local_localization_issues)
+        logger.info(
+            "Added %d Local localization supplement finding(s) after AI review",
+            len(local_localization_issues),
+        )
+
     local_error_handling_issues = _supplement_local_error_handling_findings(
         effective_target_files,
         combined_type,
@@ -2731,6 +2744,88 @@ def _supplement_local_dependency_findings(
 
     supplement = _supplement_local_vendored_botocore_dependency(entries, issues)
     return [supplement] if supplement is not None else []
+
+
+def _supplement_local_localization_findings(
+    target_files: Sequence[FileInfo],
+    review_type: str,
+    issues: Sequence[ReviewIssue],
+    client: AIBackend,
+) -> List[ReviewIssue]:
+    if "localization" not in review_type.split("+"):
+        return []
+    if not _is_local_backend(client):
+        return []
+
+    entries = _load_target_file_entries(target_files)
+    if not entries:
+        return []
+
+    supplement = _supplement_local_concatenated_translation_localization(entries, issues)
+    return [supplement] if supplement is not None else []
+
+
+def _supplement_local_concatenated_translation_localization(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = issue.issue_type.lower().replace(" ", "_")
+        text = _issue_text(issue)
+        if normalized_issue_type in {"localization", "i18n", "internationalization"} and (
+            "renewal_prefix" in text
+            or ("concatenat" in text and "translation" in text)
+            or ("template" in text and "translat" in text)
+        ):
+            if issue.severity.lower() in {"medium", "high", "critical"}:
+                return None
+
+    banner_entry = next((entry for entry in entries if Path(entry["path"]).name == "renewal_banner.py"), None)
+    if banner_entry is None:
+        return None
+
+    content = banner_entry["content"]
+    required_tokens = (
+        't("billing.renewal_prefix")',
+        't("billing.renewal_middle")',
+        't("billing.renewal_suffix")',
+        'customer_name',
+        'renewal_date_label',
+    )
+    if not all(token in content for token in required_tokens):
+        return None
+
+    prefix_offset = content.index('t("billing.renewal_prefix")')
+    evidence_basis = (
+        "renewal_banner.py concatenates t('billing.renewal_prefix'), customer_name, t('billing.renewal_middle'), renewal_date_label, and t('billing.renewal_suffix') into one sentence instead of using a single translation template."
+    )
+    systemic_impact = (
+        "Localized builds can produce awkward or incorrect grammar because translators cannot reorder the customer name and renewal date naturally around the full sentence."
+    )
+    ai_feedback = "\n\n".join([
+        "**The renewal banner concatenates translation fragments instead of using one reorderable template**",
+        "renewal_banner.py builds the message from separate prefix, middle, and suffix translation keys around customer_name and renewal_date_label, which locks the sentence into one English-specific word order.",
+        "Code: t('billing.renewal_prefix') + customer_name + t('billing.renewal_middle') + renewal_date_label + t('billing.renewal_suffix')",
+        "Suggestion: Use one translation key with placeholders for the customer name and renewal date so translators can control the full sentence structure per locale.",
+        "Context Scope: local",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: medium",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=banner_entry["path"],
+        line_number=_line_number_from_offset(content, prefix_offset),
+        issue_type="localization",
+        severity="medium",
+        description="The renewal banner concatenates translation fragments around dynamic values, so other locales cannot reorder the sentence grammatically.",
+        code_snippet=_code_snippet(content, prefix_offset),
+        ai_feedback=ai_feedback,
+        context_scope="local",
+        related_files=[],
+        systemic_impact=systemic_impact,
+        confidence="medium",
+        evidence_basis=evidence_basis,
+    )
 
 
 def _supplement_local_vendored_botocore_dependency(

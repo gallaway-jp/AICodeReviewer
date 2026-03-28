@@ -16,7 +16,7 @@ def test_discover_fixtures_returns_expected_catalog():
 
     ids = {fixture.id for fixture in fixtures}
 
-    assert len(fixtures) == 70
+    assert len(fixtures) == 71
     assert ids == {
         "accessibility-dialog-semantic-gap",
         "accessibility-icon-button-label-gap",
@@ -59,6 +59,7 @@ def test_discover_fixtures_returns_expected_catalog():
         "error-handling-swallowed-import-failure",
         "field-rename-contract",
         "localization-hardcoded-settings-labels",
+        "localization-concatenated-translation-grammar-break",
         "localization-us-only-receipt-format",
         "maintainability-duplicated-sync-window-rules",
         "maintainability-overloaded-settings-controller",
@@ -2331,6 +2332,82 @@ def test_evaluate_fixture_accepts_localization_alias_for_us_only_receipt_format(
                             "related_files": [],
                             "systemic_impact": "Users outside the US can get incorrectly formatted receipts.",
                             "evidence_basis": "The code uses %m/%d/%Y and a hardcoded dollar-prefixed amount format.",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_localization_fixture_matches_concatenated_translation_grammar_break(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "localization-concatenated-translation-grammar-break" / "fixture.json"
+    )
+    report_path = tmp_path / "localization-concatenated-translation-grammar-break.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-loc-0005",
+                            "file_path": "src/renewal_banner.py",
+                            "issue_type": "localization",
+                            "severity": "medium",
+                            "description": "The renewal banner assembles a sentence from multiple translated fragments around dynamic values, so other locales cannot reorder the customer name and renewal date naturally.",
+                            "ai_feedback": "Using separate keys for the prefix, middle, and suffix forces one English sentence structure instead of giving translators one full template with placeholders.",
+                            "context_scope": "local",
+                            "related_files": [],
+                            "systemic_impact": "Localized builds can produce awkward or incorrect grammar because translators cannot control the full sentence structure around the inserted values.",
+                            "evidence_basis": "renewal_banner.py concatenates t('billing.renewal_prefix'), customer_name, t('billing.renewal_middle'), renewal_date_label, and t('billing.renewal_suffix') into one message.",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_fixture_accepts_localization_alias_for_concatenated_translation_grammar_break(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "localization-concatenated-translation-grammar-break" / "fixture.json"
+    )
+    report_path = tmp_path / "localization-concatenated-translation-grammar-break-alias.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-loc-0006",
+                            "file_path": "src/renewal_banner.py",
+                            "issue_type": "i18n",
+                            "severity": "medium",
+                            "description": "This message is not translation-safe because it concatenates translated fragments instead of using one template with placeholders.",
+                            "ai_feedback": "Translators need one full sentence key so they can reorder variables for other languages.",
+                            "context_scope": "local",
+                            "related_files": [],
+                            "systemic_impact": "Users in other locales can see unnatural grammar when the banner mixes dynamic values with fixed fragment order.",
+                            "evidence_basis": "The banner joins renewal_prefix, renewal_middle, and renewal_suffix keys around the inserted customer name and date label.",
                         }
                     ]
                 },
