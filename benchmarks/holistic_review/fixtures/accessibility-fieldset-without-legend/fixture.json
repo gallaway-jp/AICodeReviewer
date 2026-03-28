@@ -1,0 +1,20 @@
+{
+  "id": "accessibility-fieldset-without-legend",
+  "title": "Accessibility Fieldset Without Legend",
+  "description": "A preferences form groups related notification controls inside a fieldset, but the group has no legend, so screen reader users do not hear a meaningful label for the option set.",
+  "scope": "project",
+  "review_types": ["accessibility"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "fieldset-missing-legend",
+      "description_keywords": ["legend", "screen"],
+      "file_path_contains_any": ["NotificationPreferences.tsx"],
+      "issue_type": "accessibility",
+      "minimum_severity": "medium",
+      "systemic_impact_contains": "screen",
+      "evidence_basis_contains": "legend"
+    }
+  ]
+}

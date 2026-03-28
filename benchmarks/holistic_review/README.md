@@ -48,6 +48,7 @@ The scorer also normalizes semantically equivalent issue types for broad benchma
 - `regression-stale-caller-utility-signature-change`: a reordered retry-delay helper signature leaves an unchanged caller using the old argument order and silently changes retry timing
 - `security-path-traversal-download`: request data is joined onto an attachment path before file access without traversal constraints
 - `testing-timeout-retry-untested`: source code retries a transient timeout, but the tests only pin the first-attempt success path
+- `accessibility-fieldset-without-legend`: related form controls are grouped in fieldsets, but the groups have no legend for assistive technology to announce
 
 ## Evaluating Reports
 

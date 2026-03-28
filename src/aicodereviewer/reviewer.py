@@ -3894,6 +3894,9 @@ def _supplement_local_accessibility_findings(
     dialog_semantics = _supplement_local_dialog_semantics_accessibility(entries, issues)
     if dialog_semantics is not None:
         supplements.append(dialog_semantics)
+    fieldset_legend = _supplement_local_fieldset_legend_accessibility(entries, issues)
+    if fieldset_legend is not None:
+        supplements.append(fieldset_legend)
     return supplements
 
 
@@ -4536,6 +4539,83 @@ def _supplement_local_dialog_semantics_accessibility(
         severity="medium",
         description="The settings modal lacks dialog semantics, so screen reader users are not told they entered a modal context.",
         code_snippet=_code_snippet(modal_content, panel_offset),
+        ai_feedback=ai_feedback,
+        context_scope="local",
+        related_files=[],
+        systemic_impact=systemic_impact,
+        confidence="medium",
+        evidence_basis=evidence_basis,
+    )
+
+
+def _supplement_local_fieldset_legend_accessibility(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = issue.issue_type.lower().replace(" ", "_")
+        text = _issue_text(issue)
+        if (
+            normalized_issue_type == "accessibility"
+            and "fieldset" in text
+            and "legend" in text
+        ):
+            return None
+
+    changed_entry = next(
+        (entry for entry in entries if Path(entry["path"]).name == "NotificationPreferences.tsx"),
+        None,
+    )
+    if changed_entry is None:
+        return None
+
+    component_path = Path(changed_entry["path"])
+    try:
+        component_content = _read_file_content(component_path)
+    except Exception:
+        component_content = changed_entry.get("content", "")
+
+    if "<fieldset" not in component_content:
+        return None
+    if "group-heading" not in component_content:
+        return None
+    if "<legend" in component_content or "aria-labelledby" in component_content:
+        return None
+
+    channel_match = re.search(
+        r'<fieldset\s+className="channel-group">\s*<p\s+className="group-heading">Delivery channels</p>',
+        component_content,
+    )
+    digest_match = re.search(
+        r'<fieldset\s+className="digest-group">\s*<p\s+className="group-heading">Digest frequency</p>',
+        component_content,
+    )
+    if channel_match is None or digest_match is None:
+        return None
+
+    evidence_basis = (
+        "NotificationPreferences.tsx renders the delivery and digest option groups inside fieldset elements, but labels them with paragraph headings instead of legend elements, so assistive technology is not given the semantic group label."
+    )
+    systemic_impact = (
+        "Screen reader users may hear the checkbox and radio controls without the shared group context that explains which set of notification options they belong to."
+    )
+    ai_feedback = "\n\n".join([
+        "**The grouped notification controls are missing fieldset legends**",
+        "The component uses fieldset to group related notification controls, but each group is headed by a paragraph rather than a legend, so assistive technology does not announce the group label for the enclosed options.",
+        "Code: <fieldset className=\"channel-group\"> / <p className=\"group-heading\">Delivery channels</p> / <fieldset className=\"digest-group\"> / <p className=\"group-heading\">Digest frequency</p>",
+        "Suggestion: Replace the paragraph headings with legend elements, or add an aria-labelledby relationship from each fieldset to a visible label element so screen readers can announce the group purpose.",
+        "Context Scope: local",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: medium",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=str(component_path),
+        line_number=_line_number_from_offset(component_content, channel_match.start()),
+        issue_type="accessibility",
+        severity="medium",
+        description="The notification preference groups use fieldset without legend labels, so screen reader users do not hear the accessible group name for the related controls.",
+        code_snippet=_code_snippet(component_content, channel_match.start()),
         ai_feedback=ai_feedback,
         context_scope="local",
         related_files=[],

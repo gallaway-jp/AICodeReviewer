@@ -16,9 +16,10 @@ def test_discover_fixtures_returns_expected_catalog():
 
     ids = {fixture.id for fixture in fixtures}
 
-    assert len(fixtures) == 75
+    assert len(fixtures) == 76
     assert ids == {
         "accessibility-dialog-semantic-gap",
+        "accessibility-fieldset-without-legend",
         "accessibility-icon-button-label-gap",
         "api-design-create-missing-201-contract",
         "api-design-get-create-endpoint",
@@ -2792,6 +2793,44 @@ def test_evaluate_accessibility_fixture_matches_dialog_semantic_gap(tmp_path):
                             "related_files": [],
                             "systemic_impact": "Screen reader users may not understand that the settings panel is a modal dialog or that the rest of the page is temporarily inactive.",
                             "evidence_basis": "SettingsModal.tsx renders the modal with div elements and no role=dialog or aria-modal attribute on the panel.",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_accessibility_fixture_matches_fieldset_without_legend(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "accessibility-fieldset-without-legend" / "fixture.json"
+    )
+    report_path = tmp_path / "accessibility-fieldset-without-legend.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-a11y-fieldset-0001",
+                            "file_path": "src/NotificationPreferences.tsx",
+                            "issue_type": "accessibility",
+                            "severity": "medium",
+                            "description": "The related notification options are wrapped in fieldset elements without legends, so screen reader users do not hear an accessible group label for the controls.",
+                            "ai_feedback": "The component uses fieldset for the delivery channel and digest groups, but each group is headed by a paragraph instead of a legend, so assistive technology does not announce the purpose of the grouped controls.",
+                            "context_scope": "local",
+                            "related_files": [],
+                            "systemic_impact": "Screen reader users may hear the individual checkboxes and radio buttons without the shared group context that explains what set of options they belong to.",
+                            "evidence_basis": "NotificationPreferences.tsx renders two fieldset elements with paragraph headings and no legend element to label the grouped controls.",
                         }
                     ]
                 },
