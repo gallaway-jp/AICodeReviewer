@@ -1,0 +1,22 @@
+{
+  "id": "data-validation-enum-field-not-constrained",
+  "title": "Data Validation Enum Field Not Constrained",
+  "description": "The workflow API accepts an unsupported delivery_mode because the validator only checks presence and string coercion, not that the field is limited to the documented enum values.",
+  "scope": "project",
+  "review_types": ["data_validation"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "delivery-mode-enum-not-enforced",
+      "description_keywords": ["delivery", "mode"],
+      "file_path_contains_any": ["api.py", "validation.py"],
+      "issue_type": "data_validation",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["validation.py"],
+      "systemic_impact_contains": "invalid",
+      "evidence_basis_contains": "delivery_mode"
+    }
+  ]
+}

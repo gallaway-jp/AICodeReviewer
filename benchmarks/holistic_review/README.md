@@ -34,6 +34,7 @@ The scorer also normalizes semantically equivalent issue types for broad benchma
 - `partial-refactor-callers`: refactor changed a return contract but callers still use the old shape
 - `diff-signature-break`: diff-only signature change leaves stale call sites in surrounding code
 - `architectural-layer-leak`: presentation layer reaches directly into storage concerns
+- `data-validation-enum-field-not-constrained`: validator accepts any delivery_mode string without enforcing the supported enum values
 - `documentation-deployment-topology-docs-incomplete`: deployment docs claim workers are stateless and safe to scale horizontally even though lease state lives in process-local memory
 - `security-path-traversal-download`: request data is joined onto an attachment path before file access without traversal constraints
 - `testing-timeout-retry-untested`: source code retries a transient timeout, but the tests only pin the first-attempt success path

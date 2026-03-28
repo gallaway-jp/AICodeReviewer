@@ -16,7 +16,7 @@ def test_discover_fixtures_returns_expected_catalog():
 
     ids = {fixture.id for fixture in fixtures}
 
-    assert len(fixtures) == 64
+    assert len(fixtures) == 65
     assert ids == {
         "accessibility-dialog-semantic-gap",
         "accessibility-icon-button-label-gap",
@@ -32,6 +32,7 @@ def test_discover_fixtures_returns_expected_catalog():
         "concurrency-shared-sequence-race",
         "complexity-notification-rule-ladder",
         "complexity-nested-sync-decision-tree",
+        "data-validation-enum-field-not-constrained",
         "data-validation-inverted-time-window",
         "data-validation-rollout-percent-range",
         "dead-code-obsolete-compat-shim",
@@ -336,6 +337,44 @@ def test_evaluate_testing_fixture_matches_timeout_retry_gap(tmp_path):
                             "related_files": ["src/sync.py"],
                             "systemic_impact": "A future refactor can break the timeout retry path without a failing test, letting transient upstream outages regress unnoticed.",
                             "evidence_basis": "test_fetch_profile_returns_profile_on_first_attempt covers only the happy path while fetch_profile_with_retry has a TimeoutError retry branch that no test exercises.",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_data_validation_fixture_matches_enum_constraint_gap(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "data-validation-enum-field-not-constrained" / "fixture.json"
+    )
+    report_path = tmp_path / "data-validation-enum-field-not-constrained.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-val-0003",
+                            "file_path": "src/validation.py",
+                            "issue_type": "data_validation",
+                            "severity": "medium",
+                            "description": "The validator accepts any delivery_mode string because it never constrains the field to the supported enum values before api.py persists it.",
+                            "ai_feedback": "api.py trusts validate_workflow, but validation.py only coerces delivery_mode to str and never checks that it matches an allowed mode such as email or webhook.",
+                            "context_scope": "cross_file",
+                            "related_files": ["src/api.py"],
+                            "systemic_impact": "Invalid delivery_mode values can reach runtime scheduling logic, leaving impossible workflow states accepted as valid input.",
+                            "evidence_basis": "validate_workflow only checks presence and str(payload['delivery_mode']) without any enum membership check before api.py returns that delivery_mode.",
                         }
                     ]
                 },

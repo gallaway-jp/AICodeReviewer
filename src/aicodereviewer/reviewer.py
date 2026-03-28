@@ -3026,6 +3026,10 @@ def _supplement_local_data_validation_findings(
     if rollout_percent_range is not None:
         supplements.append(rollout_percent_range)
 
+    enum_field_constraint = _supplement_local_enum_field_constraint_data_validation(entries, issues)
+    if enum_field_constraint is not None:
+        supplements.append(enum_field_constraint)
+
     return supplements
 
 
@@ -3161,6 +3165,77 @@ def _supplement_local_rollout_percent_range_data_validation(
         severity="high",
         description="The validator never constrains rollout_percent to 0..100, so invalid rollout percentages reach batch-size calculations.",
         code_snippet=_code_snippet(api_content, api_content.index("validate_rollout(payload)")),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=[validator_entry["path"]],
+        systemic_impact=systemic_impact,
+        confidence="medium",
+        evidence_basis=evidence_basis,
+    )
+
+
+def _supplement_local_enum_field_constraint_data_validation(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        if issue.issue_type.lower().replace(" ", "_") != "data_validation":
+            continue
+        related_files = [Path(path).name for path in issue.related_files]
+        evidence_basis = (issue.evidence_basis or "").lower()
+        systemic_impact = (issue.systemic_impact or "").lower()
+        if (
+            issue.context_scope == "cross_file"
+            and "delivery_mode" in evidence_basis
+            and "validation.py" in related_files
+            and "invalid" in systemic_impact
+        ):
+            return None
+
+    validator_entry = next((entry for entry in entries if Path(entry["path"]).name == "validation.py"), None)
+    api_entry = next((entry for entry in entries if Path(entry["path"]).name == "api.py"), None)
+    if validator_entry is None or api_entry is None:
+        return None
+
+    validator_content = validator_entry["content"]
+    api_content = api_entry["content"]
+    if "validate_workflow(payload)" not in api_content:
+        return None
+    if '"delivery_mode": payload["delivery_mode"]' not in api_content:
+        return None
+    if 'str(payload["delivery_mode"])' not in validator_content:
+        return None
+    if re.search(
+        r"delivery_mode\s*(?:in|not in|==|!=)|email|webhook|sms|allowed|supported|choices|enum",
+        validator_content,
+        re.IGNORECASE,
+    ):
+        return None
+
+    evidence_basis = (
+        "validation.py only coerces delivery_mode with str(payload['delivery_mode']) and never checks that it matches a supported enum value before api.py returns delivery_mode in the scheduled workflow response."
+    )
+    systemic_impact = (
+        "Invalid delivery modes can reach runtime use, so unsupported delivery_mode values are accepted as valid workflow state instead of being rejected at validation time."
+    )
+    ai_feedback = "\n\n".join([
+        "**Validator accepts delivery_mode values outside the supported workflow contract**",
+        "validation.py only checks presence and string coercion for delivery_mode, but api.py immediately returns that field as scheduled workflow state, so unsupported modes still pass through as valid input.",
+        "Code: validate_workflow(payload) / str(payload['delivery_mode']) / api.py returns payload['delivery_mode'] without any enum membership check",
+        "Suggestion: Define the allowed delivery_mode values in validate_workflow and reject any value outside that enum before callers persist or schedule the workflow.",
+        "Context Scope: cross_file",
+        f"Related Files: {validator_entry['path']}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: medium",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=api_entry["path"],
+        line_number=_line_number_from_offset(api_content, api_content.index("validate_workflow(payload)")),
+        issue_type="data_validation",
+        severity="medium",
+        description="The validator never constrains delivery_mode to the supported enum values, so invalid workflow modes reach scheduling.",
+        code_snippet=_code_snippet(api_content, api_content.index("validate_workflow(payload)")),
         ai_feedback=ai_feedback,
         context_scope="cross_file",
         related_files=[validator_entry["path"]],
