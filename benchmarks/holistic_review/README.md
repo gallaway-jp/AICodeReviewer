@@ -51,6 +51,7 @@ The scorer also normalizes semantically equivalent issue types for broad benchma
 - `accessibility-fieldset-without-legend`: related form controls are grouped in fieldsets, but the groups have no legend for assistive technology to announce
 - `scalability-connection-pool-exhaustion-under-burst`: burst job processing fans out more workers than the shared connection pool can sustain, and each job holds a connection across slow remote work
 - `error-handling-context-manager-exception-not-cleaned`: a context manager only clears its active-job marker on the success path, so exceptions leak the running state and block later retries
+- `tuple-unpack-contract-drift`: a service helper now returns a mapping payload, but an unchanged caller still unpacks it positionally as if the function returned a tuple
 
 ## Evaluating Reports
 

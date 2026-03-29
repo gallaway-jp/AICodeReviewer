@@ -16,7 +16,7 @@ def test_discover_fixtures_returns_expected_catalog():
 
     ids = {fixture.id for fixture in fixtures}
 
-    assert len(fixtures) == 78
+    assert len(fixtures) == 79
     assert ids == {
         "accessibility-dialog-semantic-gap",
         "accessibility-fieldset-without-legend",
@@ -93,6 +93,7 @@ def test_discover_fixtures_returns_expected_catalog():
         "testing-order-rollback-untested",
         "testing-timeout-retry-untested",
         "transaction-split",
+        "tuple-unpack-contract-drift",
         "ui-form-recovery-gap",
         "ui-loading-feedback-gap",
         "validation-drift",
@@ -274,6 +275,44 @@ def test_evaluate_security_fixture_matches_open_redirect_login(tmp_path):
                             "related_files": ["src/redirects.py"],
                             "systemic_impact": "Attackers can use trusted login links to bounce users to phishing pages or malicious domains immediately after sign-in.",
                             "evidence_basis": "login() passes the untrusted return_to parameter into build_post_login_redirect(), which returns the external destination without validation.",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_best_practices_fixture_matches_tuple_unpack_contract_drift(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "tuple-unpack-contract-drift" / "fixture.json"
+    )
+    report_path = tmp_path / "tuple-unpack-contract-drift.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-bp-0001",
+                            "file_path": "src/controller.py",
+                            "issue_type": "contract_mismatch",
+                            "severity": "medium",
+                            "description": "The caller still unpacks build_sync_plan(...) as a tuple even though the helper now returns a mapping payload.",
+                            "ai_feedback": "controller.py unpacks the return value from service.py positionally, so the caller consumes dict keys instead of the intended status and next_run_at values.",
+                            "context_scope": "cross_file",
+                            "related_files": ["src/service.py"],
+                            "systemic_impact": "Unchanged callers can silently consume the wrong values or fail when they still rely on the old tuple-style contract.",
+                            "evidence_basis": "controller.py does status, next_run_at = build_sync_plan(account_id) while service.py build_sync_plan now returns a dict with status and next_run_at keys.",
                         }
                     ]
                 },

@@ -277,6 +277,47 @@ class TestCollectReviewIssues:
         assert [Path(path).name for path in issues[0].related_files] == ["job_selector_parser.py"]
         assert mock_client.get_review.call_count == 1
 
+    def test_collect_review_issues_uses_local_best_practices_supplement_on_reasoning_only_error(self):
+        mock_client = MagicMock()
+        mock_client.backend_name = "local"
+        mock_client.get_review.return_value = (
+            "Error: OpenAI-compatible endpoint returned empty assistant content and reasoning_content only. "
+            "Configure a non-thinking model or disable server-side thinking mode for tool-mode JSON reviews."
+        )
+
+        target_files: List[FileInfo] = [  # type: ignore[list-item]
+            {
+                'path': Path('/path/to/service.py'),
+                'content': (
+                    'def build_sync_plan(account_id: int) -> dict:\n'
+                    '    return {\n'
+                    '        "status": "scheduled",\n'
+                    '        "next_run_at": "2026-03-29T12:00:00Z",\n'
+                    '    }\n'
+                ),
+                'filename': 'service.py'
+            },
+            {
+                'path': Path('/path/to/controller.py'),
+                'content': (
+                    'from src.service import build_sync_plan\n\n'
+                    'def queue_sync(account_id: int) -> dict:\n'
+                    '    status, next_run_at = build_sync_plan(account_id)\n'
+                    '    return {"status": status, "next_run_at": next_run_at}\n'
+                ),
+                'filename': 'controller.py'
+            },
+        ]
+
+        issues = collect_review_issues(target_files, ["best_practices"], mock_client, "en")
+
+        assert len(issues) == 1
+        assert issues[0].context_scope == "cross_file"
+        assert Path(issues[0].file_path).name == "controller.py"
+        assert [Path(path).name for path in issues[0].related_files] == ["service.py"]
+        assert "build_sync_plan" in (issues[0].evidence_basis or "")
+        assert mock_client.get_review.call_count == 1
+
     def test_collect_review_issues_adds_local_license_supplement_when_model_misses_it(self):
         mock_client = MagicMock()
         mock_client.backend_name = "local"

@@ -1,0 +1,21 @@
+{
+  "id": "tuple-unpack-contract-drift",
+  "title": "Tuple Unpack Contract Drift",
+  "description": "A service helper now returns a mapping payload, but an unchanged caller still unpacks it positionally as if the function returned a tuple.",
+  "scope": "project",
+  "review_types": ["best_practices"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "tuple-unpack-contract-mismatch",
+      "description_keywords": ["unpack"],
+      "file_path_contains_any": ["controller.py", "service.py"],
+      "issue_type": "best_practices",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["service.py"],
+      "evidence_basis_contains": "dict"
+    }
+  ]
+}

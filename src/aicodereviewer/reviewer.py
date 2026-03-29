@@ -1736,6 +1736,46 @@ def _extract_imported_call_result_accesses(
     return accesses
 
 
+def _extract_imported_call_tuple_unpacks(
+    content: str,
+) -> List[tuple[str, str, tuple[str, ...], int]]:
+    unpacks: List[tuple[str, str, tuple[str, ...], int]] = []
+    try:
+        tree = ast.parse(content)
+    except SyntaxError:
+        return unpacks
+
+    imported_functions: Dict[str, tuple[str, str]] = {}
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            module_tail = node.module.split(".")[-1]
+            for alias in node.names:
+                local_name = alias.asname or alias.name
+                imported_functions[local_name] = (module_tail, alias.name)
+        elif isinstance(node, ast.Assign):
+            if len(node.targets) != 1:
+                continue
+            tuple_target = node.targets[0]
+            if not isinstance(tuple_target, (ast.Tuple, ast.List)):
+                continue
+            if not isinstance(node.value, ast.Call) or not isinstance(node.value.func, ast.Name):
+                continue
+            import_target = imported_functions.get(node.value.func.id)
+            if import_target is None:
+                continue
+            unpack_names = tuple(
+                element.id
+                for element in tuple_target.elts
+                if isinstance(element, ast.Name)
+            )
+            if len(unpack_names) != len(tuple_target.elts) or len(unpack_names) < 2:
+                continue
+            unpacks.append((import_target[0], import_target[1], unpack_names, node.lineno))
+
+    return unpacks
+
+
 def _supplement_return_shape_mismatch_findings(
     target_files: Sequence[FileInfo],
     review_type: str,
@@ -1762,9 +1802,6 @@ def _supplement_return_shape_mismatch_findings(
 
     for consumer_entry in entries:
         call_accesses = _extract_imported_call_result_accesses(consumer_entry["content"])
-        if not call_accesses:
-            continue
-
         for module_stem, function_name, accessed_key, line_number in call_accesses:
             producer_entries = entries_by_stem.get(module_stem, [])
             for producer_entry in producer_entries:
@@ -1814,6 +1851,67 @@ def _supplement_return_shape_mismatch_findings(
                     issue_type="api_mismatch_runtime_error",
                     severity="high",
                     description="Caller still expects a stale response field after a refactor",
+                    code_snippet=consumer_entry["content"][:200] + ("…" if len(consumer_entry["content"]) > 200 else ""),
+                    ai_feedback=ai_feedback,
+                    context_scope="cross_file",
+                    related_files=[producer_entry["path"]],
+                    systemic_impact=systemic_impact,
+                    confidence="medium",
+                    evidence_basis=evidence_basis,
+                ))
+
+        tuple_unpacks = _extract_imported_call_tuple_unpacks(consumer_entry["content"])
+        for module_stem, function_name, unpack_names, line_number in tuple_unpacks:
+            producer_entries = entries_by_stem.get(module_stem, [])
+            for producer_entry in producer_entries:
+                if producer_entry["path"] == consumer_entry["path"]:
+                    continue
+                return_shapes = return_shapes_by_path.get(producer_entry["path"], {})
+                return_shape = return_shapes.get(function_name)
+                if return_shape is None:
+                    continue
+
+                available_keys, _producer_line = return_shape
+                if not available_keys:
+                    continue
+
+                seen_key = (
+                    consumer_entry["path"],
+                    producer_entry["path"],
+                    function_name,
+                    "|".join(unpack_names),
+                )
+                if seen_key in seen_keys:
+                    continue
+                seen_keys.add(seen_key)
+
+                unpack_text = ", ".join(unpack_names)
+                available_keys_text = ", ".join(sorted(available_keys)) or "no documented keys"
+                systemic_impact = (
+                    f"Callers can crash at runtime because {consumer_entry['name']} still unpacks {function_name}() "
+                    f"as positional values while {producer_entry['name']} now returns a mapping with keys {available_keys_text}."
+                )
+                evidence_basis = (
+                    f"{consumer_entry['name']} does {unpack_text} = {function_name}(...) while "
+                    f"{producer_entry['name']}.{function_name} returns a dict with keys {available_keys_text}."
+                )
+                ai_feedback = "\n\n".join([
+                    "**Caller still unpacks a tuple-style contract after the callee switched to a mapping payload**",
+                    f"{consumer_entry['name']} still unpacks {function_name}() into positional variables ({unpack_text}), but {producer_entry['name']} now returns a dict with keys {available_keys_text}.",
+                    f"Code: {unpack_text} = {function_name}(...) / {function_name}(...) -> {{{available_keys_text}}}",
+                    "Suggestion: Update callers to read named keys from the returned mapping, or restore an explicit tuple/dataclass contract until all consumers are migrated.",
+                    "Context Scope: cross_file",
+                    f"Related Files: {producer_entry['path']}",
+                    f"Systemic Impact: {systemic_impact}",
+                    "Confidence: medium",
+                    f"Evidence Basis: {evidence_basis}",
+                ])
+                supplements.append(ReviewIssue(
+                    file_path=consumer_entry["path"],
+                    line_number=line_number,
+                    issue_type="contract_mismatch",
+                    severity="high",
+                    description="Caller still unpacks a tuple-style return after the callee switched to a mapping payload",
                     code_snippet=consumer_entry["content"][:200] + ("…" if len(consumer_entry["content"]) > 200 else ""),
                     ai_feedback=ai_feedback,
                     context_scope="cross_file",
@@ -2212,6 +2310,7 @@ def _supports_local_reasoning_only_short_circuit(review_type: str) -> bool:
     supported = {
         "accessibility",
         "api_design",
+        "best_practices",
         "concurrency",
         "data_validation",
         "dead_code",
