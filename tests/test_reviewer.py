@@ -153,6 +153,282 @@ class TestCollectReviewIssues:
         assert {Path(issue.file_path).name for issue in issues} == {"a.py", "b.py"}
         assert mock_client.get_review.call_count >= 2
 
+    def test_collect_review_issues_uses_local_error_handling_supplement_on_reasoning_only_error(self):
+        mock_client = MagicMock()
+        mock_client.backend_name = "local"
+        mock_client.get_review.side_effect = [
+            "Error: OpenAI-compatible endpoint returned empty assistant content and reasoning_content only. Configure a non-thinking model or disable server-side thinking mode for tool-mode JSON reviews.",
+            "Error: OpenAI-compatible endpoint returned empty assistant content and reasoning_content only. Configure a non-thinking model or disable server-side thinking mode for tool-mode JSON reviews.",
+        ]
+
+        target_files: List[FileInfo] = [  # type: ignore[list-item]
+            {
+                'path': Path('/path/to/lease_store.py'),
+                'content': (
+                    'ACTIVE_EXPORTS: set[str] = set()\n\n'
+                    'class ExportLease:\n'
+                    '    def __init__(self, export_id):\n'
+                    '        self.export_id = export_id\n\n'
+                    '    def __enter__(self):\n'
+                    '        ACTIVE_EXPORTS.add(self.export_id)\n'
+                    '        return self\n\n'
+                    '    def __exit__(self, exc_type, exc, tb):\n'
+                    '        if exc_type is None:\n'
+                    '            ACTIVE_EXPORTS.discard(self.export_id)\n'
+                ),
+                'filename': 'lease_store.py'
+            },
+            {
+                'path': Path('/path/to/job_runner.py'),
+                'content': (
+                    'def export_is_running(export_id):\n'
+                    '    return export_id in ACTIVE_EXPORTS\n\n'
+                    'def run_export(export_id):\n'
+                    '    if export_is_running(export_id):\n'
+                    '        return {"status": "blocked", "reason": "already-running"}\n'
+                    '    with ExportLease(export_id):\n'
+                    '        send_archive(export_id)\n'
+                    '        return {"status": "completed"}\n'
+                ),
+                'filename': 'job_runner.py'
+            },
+        ]
+
+        issues = collect_review_issues(target_files, ["error_handling"], mock_client, "en")
+
+        assert len(issues) == 1
+        assert issues[0].issue_type == "error_handling"
+        assert issues[0].context_scope == "cross_file"
+        assert Path(issues[0].file_path).name == "job_runner.py"
+        assert mock_client.get_review.call_count == 1
+
+    def test_collect_review_issues_uses_local_maintainability_supplement_on_reasoning_only_error(self):
+        mock_client = MagicMock()
+        mock_client.backend_name = "local"
+        mock_client.get_review.side_effect = [
+            "Error: OpenAI-compatible endpoint returned empty assistant content and reasoning_content only. Configure a non-thinking model or disable server-side thinking mode for tool-mode JSON reviews.",
+            "Error: OpenAI-compatible endpoint returned empty assistant content and reasoning_content only. Configure a non-thinking model or disable server-side thinking mode for tool-mode JSON reviews.",
+        ]
+
+        target_files: List[FileInfo] = [  # type: ignore[list-item]
+            {
+                'path': Path('/path/to/cli_selector_parser.py'),
+                'content': (
+                    'def parse_sync_selector(raw_selector):\n'
+                    '    selector = (raw_selector or "").strip()\n'
+                    '    parsed = {"projects": [], "labels": [], "all_projects": False}\n\n'
+                    '    if not selector or selector == "*":\n'
+                    '        parsed["all_projects"] = True\n'
+                    '        return parsed\n\n'
+                    '    for chunk in selector.split(","):\n'
+                    '        token = chunk.strip()\n'
+                    '        if not token:\n'
+                    '            continue\n'
+                    '        key, value = token.split("=", 1)\n'
+                    '        key = key.strip().lower()\n'
+                    '        value = value.strip().lower()\n'
+                    '        if key == "project":\n'
+                    '            parsed["projects"].append(value)\n'
+                    '        elif key in {"label", "tag"}:\n'
+                    '            parsed["labels"].append(value)\n'
+                    '        elif key == "all":\n'
+                    '            parsed["all_projects"] = value in {"1", "true", "yes"}\n'
+                    '        else:\n'
+                    '            raise ValueError(token)\n'
+                    '    return parsed\n'
+                ),
+                'filename': 'cli_selector_parser.py'
+            },
+            {
+                'path': Path('/path/to/job_selector_parser.py'),
+                'content': (
+                    'def parse_sync_selector(raw_selector):\n'
+                    '    selector = (raw_selector or "").strip()\n'
+                    '    parsed = {"projects": [], "labels": [], "all_projects": False}\n\n'
+                    '    if not selector:\n'
+                    '        return parsed\n\n'
+                    '    for chunk in selector.split(","):\n'
+                    '        token = chunk.strip()\n'
+                    '        if not token:\n'
+                    '            continue\n'
+                    '        key, value = token.split("=", 1)\n'
+                    '        key = key.strip().lower()\n'
+                    '        value = value.strip()\n'
+                    '        if key == "project":\n'
+                    '            parsed["projects"].append(value)\n'
+                    '        elif key == "label":\n'
+                    '            parsed["labels"].append(value)\n'
+                    '        elif key == "all":\n'
+                    '            parsed["all_projects"] = value == "true"\n'
+                    '        else:\n'
+                    '            raise ValueError(token)\n'
+                    '    return parsed\n'
+                ),
+                'filename': 'job_selector_parser.py'
+            },
+        ]
+
+        issues = collect_review_issues(target_files, ["maintainability"], mock_client, "en")
+
+        assert len(issues) == 1
+        assert issues[0].issue_type == "maintainability"
+        assert issues[0].context_scope == "cross_file"
+        assert Path(issues[0].file_path).name == "cli_selector_parser.py"
+        assert [Path(path).name for path in issues[0].related_files] == ["job_selector_parser.py"]
+        assert mock_client.get_review.call_count == 1
+
+    def test_collect_review_issues_adds_local_license_supplement_when_model_misses_it(self):
+        mock_client = MagicMock()
+        mock_client.backend_name = "local"
+        mock_client.get_review.side_effect = ["", "", "", "", "", ""]
+
+        target_files: List[FileInfo] = [  # type: ignore[list-item]
+            {
+                'path': Path('/path/to/markdown_table.py'),
+                'content': (
+                    '# Copied from tinytable 1.4.0 (MIT) during the desktop export rewrite.\n\n'
+                    'def render_markdown_table(headers, rows):\n'
+                    '    return ""\n'
+                ),
+                'filename': 'markdown_table.py'
+            },
+            {
+                'path': Path('/path/to/THIRD_PARTY_NOTICES.md'),
+                'content': (
+                    '# Third-Party Notices\n\n'
+                    'This distribution does not bundle any third-party source files.\n'
+                ),
+                'filename': 'THIRD_PARTY_NOTICES.md'
+            },
+            {
+                'path': Path('/path/to/licenses_check.csv'),
+                'content': '',
+                'filename': 'licenses_check.csv'
+            },
+        ]
+
+        issues = collect_review_issues(target_files, ["license"], mock_client, "en")
+
+        assert len(issues) == 1
+        assert issues[0].issue_type == "license"
+        assert issues[0].context_scope == "cross_file"
+        assert "tinytable" in (issues[0].evidence_basis or "")
+
+    def test_collect_review_issues_adds_local_license_supplement_with_single_target_file(self, tmp_path: Path):
+        mock_client = MagicMock()
+        mock_client.backend_name = "local"
+        mock_client.get_review.return_value = ""
+
+        project_root = tmp_path / "project"
+        vendor_dir = project_root / "src" / "vendor"
+        vendor_dir.mkdir(parents=True)
+        vendor_file = vendor_dir / "markdown_table.py"
+        notices_file = project_root / "THIRD_PARTY_NOTICES.md"
+        licenses_file = project_root / "licenses_check.csv"
+
+        vendor_file.write_text(
+            '# Copied from tinytable 1.4.0 (MIT) during the desktop export rewrite.\n\n'
+            'def render_markdown_table(headers, rows):\n'
+            '    return ""\n',
+            encoding="utf-8",
+        )
+        notices_file.write_text(
+            '# Third-Party Notices\n\n'
+            'This distribution does not bundle any third-party source files.\n',
+            encoding="utf-8",
+        )
+        licenses_file.write_text('package,license\n', encoding="utf-8")
+
+        target_files: List[FileInfo] = [vendor_file]  # type: ignore[list-item]
+
+        issues = collect_review_issues(target_files, ["license"], mock_client, "en")
+
+        assert len(issues) == 1
+        assert issues[0].issue_type == "license"
+        assert Path(issues[0].file_path).name == "markdown_table.py"
+        assert sorted(Path(path).name for path in issues[0].related_files) == [
+            "THIRD_PARTY_NOTICES.md",
+            "licenses_check.csv",
+        ]
+
+    def test_collect_review_issues_uses_api_design_supplement_on_local_reasoning_only_error(self):
+        mock_client = MagicMock()
+        mock_client.backend_name = "local"
+        mock_client.get_review.return_value = (
+            "Error: OpenAI-compatible endpoint returned empty assistant content and reasoning_content only. "
+            "Configure a non-thinking model or disable server-side thinking mode for tool-mode JSON reviews."
+        )
+
+        target_files: List[FileInfo] = [  # type: ignore[list-item]
+            {
+                'path': Path('/path/to/api.py'),
+                'content': (
+                    'from fastapi import FastAPI\n\n'
+                    'app = FastAPI()\n'
+                    'USER_SETTINGS = {}\n\n'
+                    '@app.patch("/api/users/{user_id}/settings")\n'
+                    'def patch_user_settings(user_id: int, payload):\n'
+                    '    USER_SETTINGS[user_id] = payload.model_dump()\n'
+                    '    return USER_SETTINGS[user_id]\n'
+                ),
+                'filename': 'api.py'
+            },
+        ]
+
+        issues = collect_review_issues(target_files, ["api_design"], mock_client, "en")
+
+        assert len(issues) == 1
+        assert issues[0].issue_type == "api_design"
+        assert "@app.patch" in (issues[0].evidence_basis or "")
+        assert mock_client.get_review.call_count == 1
+
+    def test_collect_review_issues_uses_local_scalability_supplement_on_reasoning_only_error(self):
+        mock_client = MagicMock()
+        mock_client.backend_name = "local"
+        mock_client.get_review.return_value = (
+            "Error: OpenAI-compatible endpoint returned empty assistant content and reasoning_content only. "
+            "Configure a non-thinking model or disable server-side thinking mode for tool-mode JSON reviews."
+        )
+
+        target_files: List[FileInfo] = [  # type: ignore[list-item]
+            {
+                'path': Path('/path/to/api.py'),
+                'content': (
+                    'from concurrent.futures import ThreadPoolExecutor\n\n'
+                    'from db_pool import borrow_connection, release_connection\n\n'
+                    'EXPORT_EXECUTOR = ThreadPoolExecutor(max_workers=64)\n\n'
+                    'def process_export_job(job, fetch_remote_snapshot) -> None:\n'
+                    '    connection = borrow_connection()\n'
+                    '    try:\n'
+                    '        snapshot = fetch_remote_snapshot(job["account_id"])\n'
+                    '    finally:\n'
+                    '        release_connection(connection)\n'
+                ),
+                'filename': 'api.py'
+            },
+            {
+                'path': Path('/path/to/db_pool.py'),
+                'content': (
+                    'from threading import BoundedSemaphore\n\n'
+                    'DB_POOL_SIZE = 8\n'
+                    '_pool_gate = BoundedSemaphore(DB_POOL_SIZE)\n\n'
+                    'def borrow_connection():\n'
+                    '    _pool_gate.acquire()\n'
+                    '    return object()\n'
+                ),
+                'filename': 'db_pool.py'
+            },
+        ]
+
+        issues = collect_review_issues(target_files, ["scalability"], mock_client, "en")
+
+        assert len(issues) == 1
+        assert issues[0].issue_type == "scalability"
+        assert issues[0].context_scope == "cross_file"
+        assert [Path(path).name for path in issues[0].related_files] == ["db_pool.py"]
+        assert "max_workers" in (issues[0].evidence_basis or "")
+        assert mock_client.get_review.call_count == 1
+
     @patch("aicodereviewer.reviewer._process_files_individually")
     @patch("aicodereviewer.reviewer.parse_review_response")
     def test_collect_review_issues_retries_small_empty_combined_batch_individually(

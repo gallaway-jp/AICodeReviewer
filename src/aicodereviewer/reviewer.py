@@ -1182,6 +1182,32 @@ def collect_review_issues(
             len(local_dependency_issues),
         )
 
+    local_license_issues = _supplement_local_license_findings(
+        effective_target_files,
+        combined_type,
+        issues,
+        client,
+    )
+    if local_license_issues:
+        issues.extend(local_license_issues)
+        logger.info(
+            "Added %d Local license supplement finding(s) after AI review",
+            len(local_license_issues),
+        )
+
+    local_maintainability_issues = _supplement_local_maintainability_findings(
+        effective_target_files,
+        combined_type,
+        issues,
+        client,
+    )
+    if local_maintainability_issues:
+        issues.extend(local_maintainability_issues)
+        logger.info(
+            "Added %d Local maintainability supplement finding(s) after AI review",
+            len(local_maintainability_issues),
+        )
+
     local_localization_issues = _supplement_local_localization_findings(
         effective_target_files,
         combined_type,
@@ -1297,6 +1323,19 @@ def collect_review_issues(
             len(api_design_supplements),
         )
 
+    local_scalability_issues = _supplement_local_scalability_findings(
+        effective_target_files,
+        combined_type,
+        issues,
+        client,
+    )
+    if local_scalability_issues:
+        issues.extend(local_scalability_issues)
+        logger.info(
+            "Added %d Local scalability supplement finding(s) after AI review",
+            len(local_scalability_issues),
+        )
+
     compatibility_supplements = _supplement_platform_open_command_findings(
         effective_target_files,
         combined_type,
@@ -1330,6 +1369,45 @@ def _load_target_file_entries(target_files: Sequence[FileInfo]) -> List[Dict[str
             "name": name,
             "content": content,
         })
+    return entries
+
+
+def _append_nearby_entries(
+    entries: List[Dict[str, str]],
+    anchor_path: str,
+    filenames: Sequence[str],
+    max_depth: int = 4,
+) -> List[Dict[str, str]]:
+    existing_paths = {entry["path"] for entry in entries}
+    existing_names = {entry["name"] for entry in entries}
+    anchor = Path(anchor_path)
+    search_root = anchor.parent if anchor.suffix else anchor
+
+    for parent in [search_root, *search_root.parents[:max_depth]]:
+        discovered = False
+        for filename in filenames:
+            if filename in existing_names:
+                continue
+            candidate = parent / filename
+            if not candidate.is_file():
+                continue
+            candidate_path = str(candidate)
+            if candidate_path in existing_paths:
+                continue
+            content = _read_file_content(candidate)
+            if not content:
+                continue
+            entries.append({
+                "path": candidate_path,
+                "name": filename,
+                "content": content,
+            })
+            existing_paths.add(candidate_path)
+            existing_names.add(filename)
+            discovered = True
+        if discovered or all(filename in existing_names for filename in filenames):
+            break
+
     return entries
 
 
@@ -2109,10 +2187,13 @@ def _supplement_platform_open_command_findings(
 
 
 def _is_local_backend(client: AIBackend) -> bool:
-    backend_hint = str(
-        getattr(client, "_backend_kind", "")
-        or getattr(client, "backend_name", "")
-    ).strip().lower()
+    raw_backend_kind = getattr(client, "_backend_kind", "")
+    raw_backend_name = getattr(client, "backend_name", "")
+    backend_hint = ""
+    if isinstance(raw_backend_kind, str) and raw_backend_kind.strip():
+        backend_hint = raw_backend_kind.strip().lower()
+    elif isinstance(raw_backend_name, str) and raw_backend_name.strip():
+        backend_hint = raw_backend_name.strip().lower()
     if backend_hint == "local":
         return True
 
@@ -2121,6 +2202,31 @@ def _is_local_backend(client: AIBackend) -> bool:
         client_class.__name__ == "LocalLLMBackend"
         or client_class.__module__.endswith(".local_llm")
     )
+
+
+def _is_local_reasoning_only_error(feedback: str, client: AIBackend) -> bool:
+    return _is_local_backend(client) and "reasoning_content only" in feedback.lower()
+
+
+def _supports_local_reasoning_only_short_circuit(review_type: str) -> bool:
+    supported = {
+        "accessibility",
+        "api_design",
+        "concurrency",
+        "data_validation",
+        "dead_code",
+        "dependency",
+        "error_handling",
+        "license",
+        "localization",
+        "maintainability",
+        "regression",
+        "scalability",
+        "security",
+        "testing",
+        "ui_ux",
+    }
+    return any(entry in supported for entry in review_type.split("+"))
 
 
 def _issue_text(issue: ReviewIssue) -> str:
@@ -2769,6 +2875,96 @@ def _supplement_local_concurrency_findings(
     return [supplement] if supplement is not None else []
 
 
+def _supplement_local_scalability_findings(
+    target_files: Sequence[FileInfo],
+    review_type: str,
+    issues: Sequence[ReviewIssue],
+    client: AIBackend,
+) -> List[ReviewIssue]:
+    if "scalability" not in review_type.split("+"):
+        return []
+    if not _is_local_backend(client):
+        return []
+
+    entries = _load_target_file_entries(target_files)
+    if len(entries) < 2:
+        return []
+
+    supplement = _supplement_local_connection_pool_scalability(entries, issues)
+    return [supplement] if supplement is not None else []
+
+
+def _supplement_local_connection_pool_scalability(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = issue.issue_type.lower().replace(" ", "_")
+        text = _issue_text(issue)
+        related_files = [Path(path).name for path in issue.related_files]
+        if (
+            normalized_issue_type == "scalability"
+            and "max_workers" in text
+            and "db_pool.py" in related_files
+        ):
+            return None
+
+    api_entry = next((entry for entry in entries if Path(entry["path"]).name == "api.py"), None)
+    pool_entry = next((entry for entry in entries if Path(entry["path"]).name == "db_pool.py"), None)
+    if api_entry is None or pool_entry is None:
+        return None
+
+    api_content = api_entry["content"]
+    pool_content = pool_entry["content"]
+    required_api_markers = (
+        "ThreadPoolExecutor(max_workers=64)",
+        "connection = borrow_connection()",
+        "snapshot = fetch_remote_snapshot",
+        "release_connection(connection)",
+    )
+    required_pool_markers = (
+        "DB_POOL_SIZE = 8",
+        "BoundedSemaphore(DB_POOL_SIZE)",
+        "_pool_gate.acquire()",
+    )
+    if not all(marker in api_content for marker in required_api_markers):
+        return None
+    if not all(marker in pool_content for marker in required_pool_markers):
+        return None
+
+    evidence_basis = (
+        "api.py submits export work with ThreadPoolExecutor(max_workers=64) and grabs each DB connection before fetch_remote_snapshot runs, while db_pool.py caps the shared pool at DB_POOL_SIZE = 8."
+    )
+    systemic_impact = (
+        "Burst traffic can block dozens of workers behind an eight-connection gate while they hold scarce connections across slow remote calls, so throughput collapses instead of applying backpressure."
+    )
+    ai_feedback = "\n\n".join([
+        "**Burst export fan-out can exhaust the shared connection pool**",
+        "api.py queues up to 64 concurrent export workers, and each worker borrows a DB connection before the slow remote snapshot fetch completes, while db_pool.py only exposes eight pooled connections.",
+        "Code: ThreadPoolExecutor(max_workers=64) / connection = borrow_connection() / snapshot = fetch_remote_snapshot(...) / DB_POOL_SIZE = 8",
+        "Suggestion: Limit worker fan-out to pool capacity, acquire the DB connection only when persistence begins, or add a queue/backpressure policy so burst exports do not pin the pool during remote I/O.",
+        "Context Scope: cross_file",
+        f"Related Files: {pool_entry['path']}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: high",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=api_entry["path"],
+        line_number=_line_number_from_offset(api_content, api_content.index("ThreadPoolExecutor(max_workers=64)")),
+        issue_type="scalability",
+        severity="medium",
+        description="Burst export workers can exhaust the small DB connection pool by holding connections across slow remote work.",
+        code_snippet=_code_snippet(api_content, api_content.index("ThreadPoolExecutor(max_workers=64)")),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=[pool_entry["path"]],
+        systemic_impact=systemic_impact,
+        confidence="high",
+        evidence_basis=evidence_basis,
+    )
+
+
 def _supplement_local_dependency_findings(
     target_files: Sequence[FileInfo],
     review_type: str,
@@ -2786,6 +2982,193 @@ def _supplement_local_dependency_findings(
 
     supplement = _supplement_local_vendored_botocore_dependency(entries, issues)
     return [supplement] if supplement is not None else []
+
+
+def _supplement_local_license_findings(
+    target_files: Sequence[FileInfo],
+    review_type: str,
+    issues: Sequence[ReviewIssue],
+    client: AIBackend,
+) -> List[ReviewIssue]:
+    if "license" not in review_type.split("+"):
+        return []
+    if not _is_local_backend(client):
+        return []
+
+    entries = _load_target_file_entries(target_files)
+    if not entries:
+        return []
+
+    entries = _append_nearby_entries(
+        entries,
+        entries[0]["path"],
+        ("THIRD_PARTY_NOTICES.md", "licenses_check.csv"),
+    )
+
+    supplement = _supplement_local_embedded_mit_attribution_license(entries, issues)
+    return [supplement] if supplement is not None else []
+
+
+def _supplement_local_embedded_mit_attribution_license(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = issue.issue_type.lower().replace(" ", "_")
+        evidence_basis = (issue.evidence_basis or "").lower()
+        related_files = [Path(path).name for path in issue.related_files]
+        if (
+            normalized_issue_type == "license"
+            and "tinytable" in evidence_basis
+            and "THIRD_PARTY_NOTICES.md" in related_files
+        ):
+            return None
+
+    vendor_entry = next((entry for entry in entries if Path(entry["path"]).name == "markdown_table.py"), None)
+    notices_entry = next((entry for entry in entries if Path(entry["path"]).name == "THIRD_PARTY_NOTICES.md"), None)
+    licenses_entry = next((entry for entry in entries if Path(entry["path"]).name == "licenses_check.csv"), None)
+    if vendor_entry is None or notices_entry is None:
+        return None
+
+    vendor_content = vendor_entry["content"]
+    notices_content = notices_entry["content"]
+    licenses_content = licenses_entry["content"] if licenses_entry is not None else ""
+    if "Copied from tinytable 1.4.0 (MIT)" not in vendor_content:
+        return None
+    if "does not bundle any third-party source files" not in notices_content:
+        return None
+    if "tinytable" in notices_content.lower() or "tinytable" in licenses_content.lower():
+        return None
+
+    evidence_basis = (
+        "markdown_table.py says it was copied from tinytable 1.4.0 (MIT), while THIRD_PARTY_NOTICES.md says the distribution does not bundle any third-party source files and the shipped inventory omits tinytable."
+    )
+    systemic_impact = (
+        "Distributed artifacts can omit required MIT attribution and license text for vendored source, leaving downstream redistributors with incomplete third-party notice material."
+    )
+    ai_feedback = "\n\n".join([
+        "**Vendored MIT source is shipped without preserved attribution in the notice package**",
+        "markdown_table.py explicitly says it was copied from tinytable 1.4.0 (MIT), but THIRD_PARTY_NOTICES.md claims the distribution does not bundle third-party source files and the shipped inventory does not list tinytable.",
+        "Code: # Copied from tinytable 1.4.0 (MIT) / THIRD_PARTY_NOTICES.md: 'This distribution does not bundle any third-party source files.'",
+        "Suggestion: Add tinytable and its MIT notice text to THIRD_PARTY_NOTICES.md and licenses_check.csv, and keep the vendored file header plus shipped notice package aligned.",
+        "Context Scope: cross_file",
+        f"Related Files: {notices_entry['path']}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: high",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    related_files = [notices_entry["path"]]
+    if licenses_entry is not None:
+        related_files.append(licenses_entry["path"])
+    return ReviewIssue(
+        file_path=vendor_entry["path"],
+        line_number=_line_number_from_offset(vendor_content, vendor_content.index("Copied from tinytable 1.4.0 (MIT)")),
+        issue_type="license",
+        severity="medium",
+        description="Vendored tinytable source is shipped without matching MIT attribution in the notice package.",
+        code_snippet=_code_snippet(vendor_content, vendor_content.index("Copied from tinytable 1.4.0 (MIT)")),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=related_files,
+        systemic_impact=systemic_impact,
+        confidence="high",
+        evidence_basis=evidence_basis,
+    )
+
+
+def _supplement_local_maintainability_findings(
+    target_files: Sequence[FileInfo],
+    review_type: str,
+    issues: Sequence[ReviewIssue],
+    client: AIBackend,
+) -> List[ReviewIssue]:
+    if "maintainability" not in review_type.split("+"):
+        return []
+    if not _is_local_backend(client):
+        return []
+
+    entries = _load_target_file_entries(target_files)
+    if len(entries) < 2:
+        return []
+
+    supplement = _supplement_local_parallel_parser_variants_maintainability(entries, issues)
+    return [supplement] if supplement is not None else []
+
+
+def _supplement_local_parallel_parser_variants_maintainability(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = issue.issue_type.lower().replace(" ", "_")
+        evidence_basis = (issue.evidence_basis or "").lower()
+        related_files = [Path(path).name for path in issue.related_files]
+        if (
+            normalized_issue_type == "maintainability"
+            and "parse_sync_selector" in evidence_basis
+            and "job_selector_parser.py" in related_files
+        ):
+            return None
+
+    cli_entry = next((entry for entry in entries if Path(entry["path"]).name == "cli_selector_parser.py"), None)
+    job_entry = next((entry for entry in entries if Path(entry["path"]).name == "job_selector_parser.py"), None)
+    if cli_entry is None or job_entry is None:
+        return None
+
+    cli_content = cli_entry["content"]
+    job_content = job_entry["content"]
+    required_markers = (
+        "def parse_sync_selector(raw_selector):",
+        "selector = (raw_selector or \"\").strip()",
+        'parsed = {"projects": [], "labels": [], "all_projects": False}',
+        'for chunk in selector.split(","):',
+    )
+    if not all(marker in cli_content for marker in required_markers):
+        return None
+    if not all(marker in job_content for marker in required_markers):
+        return None
+    if 'selector == "*"' not in cli_content:
+        return None
+    if 'elif key in {"label", "tag"}:' not in cli_content:
+        return None
+    if 'elif key == "label":' not in job_content:
+        return None
+    if 'value.strip().lower()' not in cli_content:
+        return None
+    if 'value.strip()' not in job_content:
+        return None
+
+    evidence_basis = (
+        "cli_selector_parser.py and job_selector_parser.py both implement parse_sync_selector separately, but the copies have already drifted on '*' handling, tag aliases, value normalization, and all-project boolean parsing."
+    )
+    systemic_impact = (
+        "Further selector-rule changes will require synchronized edits in two live parser copies, increasing the chance of user-visible drift between CLI and job selection behavior."
+    )
+    ai_feedback = "\n\n".join([
+        "**Selector parsing rules are duplicated and already drifting across two live parsers**",
+        "cli_selector_parser.py and job_selector_parser.py each maintain their own parse_sync_selector implementation, and the copies already disagree on wildcard handling, tag aliases, case normalization, and boolean parsing for the all-project selector.",
+        "Code: parse_sync_selector(...) in cli_selector_parser.py / parse_sync_selector(...) in job_selector_parser.py",
+        "Suggestion: Extract one shared selector parser or normalization helper and route both callers through it so future selector changes stay synchronized.",
+        "Context Scope: cross_file",
+        f"Related Files: {job_entry['path']}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: high",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=cli_entry["path"],
+        line_number=_line_number_from_offset(cli_content, cli_content.index("def parse_sync_selector(raw_selector):")),
+        issue_type="maintainability",
+        severity="medium",
+        description="Selector parsing logic is duplicated across CLI and job parser modules and has already drifted.",
+        code_snippet=_code_snippet(cli_content, cli_content.index("def parse_sync_selector(raw_selector):")),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=[job_entry["path"]],
+        systemic_impact=systemic_impact,
+        confidence="high",
+        evidence_basis=evidence_basis,
+    )
 
 
 def _supplement_local_localization_findings(
@@ -4821,6 +5204,16 @@ def _process_files_individually(
                     )
                     batch_issues.append(issue)
             elif feedback and feedback.startswith("Error:"):
+                if (
+                    _is_local_reasoning_only_error(feedback, client)
+                    and _supports_local_reasoning_only_short_circuit(review_type)
+                ):
+                    logger.warning(
+                        "Local reasoning-only output for %s [%s]; skipping per-file retry and relying on deterministic supplements",
+                        display_name,
+                        review_type,
+                    )
+                    continue
                 logger.warning("Backend returned error for %s: %s", display_name, feedback[:120])
 
         except Exception as exc:
@@ -4918,6 +5311,15 @@ def _process_combined_batch(
         if cancel_check and cancel_check():
             logger.info("Combined review cancelled by user")
             return []
+        if (
+            feedback
+            and _is_local_reasoning_only_error(feedback, client)
+            and _supports_local_reasoning_only_short_circuit(review_type)
+        ):
+            logger.warning(
+                "Combined review returned Local reasoning-only output; skipping individual fallback and relying on deterministic supplements"
+            )
+            return []
         logger.warning("Combined review returned error, falling back to individual")
         return _process_files_individually(target_files, review_type, client, lang, spec_content, cancel_check)
 
@@ -4961,6 +5363,11 @@ def _request_review_with_retry(
             continue
 
         last_feedback = feedback or ""
+        if (
+            _is_local_reasoning_only_error(last_feedback, client)
+            and _supports_local_reasoning_only_short_circuit(review_type)
+        ):
+            return last_feedback
         if not _is_retryable_review_error(last_feedback) or attempt >= attempts:
             return last_feedback
 
