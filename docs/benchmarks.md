@@ -89,6 +89,12 @@ Important flags:
 - `--summary-out <path>` writes a JSON summary file
 - `--lang en` keeps benchmark output stable for comparisons
 - `--skip-health-check` bypasses the backend readiness preflight when you already know the environment is valid
+- `--fixture-timeout-seconds <n>` bounds each fixture subprocess separately so one stalled review does not hang the whole batch
+
+Operational notes:
+
+- `--timeout-seconds` still applies inside tool-mode `review`, but `--fixture-timeout-seconds` protects the outer benchmark runner and persists a JSON error envelope when a fixture exceeds its budget.
+- This is especially useful with Local OpenAI-compatible backends, where a single `reasoning_content only` response can otherwise cascade into retries or fallbacks that consume the entire benchmark batch.
 
 ## When To Update Benchmarks
 

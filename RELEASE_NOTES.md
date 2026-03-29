@@ -30,6 +30,7 @@ Local LLM review-quality improvements focused on holistic, cross-file issue dete
 - Local LLM prompt enrichment now uses privacy-constrained, high-level public guidance without sending repository source code to the search provider
 - Holistic review prompts now ask more explicitly for downstream impact when validation drift allows unvalidated or incompletely validated input to reach runtime use
 - Benchmark matching now accepts broader semantic aliases for architecture, validation, cache/state consistency, caller/callee drift, transaction-boundary loss, and invalidation wording
+- Local holistic benchmark recovery now short-circuits `reasoning_content only` failures earlier for supplement-covered review types so deterministic fallback logic runs before a fixture exhausts its subprocess timeout budget
 
 ### Fixed
 - Local LLM combined and per-file reviews now retry once on transient backend errors before failing
@@ -37,6 +38,8 @@ Local LLM review-quality improvements focused on holistic, cross-file issue dete
 - Performance reviews now add a narrow deterministic stale-cache finding when the model misses an obvious cache read/write split with no invalidation
 - Best-practices reviews now add a narrow deterministic caller/return-shape finding when the model misses an obvious producer/caller dict-shape contract break
 - The broader Local LLM web-enabled holistic benchmark artifacts now reevaluate cleanly at `8/8` passed with `overall_score = 1.0`
+- Holistic benchmark runs now support per-fixture subprocess bounds via `--fixture-timeout-seconds`, preserving scoreable timeout envelopes instead of hanging the full batch
+- Local holistic benchmark fallback coverage now includes the post-Phase4B `error_handling`, `license`, `maintainability`, `api_design`, and `scalability` fixture shapes, restoring the bounded Local sampled checkpoint to `8/8` passed with `overall_score = 1.0`
 
 ---
 
