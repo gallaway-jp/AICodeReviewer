@@ -1,0 +1,21 @@
+{
+  "id": "encapsulation-private-helper-bypass",
+  "title": "Encapsulation Private Helper Bypass",
+  "description": "A caller reaches into a collaborator's private helper directly instead of going through the public method that prepares the normalized request shape.",
+  "scope": "project",
+  "review_types": ["best_practices"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "private-helper-bypass",
+      "description_keywords": ["private"],
+      "file_path_contains_any": ["controller.py", "dispatcher.py"],
+      "issue_type": "best_practices",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["dispatcher.py"],
+      "evidence_basis_contains": "_send"
+    }
+  ]
+}

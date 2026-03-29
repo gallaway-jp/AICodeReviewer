@@ -16,7 +16,7 @@ def test_discover_fixtures_returns_expected_catalog():
 
     ids = {fixture.id for fixture in fixtures}
 
-    assert len(fixtures) == 79
+    assert len(fixtures) == 80
     assert ids == {
         "accessibility-dialog-semantic-gap",
         "accessibility-fieldset-without-legend",
@@ -46,6 +46,7 @@ def test_discover_fixtures_returns_expected_catalog():
         "dependency-missing-pyyaml-declaration",
         "dependency-transitive-api-removal-runtime-gap",
         "dependency-runtime-imports-dev-only-pytest",
+        "encapsulation-private-helper-bypass",
         "error-handling-context-manager-exception-not-cleaned",
         "license-apache-notice-omission",
         "license-agpl-notice-conflict",
@@ -313,6 +314,44 @@ def test_evaluate_best_practices_fixture_matches_tuple_unpack_contract_drift(tmp
                             "related_files": ["src/service.py"],
                             "systemic_impact": "Unchanged callers can silently consume the wrong values or fail when they still rely on the old tuple-style contract.",
                             "evidence_basis": "controller.py does status, next_run_at = build_sync_plan(account_id) while service.py build_sync_plan now returns a dict with status and next_run_at keys.",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_best_practices_fixture_matches_private_helper_bypass(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "encapsulation-private-helper-bypass" / "fixture.json"
+    )
+    report_path = tmp_path / "encapsulation-private-helper-bypass.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-bp-0002",
+                            "file_path": "src/controller.py",
+                            "issue_type": "encapsulation_violation",
+                            "severity": "medium",
+                            "description": "The controller bypasses the dispatcher's public API and calls its private _send helper directly.",
+                            "ai_feedback": "controller.py calls dispatcher._send(payload) directly instead of going through SyncDispatcher.dispatch(), which bypasses the request-building contract in dispatcher.py.",
+                            "context_scope": "cross_file",
+                            "related_files": ["src/dispatcher.py"],
+                            "systemic_impact": "Other callers can skip the normal request-shaping path and couple themselves to private implementation details instead of the public dispatcher contract.",
+                            "evidence_basis": "controller.py invokes dispatcher._send(payload) directly while dispatcher.py exposes dispatch() to build the normalized request before _send(...).",
                         }
                     ]
                 },
