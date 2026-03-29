@@ -5,13 +5,13 @@
   "scope": "project",
   "review_types": ["specification"],
   "project_dir": "project",
-  "spec_file": "requirements.md",
+  "spec_file": "project/requirements.md",
   "minimum_score": 1.0,
   "expected_findings": [
     {
       "id": "sync-mode-violates-enum-spec",
       "file_path_contains": "sync_api.py",
-      "description_keywords": ["sync_mode", "enum"],
+      "description_keywords": ["sync_mode"],
       "issue_type": "specification",
       "minimum_severity": "medium",
       "evidence_basis_contains": "sync_mode"

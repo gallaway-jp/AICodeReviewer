@@ -986,7 +986,28 @@ def evaluate_fixture(fixture: BenchmarkFixture, report: dict[str, Any], report_p
 
 def evaluate_fixture_file(fixture: BenchmarkFixture, report_path: Path) -> FixtureEvaluation:
     """Evaluate a report file against one fixture."""
-    report = load_report(report_path)
+    try:
+        report = load_report(report_path)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        return FixtureEvaluation(
+            fixture_id=fixture.id,
+            title=fixture.title,
+            report_path=str(report_path),
+            passed=False,
+            score=0.0,
+            minimum_score=fixture.minimum_score,
+            matched_expectations=0,
+            total_expectations=len(fixture.expected_findings),
+            missing_report=False,
+            expectation_results=[
+                ExpectationEvaluation(
+                    expectation_id=expectation.id,
+                    matched=False,
+                    reason=f"Invalid report payload: {exc}",
+                )
+                for expectation in fixture.expected_findings
+            ],
+        )
     return evaluate_fixture(fixture, report, report_path=report_path)
 
 

@@ -1100,6 +1100,44 @@ def test_evaluate_fixture_accepts_specification_alias_for_type_mismatch_vs_spec_
     assert result.matched_expectations == 1
 
 
+def test_evaluate_specification_fixture_matches_localized_type_mismatch_vs_spec_enum(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "specification-type-mismatch-vs-spec-enum" / "fixture.json"
+    )
+    report_path = tmp_path / "specification-type-mismatch-vs-spec-enum-ja.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-spec-0006",
+                            "file_path": "src/sync_api.py",
+                            "issue_type": "specification",
+                            "severity": "high",
+                            "description": "sync_mode が仕様で要求される文字列列挙型ではなくブール値を返しているため、クライアントの分岐が誤動作する可能性がある。",
+                            "ai_feedback": "仕様では sync_mode は文字列列挙で返す必要があるが、実装は bool(job.schedule_enabled) を返している。",
+                            "context_scope": "cross_file",
+                            "related_files": ["sync_api.py"],
+                            "systemic_impact": "クライアントが仕様の文字列値を前提に分岐していると誤動作する。",
+                            "evidence_basis": "実装は sync_mode に bool(job.schedule_enabled) を返しているが、仕様は文字列列挙を要求している。",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
 def test_evaluate_fixture_accepts_complexity_issue_type_alias(tmp_path):
     fixture = benchmarking.load_fixture(
         FIXTURES_ROOT / "complexity-nested-sync-decision-tree" / "fixture.json"
@@ -4034,6 +4072,33 @@ def test_evaluate_fixture_directory_marks_missing_reports(tmp_path):
     assert len(results) == 2
     assert all(result.passed is False for result in results)
     assert all(result.missing_report is True for result in results)
+
+
+def test_evaluate_fixture_file_tolerates_error_envelope_without_report(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "specification-type-mismatch-vs-spec-enum" / "fixture.json"
+    )
+    report_path = tmp_path / "specification-type-mismatch-vs-spec-enum.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "error",
+                "success": False,
+                "error": {
+                    "message": "Failed to read spec file"
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is False
+    assert result.missing_report is False
+    assert result.expectation_results[0].reason is not None
+    assert "Invalid report payload" in result.expectation_results[0].reason
 
 
 def test_evaluate_fixture_reports_failed_checks_for_best_candidate(tmp_path):
