@@ -31,6 +31,58 @@ def _default_output_root() -> Path:
     return Path(__file__).resolve().parents[1] / "artifacts" / "holistic-benchmark-reports"
 
 
+def _configured_backend_timeout_seconds(backend_name: str) -> float | None:
+    section_by_backend = {
+        "copilot": "copilot",
+        "kiro": "kiro",
+        "local": "local_llm",
+    }
+    section = section_by_backend.get(backend_name)
+    fallback = config.get("performance", "api_timeout_seconds", "300")
+    raw_value = config.get(section, "timeout", fallback) if section else fallback
+    try:
+        timeout_value = float(raw_value)
+    except (TypeError, ValueError):
+        return None
+    return timeout_value if timeout_value > 0 else None
+
+
+def _fixture_timeout_seconds(runner_args: argparse.Namespace) -> float | None:
+    explicit = getattr(runner_args, "fixture_timeout_seconds", None)
+    if explicit is not None:
+        return explicit if explicit > 0 else None
+
+    base_timeout = runner_args.timeout
+    if base_timeout is None:
+        base_timeout = _configured_backend_timeout_seconds(_effective_backend(runner_args.backend))
+    if base_timeout is None or base_timeout <= 0:
+        return None
+
+    return max(base_timeout + 30.0, base_timeout * 2.0)
+
+
+def _subprocess_timeout_seconds(review_args: Sequence[str]) -> float | None:
+    if "--timeout-seconds" not in review_args:
+        return None
+    raw_value = review_args[review_args.index("--timeout-seconds") + 1]
+    try:
+        timeout_value = float(raw_value)
+    except (IndexError, TypeError, ValueError):
+        return None
+    if timeout_value <= 0:
+        return None
+    return timeout_value + 5.0
+
+
+def _review_json_out_path(review_args: Sequence[str]) -> Path | None:
+    if "--json-out" not in review_args:
+        return None
+    try:
+        return Path(review_args[review_args.index("--json-out") + 1])
+    except (IndexError, TypeError, ValueError):
+        return None
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Execute and score holistic review benchmarks via tool-mode review",
@@ -62,6 +114,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--skip-health-check", action="store_true")
     parser.add_argument("--timeout", type=float)
+    parser.add_argument("--fixture-timeout-seconds", type=float)
     parser.add_argument("--model")
     parser.add_argument("--api-url")
     parser.add_argument("--api-type")
@@ -192,14 +245,36 @@ def _invoke_review_tool(args: list[str]) -> tuple[int, dict[str, Any]]:
         "from aicodereviewer.main import main; import sys; sys.exit(main())",
         *args,
     ]
-    completed = subprocess.run(
-        command,
-        capture_output=True,
-        text=True,
-        cwd=repo_root,
-        env=env,
-        check=False,
-    )
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            cwd=repo_root,
+            env=env,
+            check=False,
+            timeout=_subprocess_timeout_seconds(args),
+        )
+    except subprocess.TimeoutExpired as exc:
+        timeout_seconds = _subprocess_timeout_seconds(args)
+        payload = {
+            "status": "error",
+            "success": False,
+            "error": {
+                "message": (
+                    "Benchmark subprocess exceeded the per-fixture timeout"
+                    if timeout_seconds is None
+                    else f"Benchmark subprocess exceeded the per-fixture timeout after {timeout_seconds - 5.0:.1f}s"
+                )
+            },
+            "stdout": exc.stdout,
+            "stderr": exc.stderr,
+        }
+        json_out_path = _review_json_out_path(args)
+        if json_out_path is not None:
+            json_out_path.parent.mkdir(parents=True, exist_ok=True)
+            json_out_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        return 124, payload
     raw = completed.stdout.strip()
     payload = json.loads(raw) if raw else {}
     return completed.returncode, payload
@@ -230,6 +305,9 @@ def _build_review_args(
     spec_file = fixture_args.get("spec_file")
     if spec_file:
         argv.extend(["--spec-file", spec_file])
+    fixture_timeout_seconds = _fixture_timeout_seconds(runner_args)
+    if fixture_timeout_seconds is not None:
+        argv.extend(["--timeout-seconds", str(fixture_timeout_seconds)])
     if runner_args.timeout is not None:
         argv.extend(["--timeout", str(runner_args.timeout)])
     if runner_args.model:

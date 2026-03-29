@@ -274,13 +274,14 @@ def test_runner_repeats_runs_and_emits_stability_summary(monkeypatch, capsys, tm
 def test_invoke_review_tool_uses_subprocess_isolation(monkeypatch):
     calls = {}
 
-    def _fake_run(command, capture_output, text, cwd, env, check):
+    def _fake_run(command, capture_output, text, cwd, env, check, timeout=None):
         calls["command"] = command
         calls["capture_output"] = capture_output
         calls["text"] = text
         calls["cwd"] = cwd
         calls["env"] = env
         calls["check"] = check
+        calls["timeout"] = timeout
         return subprocess.CompletedProcess(
             command,
             0,
@@ -303,5 +304,69 @@ def test_invoke_review_tool_uses_subprocess_isolation(monkeypatch):
     assert calls["capture_output"] is True
     assert calls["text"] is True
     assert calls["check"] is False
+    assert calls["timeout"] is None
     assert Path(calls["cwd"]).name == "AICodeReviewer"
     assert str(Path(calls["cwd"]) / "src") in calls["env"]["PYTHONPATH"]
+
+
+def test_build_review_args_adds_derived_fixture_timeout_for_local_backend(tmp_path):
+    output_path = tmp_path / "fixture.json"
+    runner_args = run_holistic_benchmarks._build_parser().parse_args(
+        [
+            "--backend",
+            "local",
+            "--local-model",
+            "qwen/qwen3.5-9b",
+            "--output-dir",
+            str(tmp_path),
+            "--skip-health-check",
+        ]
+    )
+
+    argv = run_holistic_benchmarks._build_review_args(
+        {
+            "scope": "project",
+            "review_types": ["specification"],
+            "path": "demo-project",
+        },
+        output_path,
+        runner_args,
+    )
+
+    assert "--timeout-seconds" in argv
+    timeout_value = float(argv[argv.index("--timeout-seconds") + 1])
+    assert timeout_value == 600.0
+
+
+def test_invoke_review_tool_returns_error_payload_on_timeout(monkeypatch):
+    def _fake_run(command, capture_output, text, cwd, env, check, timeout=None):
+        raise subprocess.TimeoutExpired(command, timeout=timeout, output="", stderr="hung")
+
+    monkeypatch.setattr(run_holistic_benchmarks.subprocess, "run", _fake_run)
+
+    exit_code, payload = run_holistic_benchmarks._invoke_review_tool(
+        ["review", "demo", "--timeout-seconds", "90"]
+    )
+
+    assert exit_code == 124
+    assert payload["status"] == "error"
+    assert payload["success"] is False
+    assert "per-fixture timeout" in payload["error"]["message"]
+
+
+def test_invoke_review_tool_persists_timeout_envelope_to_json_out(monkeypatch, tmp_path):
+    def _fake_run(command, capture_output, text, cwd, env, check, timeout=None):
+        raise subprocess.TimeoutExpired(command, timeout=timeout, output="", stderr="hung")
+
+    monkeypatch.setattr(run_holistic_benchmarks.subprocess, "run", _fake_run)
+    output_path = tmp_path / "timed-out-fixture.json"
+
+    exit_code, payload = run_holistic_benchmarks._invoke_review_tool(
+        ["review", "demo", "--timeout-seconds", "30", "--json-out", str(output_path)]
+    )
+
+    persisted = json.loads(output_path.read_text(encoding="utf-8"))
+
+    assert exit_code == 124
+    assert persisted == payload
+    assert persisted["status"] == "error"
