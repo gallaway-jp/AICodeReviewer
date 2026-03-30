@@ -16,7 +16,7 @@ def test_discover_fixtures_returns_expected_catalog():
 
     ids = {fixture.id for fixture in fixtures}
 
-    assert len(fixtures) == 81
+    assert len(fixtures) == 82
     assert ids == {
         "accessibility-dialog-semantic-gap",
         "accessibility-fieldset-without-legend",
@@ -74,6 +74,7 @@ def test_discover_fixtures_returns_expected_catalog():
         "regression-default-sync-disabled",
         "regression-inverted-sync-start-guard",
         "regression-stale-caller-utility-signature-change",
+        "private-state-access-bypass",
         "scalability-instance-local-rate-limit-state",
         "scalability-connection-pool-exhaustion-under-burst",
         "scalability-unbounded-pending-events-buffer",
@@ -429,6 +430,44 @@ def test_evaluate_best_practices_fixture_matches_setter_bypass_with_humanized_co
                             "related_files": ["src/sync_settings.py"],
                             "systemic_impact": "Invalid or unnormalized mode values can bypass the class contract and leak into downstream consumers.",
                             "evidence_basis": "controller.py assigns settings.mode directly while sync_settings.py provides set_mode that enforces normalization and allowed values.",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_best_practices_fixture_matches_private_state_access_bypass(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "private-state-access-bypass" / "fixture.json"
+    )
+    report_path = tmp_path / "private-state-access-bypass.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-bp-0005",
+                            "file_path": "src/controller.py",
+                            "issue_type": "encapsulation_violation",
+                            "severity": "medium",
+                            "description": "The controller reads registry._subscriptions directly instead of using SubscriptionRegistry.iter_active_channels().",
+                            "ai_feedback": "controller.py iterates registry._subscriptions directly, which bypasses SubscriptionRegistry.iter_active_channels() and reintroduces paused channels from subscription_registry.py.",
+                            "context_scope": "cross_file",
+                            "related_files": ["src/subscription_registry.py"],
+                            "systemic_impact": "Callers can expose inactive channels because they bypass the registry's filtered public view.",
+                            "evidence_basis": "controller.py reads registry._subscriptions directly while subscription_registry.py exposes iter_active_channels() to filter the active subscription view.",
                         }
                     ]
                 },

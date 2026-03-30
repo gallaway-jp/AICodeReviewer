@@ -1,0 +1,20 @@
+{
+  "id": "private-state-access-bypass",
+  "title": "Private State Access Bypass",
+  "description": "A caller reads a collaborator's private backing collection directly instead of using the public accessor that filters the active subscription view.",
+  "scope": "project",
+  "review_types": ["best_practices"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "private-state-access-bypass",
+      "file_path_contains_any": ["controller.py", "subscription_registry.py"],
+      "issue_type": "best_practices",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["subscription_registry.py"],
+      "evidence_basis_contains": "_subscriptions"
+    }
+  ]
+}

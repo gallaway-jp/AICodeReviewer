@@ -54,6 +54,7 @@ The scorer also normalizes semantically equivalent issue types for broad benchma
 - `tuple-unpack-contract-drift`: a service helper now returns a mapping payload, but an unchanged caller still unpacks it positionally as if the function returned a tuple
 - `encapsulation-private-helper-bypass`: a caller reaches into a collaborator's private helper directly instead of going through the public method that prepares the normalized request contract
 - `setter-bypass-normalization-contract`: a caller mutates collaborator state directly instead of using the public setter that validates and normalizes supported values
+- `private-state-access-bypass`: a caller reads a collaborator's private backing collection directly instead of using the public accessor that returns the filtered active view
 
 ## Evaluating Reports
 
