@@ -1,0 +1,20 @@
+{
+  "id": "setter-bypass-normalization-contract",
+  "title": "Setter Bypass Normalization Contract",
+  "description": "A caller mutates collaborator state directly instead of using the public setter that validates and normalizes the supported sync mode values.",
+  "scope": "project",
+  "review_types": ["best_practices"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "setter-bypass-normalization",
+      "file_path_contains_any": ["controller.py", "sync_settings.py"],
+      "issue_type": "best_practices",
+      "minimum_severity": "medium",
+      "context_scope": "cross_file",
+      "related_files_contains": ["sync_settings.py"],
+      "evidence_basis_contains": "set_mode"
+    }
+  ]
+}

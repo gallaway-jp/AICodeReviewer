@@ -980,6 +980,22 @@ def collect_review_issues(
 
     # Always one pass over files — multiple review types are merged into one prompt
     combined_type = "+".join(review_types) if len(review_types) > 1 else review_types[0]
+
+    local_preflight_issues = _supplement_setter_bypass_findings(
+        effective_target_files,
+        combined_type,
+        [],
+    )
+    if _is_local_backend(client) and combined_type == "best_practices" and local_preflight_issues:
+        logger.info(
+            "Using %d deterministic Local setter-bypass finding(s) before AI review",
+            len(local_preflight_issues),
+        )
+        issues.extend(local_preflight_issues)
+        _normalize_review_type_aliases(combined_type, issues)
+        _normalize_cache_issue_context(issues)
+        return issues
+
     total_work = len(effective_target_files)
     done = 0
 
@@ -1084,6 +1100,17 @@ def collect_review_issues(
         logger.info(
             "Added %d deterministic return-shape finding(s) after AI review",
             len(return_shape_issues),
+        )
+    setter_bypass_issues = _supplement_setter_bypass_findings(
+        target_files,
+        combined_type,
+        issues,
+    )
+    if setter_bypass_issues:
+        issues.extend(setter_bypass_issues)
+        logger.info(
+            "Added %d deterministic setter-bypass finding(s) after AI review",
+            len(setter_bypass_issues),
         )
     _normalize_review_type_aliases(combined_type, issues)
     _normalize_cache_issue_context(issues)
@@ -1370,6 +1397,108 @@ def _load_target_file_entries(target_files: Sequence[FileInfo]) -> List[Dict[str
             "content": content,
         })
     return entries
+
+
+def _extract_validating_setters_by_class(content: str) -> Dict[str, Dict[str, int]]:
+    setters_by_class: Dict[str, Dict[str, int]] = {}
+    try:
+        tree = ast.parse(content)
+    except SyntaxError:
+        return setters_by_class
+
+    for node in tree.body:
+        if not isinstance(node, ast.ClassDef):
+            continue
+
+        class_setters: Dict[str, int] = {}
+        for item in node.body:
+            if not isinstance(item, ast.FunctionDef) or not item.name.startswith("set_"):
+                continue
+            attr_name = item.name[4:]
+            if not attr_name:
+                continue
+
+            assigns_attr = False
+            validation_signal = False
+            for inner in ast.walk(item):
+                if isinstance(inner, ast.Assign):
+                    for target in inner.targets:
+                        if (
+                            isinstance(target, ast.Attribute)
+                            and isinstance(target.value, ast.Name)
+                            and target.value.id == "self"
+                            and target.attr == attr_name
+                        ):
+                            assigns_attr = True
+                elif isinstance(inner, ast.Call) and isinstance(inner.func, ast.Attribute):
+                    if inner.func.attr in {"strip", "lower", "upper", "casefold"}:
+                        validation_signal = True
+                elif isinstance(inner, ast.Compare):
+                    if any(isinstance(op, (ast.In, ast.NotIn)) for op in inner.ops):
+                        validation_signal = True
+                elif isinstance(inner, ast.Raise):
+                    validation_signal = True
+
+            if assigns_attr and validation_signal:
+                class_setters[attr_name] = item.lineno
+
+        if class_setters:
+            setters_by_class[node.name] = class_setters
+
+    return setters_by_class
+
+
+def _extract_imported_class_attribute_assignments(
+    content: str,
+) -> List[tuple[str, str, str, str, int]]:
+    assignments: List[tuple[str, str, str, str, int]] = []
+    try:
+        tree = ast.parse(content)
+    except SyntaxError:
+        return assignments
+
+    imported_classes: Dict[str, str] = {}
+    for node in tree.body:
+        if isinstance(node, ast.ImportFrom) and node.module:
+            module_tail = node.module.split(".")[-1]
+            for alias in node.names:
+                imported_classes[alias.asname or alias.name] = module_tail
+
+    for node in tree.body:
+        if not isinstance(node, ast.FunctionDef):
+            continue
+
+        annotated_params: Dict[str, tuple[str, str]] = {}
+        for arg in node.args.args:
+            annotation = arg.annotation
+            if not isinstance(annotation, ast.Name):
+                continue
+            module_tail = imported_classes.get(annotation.id)
+            if module_tail is None:
+                continue
+            annotated_params[arg.arg] = (module_tail, annotation.id)
+
+        if not annotated_params:
+            continue
+
+        for inner in ast.walk(node):
+            if not isinstance(inner, ast.Assign):
+                continue
+            for target in inner.targets:
+                if not isinstance(target, ast.Attribute) or not isinstance(target.value, ast.Name):
+                    continue
+                target_info = annotated_params.get(target.value.id)
+                if target_info is None:
+                    continue
+                assignments.append((
+                    target_info[0],
+                    target_info[1],
+                    target.value.id,
+                    target.attr,
+                    inner.lineno,
+                ))
+
+    return assignments
 
 
 def _append_nearby_entries(
@@ -1912,6 +2041,96 @@ def _supplement_return_shape_mismatch_findings(
                     issue_type="contract_mismatch",
                     severity="high",
                     description="Caller still unpacks a tuple-style return after the callee switched to a mapping payload",
+                    code_snippet=consumer_entry["content"][:200] + ("…" if len(consumer_entry["content"]) > 200 else ""),
+                    ai_feedback=ai_feedback,
+                    context_scope="cross_file",
+                    related_files=[producer_entry["path"]],
+                    systemic_impact=systemic_impact,
+                    confidence="medium",
+                    evidence_basis=evidence_basis,
+                ))
+
+    return supplements
+
+
+def _supplement_setter_bypass_findings(
+    target_files: Sequence[FileInfo],
+    review_type: str,
+    issues: Sequence[ReviewIssue],
+) -> List[ReviewIssue]:
+    if "best_practices" not in review_type.split("+"):
+        return []
+    if any(
+        (issue.issue_type or "").lower() in {
+            "encapsulation",
+            "encapsulation_violation",
+            "contract_mismatch",
+            "validation_drift",
+            "validation_contract_violation",
+        }
+        and "set_" in ((issue.evidence_basis or "") + "\n" + (issue.ai_feedback or ""))
+        for issue in issues
+    ):
+        return []
+
+    entries = _load_target_file_entries(target_files)
+    if len(entries) < 2:
+        return []
+
+    entries_by_stem: Dict[str, List[Dict[str, str]]] = {}
+    setters_by_path: Dict[str, Dict[str, Dict[str, int]]] = {}
+    for entry in entries:
+        stem = Path(entry["path"]).stem
+        entries_by_stem.setdefault(stem, []).append(entry)
+        setters_by_path[entry["path"]] = _extract_validating_setters_by_class(entry["content"])
+
+    supplements: List[ReviewIssue] = []
+    seen_keys: set[tuple[str, str, str, str]] = set()
+
+    for consumer_entry in entries:
+        assignments = _extract_imported_class_attribute_assignments(consumer_entry["content"])
+        for module_stem, class_name, variable_name, attr_name, line_number in assignments:
+            producer_entries = entries_by_stem.get(module_stem, [])
+            for producer_entry in producer_entries:
+                if producer_entry["path"] == consumer_entry["path"]:
+                    continue
+
+                setters_by_class = setters_by_path.get(producer_entry["path"], {})
+                class_setters = setters_by_class.get(class_name, {})
+                if attr_name not in class_setters:
+                    continue
+
+                seen_key = (consumer_entry["path"], producer_entry["path"], class_name, attr_name)
+                if seen_key in seen_keys:
+                    continue
+                seen_keys.add(seen_key)
+
+                setter_name = f"set_{attr_name}"
+                systemic_impact = (
+                    f"Callers can write invalid or unnormalized {attr_name} values because {consumer_entry['name']} mutates "
+                    f"{variable_name}.{attr_name} directly instead of going through {class_name}.{setter_name}()."
+                )
+                evidence_basis = (
+                    f"{consumer_entry['name']} assigns {variable_name}.{attr_name} directly while "
+                    f"{producer_entry['name']} exposes {class_name}.{setter_name}() to validate or normalize that field."
+                )
+                ai_feedback = "\n\n".join([
+                    "**A caller bypasses the public setter that enforces the field contract**",
+                    f"{consumer_entry['name']} writes {variable_name}.{attr_name} directly even though {producer_entry['name']} exposes {class_name}.{setter_name}() to validate or normalize that value.",
+                    f"Code: {variable_name}.{attr_name} = ... / {class_name}.{setter_name}(...)",
+                    "Suggestion: Route writes through the public setter, or make the backing attribute private so callers cannot bypass validation and normalization.",
+                    "Context Scope: cross_file",
+                    f"Related Files: {producer_entry['path']}",
+                    f"Systemic Impact: {systemic_impact}",
+                    "Confidence: medium",
+                    f"Evidence Basis: {evidence_basis}",
+                ])
+                supplements.append(ReviewIssue(
+                    file_path=consumer_entry["path"],
+                    line_number=line_number,
+                    issue_type="encapsulation_violation",
+                    severity="high",
+                    description="A caller bypasses the public setter that validates and normalizes shared state",
                     code_snippet=consumer_entry["content"][:200] + ("…" if len(consumer_entry["content"]) > 200 else ""),
                     ai_feedback=ai_feedback,
                     context_scope="cross_file",

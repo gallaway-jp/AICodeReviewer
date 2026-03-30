@@ -121,6 +121,8 @@ _ISSUE_TYPE_ALIASES = {
         "transactional_safety",
         "transaction_integrity",
         "type_safety",
+        "validation_contract_violation",
+        "validation_drift",
         "dependency",
         "missing-repository",
         "missing_repository",

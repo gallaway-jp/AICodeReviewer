@@ -16,7 +16,7 @@ def test_discover_fixtures_returns_expected_catalog():
 
     ids = {fixture.id for fixture in fixtures}
 
-    assert len(fixtures) == 80
+    assert len(fixtures) == 81
     assert ids == {
         "accessibility-dialog-semantic-gap",
         "accessibility-fieldset-without-legend",
@@ -90,6 +90,7 @@ def test_discover_fixtures_returns_expected_catalog():
         "specification-batch-atomicity-contract",
         "specification-profile-display-name-contract",
         "specification-type-mismatch-vs-spec-enum",
+        "setter-bypass-normalization-contract",
         "testing-rollout-percent-range-untested",
         "testing-order-rollback-untested",
         "testing-timeout-retry-untested",
@@ -352,6 +353,82 @@ def test_evaluate_best_practices_fixture_matches_private_helper_bypass(tmp_path)
                             "related_files": ["src/dispatcher.py"],
                             "systemic_impact": "Other callers can skip the normal request-shaping path and couple themselves to private implementation details instead of the public dispatcher contract.",
                             "evidence_basis": "controller.py invokes dispatcher._send(payload) directly while dispatcher.py exposes dispatch() to build the normalized request before _send(...).",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_best_practices_fixture_matches_setter_bypass_normalization_contract(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "setter-bypass-normalization-contract" / "fixture.json"
+    )
+    report_path = tmp_path / "setter-bypass-normalization-contract.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-bp-0003",
+                            "file_path": "src/controller.py",
+                            "issue_type": "validation_drift",
+                            "severity": "medium",
+                            "description": "The controller bypasses the SyncSettings.set_mode(...) contract and mutates settings.mode directly.",
+                            "ai_feedback": "controller.py assigns settings.mode from payload['mode'] directly instead of using SyncSettings.set_mode(...), which bypasses normalization and validation in sync_settings.py.",
+                            "context_scope": "cross_file",
+                            "related_files": ["src/sync_settings.py"],
+                            "systemic_impact": "Other callers can persist unsupported or unnormalized sync-mode values because they bypass the public setter contract.",
+                            "evidence_basis": "controller.py assigns settings.mode directly while sync_settings.py exposes set_mode() to normalize and validate supported sync mode values.",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = benchmarking.evaluate_fixture_file(fixture, report_path)
+
+    assert result.passed is True
+    assert result.score == 1.0
+    assert result.matched_expectations == 1
+
+
+def test_evaluate_best_practices_fixture_matches_setter_bypass_with_humanized_contract_label(tmp_path):
+    fixture = benchmarking.load_fixture(
+        FIXTURES_ROOT / "setter-bypass-normalization-contract" / "fixture.json"
+    )
+    report_path = tmp_path / "setter-bypass-normalization-contract-humanized.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "review",
+                "status": "completed",
+                "report": {
+                    "issues_found": [
+                        {
+                            "issue_id": "issue-bp-0004",
+                            "file_path": "src/controller.py",
+                            "issue_type": "Validation / Contract Violation",
+                            "severity": "high",
+                            "description": "apply_settings assigns settings.mode directly and bypasses SyncSettings.set_mode normalization.",
+                            "ai_feedback": "controller.py assigns payload['mode'] directly while sync_settings.py exposes set_mode(...) to normalize and validate supported values.",
+                            "context_scope": "cross_file",
+                            "related_files": ["src/sync_settings.py"],
+                            "systemic_impact": "Invalid or unnormalized mode values can bypass the class contract and leak into downstream consumers.",
+                            "evidence_basis": "controller.py assigns settings.mode directly while sync_settings.py provides set_mode that enforces normalization and allowed values.",
                         }
                     ]
                 },

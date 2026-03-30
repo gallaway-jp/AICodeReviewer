@@ -14,8 +14,7 @@
       "issue_type": "scalability",
       "minimum_severity": "medium",
       "context_scope": "cross_file",
-      "related_files_contains": ["db_pool.py"],
-      "evidence_basis_contains": "max_workers"
+      "related_files_contains": ["db_pool.py"]
     }
   ]
 }

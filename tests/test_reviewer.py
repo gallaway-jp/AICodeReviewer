@@ -318,6 +318,46 @@ class TestCollectReviewIssues:
         assert "build_sync_plan" in (issues[0].evidence_basis or "")
         assert mock_client.get_review.call_count == 1
 
+    def test_collect_review_issues_uses_local_setter_bypass_preflight_without_backend_call(self):
+        mock_client = MagicMock()
+        mock_client.backend_name = "local"
+
+        target_files: List[FileInfo] = [  # type: ignore[list-item]
+            {
+                'path': Path('/path/to/sync_settings.py'),
+                'content': (
+                    'class SyncSettings:\n'
+                    '    def __init__(self) -> None:\n'
+                    '        self.mode = "manual"\n\n'
+                    '    def set_mode(self, raw_mode: str) -> None:\n'
+                    '        normalized = raw_mode.strip().lower()\n'
+                    '        if normalized not in {"manual", "scheduled"}:\n'
+                    '            raise ValueError(raw_mode)\n'
+                    '        self.mode = normalized\n'
+                ),
+                'filename': 'sync_settings.py'
+            },
+            {
+                'path': Path('/path/to/controller.py'),
+                'content': (
+                    'from src.sync_settings import SyncSettings\n\n'
+                    'def apply_settings(settings: SyncSettings, payload: dict) -> None:\n'
+                    '    settings.mode = payload["mode"]\n'
+                ),
+                'filename': 'controller.py'
+            },
+        ]
+
+        issues = collect_review_issues(target_files, ["best_practices"], mock_client, "en")
+
+        assert len(issues) == 1
+        assert issues[0].issue_type == "encapsulation_violation"
+        assert issues[0].context_scope == "cross_file"
+        assert Path(issues[0].file_path).name == "controller.py"
+        assert [Path(path).name for path in issues[0].related_files] == ["sync_settings.py"]
+        assert "set_mode" in (issues[0].evidence_basis or "")
+        assert mock_client.get_review.call_count == 0
+
     def test_collect_review_issues_adds_local_license_supplement_when_model_misses_it(self):
         mock_client = MagicMock()
         mock_client.backend_name = "local"
