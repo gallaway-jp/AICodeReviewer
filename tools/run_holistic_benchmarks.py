@@ -61,6 +61,25 @@ def _fixture_timeout_seconds(runner_args: argparse.Namespace) -> float | None:
     return max(base_timeout + 30.0, base_timeout * 2.0)
 
 
+def _review_api_timeout_seconds(runner_args: argparse.Namespace) -> float | None:
+    explicit = getattr(runner_args, "timeout", None)
+    if explicit is not None:
+        return explicit if explicit > 0 else None
+
+    fixture_timeout = _fixture_timeout_seconds(runner_args)
+    if fixture_timeout is None:
+        return None
+
+    backend_name = _effective_backend(runner_args.backend)
+    configured_timeout = _configured_backend_timeout_seconds(backend_name)
+    derived_timeout = max(30.0, fixture_timeout / 2.0)
+    if backend_name == "local":
+        derived_timeout = min(derived_timeout, 90.0)
+    if configured_timeout is None:
+        return derived_timeout
+    return min(configured_timeout, derived_timeout)
+
+
 def _subprocess_timeout_seconds(review_args: Sequence[str]) -> float | None:
     if "--timeout-seconds" not in review_args:
         return None
@@ -308,8 +327,9 @@ def _build_review_args(
     fixture_timeout_seconds = _fixture_timeout_seconds(runner_args)
     if fixture_timeout_seconds is not None:
         argv.extend(["--timeout-seconds", str(fixture_timeout_seconds)])
-    if runner_args.timeout is not None:
-        argv.extend(["--timeout", str(runner_args.timeout)])
+    review_api_timeout = _review_api_timeout_seconds(runner_args)
+    if review_api_timeout is not None:
+        argv.extend(["--timeout", str(review_api_timeout)])
     if runner_args.model:
         argv.extend(["--model", runner_args.model])
     if runner_args.api_url:

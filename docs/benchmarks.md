@@ -97,7 +97,8 @@ Important flags:
 Operational notes:
 
 - `--timeout-seconds` still applies inside tool-mode `review`, but `--fixture-timeout-seconds` protects the outer benchmark runner and persists a JSON error envelope when a fixture exceeds its budget.
-- This is especially useful with Local OpenAI-compatible backends, where a single `reasoning_content only` response can otherwise cascade into retries or fallbacks that consume the entire benchmark batch.
+- When you do not pass `--timeout`, the benchmark runner now derives a child review timeout automatically from the fixture budget so the inner review can fail fast enough for retries or deterministic fallbacks to finish before the outer subprocess limit fires.
+- For Local OpenAI-compatible backends, that derived child timeout is capped more aggressively so a single `reasoning_content only` or long-running combined review does not consume the full sampled checkpoint budget.
 
 ## When To Update Benchmarks
 

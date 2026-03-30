@@ -336,6 +336,69 @@ def test_build_review_args_adds_derived_fixture_timeout_for_local_backend(tmp_pa
     assert "--timeout-seconds" in argv
     timeout_value = float(argv[argv.index("--timeout-seconds") + 1])
     assert timeout_value == 600.0
+    assert "--timeout" in argv
+    review_timeout_value = float(argv[argv.index("--timeout") + 1])
+    assert review_timeout_value == 90.0
+
+
+def test_build_review_args_derives_review_timeout_from_explicit_fixture_budget(tmp_path):
+    output_path = tmp_path / "fixture.json"
+    runner_args = run_holistic_benchmarks._build_parser().parse_args(
+        [
+            "--backend",
+            "local",
+            "--fixture-timeout-seconds",
+            "240",
+            "--output-dir",
+            str(tmp_path),
+            "--skip-health-check",
+        ]
+    )
+
+    argv = run_holistic_benchmarks._build_review_args(
+        {
+            "scope": "project",
+            "review_types": ["best_practices"],
+            "path": "demo-project",
+        },
+        output_path,
+        runner_args,
+    )
+
+    assert "--timeout-seconds" in argv
+    assert float(argv[argv.index("--timeout-seconds") + 1]) == 240.0
+    assert "--timeout" in argv
+    assert float(argv[argv.index("--timeout") + 1]) == 90.0
+
+
+def test_build_review_args_prefers_explicit_review_timeout(tmp_path):
+    output_path = tmp_path / "fixture.json"
+    runner_args = run_holistic_benchmarks._build_parser().parse_args(
+        [
+            "--backend",
+            "local",
+            "--timeout",
+            "90",
+            "--fixture-timeout-seconds",
+            "240",
+            "--output-dir",
+            str(tmp_path),
+            "--skip-health-check",
+        ]
+    )
+
+    argv = run_holistic_benchmarks._build_review_args(
+        {
+            "scope": "project",
+            "review_types": ["best_practices"],
+            "path": "demo-project",
+        },
+        output_path,
+        runner_args,
+    )
+
+    assert "--timeout" in argv
+    assert float(argv[argv.index("--timeout") + 1]) == 90.0
 
 
 def test_invoke_review_tool_returns_error_payload_on_timeout(monkeypatch):

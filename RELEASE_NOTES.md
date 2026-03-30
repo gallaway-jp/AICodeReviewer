@@ -31,6 +31,7 @@ Local LLM review-quality improvements focused on holistic, cross-file issue dete
 - Holistic review prompts now ask more explicitly for downstream impact when validation drift allows unvalidated or incompletely validated input to reach runtime use
 - Benchmark matching now accepts broader semantic aliases for architecture, validation, cache/state consistency, caller/callee drift, transaction-boundary loss, and invalidation wording
 - Local holistic benchmark recovery now short-circuits `reasoning_content only` failures earlier for supplement-covered review types so deterministic fallback logic runs before a fixture exhausts its subprocess timeout budget
+- Holistic benchmark runs now derive a child tool-mode review timeout automatically from `--fixture-timeout-seconds`, with a tighter default cap for Local backends so sampled Local checkpoints finish in one invocation without manual `--timeout` tuning
 
 ### Fixed
 - Local LLM combined and per-file reviews now retry once on transient backend errors before failing
