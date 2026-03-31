@@ -273,6 +273,7 @@ STRINGS: dict[str, str] = {
     "cli.epilog_subdir":              "  Subdirectory runs scope diffs to that directory.",
     "cli.epilog_git":                 "  Git: git diff RANGE -- .",
     "cli.epilog_svn":                 "  SVN: svn diff -r REV1:REV2 .",
+    "cli.epilog_presets":             "Review Type Presets:",
     "cli.help_set_profile":           "Set or change AWS profile name",
     "cli.help_clear_profile":         "Remove stored AWS profile from keyring",
     "cli.help_scope":                 "Review scope (default: project)",
@@ -281,7 +282,7 @@ STRINGS: dict[str, str] = {
     "cli.help_path":                  "Project directory (required for project scope)",
     "cli.help_type":                  ("Review type(s). Comma-separated or repeated.\n"
                                        "Examples: --type security,performance  or  --type security --type performance\n"
-                                       "Use 'all' for all types.  Default: best_practices"),
+                                       "Use 'all' for all types, or presets like runtime_safety or product_surface.  Default: best_practices"),
     "cli.help_spec_file":             "Specification document (required with --type specification)",
     "cli.help_backend":               "AI backend (default: from config.ini)",
     "cli.help_lang":                  "Output language (default: auto-detect)",

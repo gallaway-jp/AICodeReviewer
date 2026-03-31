@@ -39,6 +39,14 @@ EXIT_OK = 0
 EXIT_FAILURE = 1
 EXIT_CANCELLED = 3
 
+REVIEW_TYPE_PRESETS: dict[str, list[str]] = {
+    "runtime_safety": ["security", "error_handling", "data_validation", "dependency"],
+    "code_health": ["best_practices", "maintainability", "dead_code", "complexity", "regression"],
+    "interface_platform": ["api_design", "compatibility", "architecture", "scalability"],
+    "product_surface": ["ui_ux", "accessibility", "localization", "documentation"],
+    "release_safety": ["testing", "regression", "error_handling", "compatibility"],
+}
+
 
 def cleanup_old_backups(path: str) -> None:
     """Compatibility shim kept for legacy tests and integrations."""
@@ -91,6 +99,13 @@ def _build_epilog() -> str:
         lines.append(f"  {key:20s}  {label}  [{group}]")
         if summary:
             lines.append(f"{'':24s}{summary}")
+
+    lines += [
+        "",
+        t("cli.epilog_presets"),
+    ]
+    for key, review_types in REVIEW_TYPE_PRESETS.items():
+        lines.append(f"  {key:20s}  {', '.join(review_types)}")
 
     lines += [
         "",
@@ -1083,6 +1098,12 @@ def _parse_review_types(raw: str) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
     for p in parts:
+        if p in REVIEW_TYPE_PRESETS:
+            for review_type in REVIEW_TYPE_PRESETS[p]:
+                if review_type not in seen:
+                    result.append(review_type)
+                    seen.add(review_type)
+            continue
         if p in REVIEW_TYPE_KEYS and p not in seen:
             result.append(p)
             seen.add(p)

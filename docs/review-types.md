@@ -70,11 +70,17 @@ Recommended starting sets:
 
 Recommended stable bundles:
 
-- Runtime safety: `security,error_handling,data_validation,dependency`
-- Code health: `best_practices,maintainability,dead_code,complexity,regression`
-- Interface and platform: `api_design,compatibility,architecture,scalability`
-- Product surface: `ui_ux,accessibility,localization,documentation`
-- Release safety: `testing,regression,error_handling,compatibility`
+- Runtime safety: `runtime_safety` -> `security,error_handling,data_validation,dependency`
+- Code health: `code_health` -> `best_practices,maintainability,dead_code,complexity,regression`
+- Interface and platform: `interface_platform` -> `api_design,compatibility,architecture,scalability`
+- Product surface: `product_surface` -> `ui_ux,accessibility,localization,documentation`
+- Release safety: `release_safety` -> `testing,regression,error_handling,compatibility`
+
+These presets can be passed directly to the CLI, for example:
+
+- `--type runtime_safety`
+- `--type code_health,testing`
+- `--type product_surface`
 
 Recommended narrow or isolated passes:
 

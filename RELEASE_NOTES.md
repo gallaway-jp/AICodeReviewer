@@ -26,6 +26,7 @@ Local LLM review-quality improvements focused on holistic, cross-file issue dete
 - Repeated holistic benchmark runs with stability summaries via `tools/run_holistic_benchmarks.py --runs N`
 - `tools/compare_review_reports.py` for issue-shape deltas between two review artifacts or tool-mode envelopes
 - A new holistic `best_practices` fixture for direct reads of private backing state instead of a collaborator's public filtered accessor
+- CLI review-type bundle presets such as `runtime_safety`, `code_health`, `interface_platform`, `product_surface`, and `release_safety` for stable multi-review sessions
 
 ### Changed
 - Local LLM prompt enrichment now uses privacy-constrained, high-level public guidance without sending repository source code to the search provider

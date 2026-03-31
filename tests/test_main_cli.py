@@ -132,6 +132,18 @@ def test_parse_review_types_all():
     assert result == list(REVIEW_TYPE_KEYS)
 
 
+def test_parse_review_types_preset():
+    """Named presets expand to their documented review type bundles."""
+    result = cli._parse_review_types("runtime_safety")
+    assert result == ["security", "error_handling", "data_validation", "dependency"]
+
+
+def test_parse_review_types_preset_and_explicit_type_deduplicate():
+    """Presets and explicit types deduplicate while preserving bundle order."""
+    result = cli._parse_review_types("runtime_safety,security,testing")
+    assert result == ["security", "error_handling", "data_validation", "dependency", "testing"]
+
+
 def test_parse_review_types_unknown_falls_back():
     """Unknown types are skipped; empty result falls back to best_practices."""
     result = cli._parse_review_types("nonexistent_type")

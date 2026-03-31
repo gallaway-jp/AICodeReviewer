@@ -289,6 +289,7 @@ STRINGS: dict[str, str] = {
     "cli.epilog_subdir":              "  サブディレクトリ実行時はそのディレクトリに差分をスコープします。",
     "cli.epilog_git":                 "  Git: git diff RANGE -- .",
     "cli.epilog_svn":                 "  SVN: svn diff -r REV1:REV2 .",
+    "cli.epilog_presets":             "レビュータイププリセット:",
     "cli.help_set_profile":           "AWSプロファイル名を設定または変更",
     "cli.help_clear_profile":         "キーリングからAWSプロファイルを削除",
     "cli.help_scope":                 "レビュースコープ（デフォルト: project）",
@@ -297,7 +298,7 @@ STRINGS: dict[str, str] = {
     "cli.help_path":                  "プロジェクトディレクトリ（projectスコープに必要）",
     "cli.help_type":                  ("レビュータイプ。カンマ区切りまたは複数指定。\n"
                                        "例: --type security,performance  または  --type security --type performance\n"
-                                       "'all' で全タイプ指定。デフォルト: best_practices"),
+                                       "'all' で全タイプ指定。runtime_safety や product_surface のようなプリセットも使用可能。デフォルト: best_practices"),
     "cli.help_spec_file":             "仕様書ドキュメント（--type specification 使用時に必要）",
     "cli.help_backend":               "AIバックエンド（デフォルト: config.iniから読み込み）",
     "cli.help_lang":                  "出力言語（デフォルト: 自動検出）",
