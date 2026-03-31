@@ -42,6 +42,7 @@ Local LLM review-quality improvements focused on holistic, cross-file issue dete
 - The broader Local LLM web-enabled holistic benchmark artifacts now reevaluate cleanly at `8/8` passed with `overall_score = 1.0`
 - Holistic benchmark runs now support per-fixture subprocess bounds via `--fixture-timeout-seconds`, preserving scoreable timeout envelopes instead of hanging the full batch
 - Local holistic benchmark fallback coverage now includes the post-Phase4B `error_handling`, `license`, `maintainability`, `api_design`, and `scalability` fixture shapes, restoring the bounded Local sampled checkpoint to `8/8` passed with `overall_score = 1.0`
+- Multi-type sessions that include `specification` now preserve the other selected review-type focus blocks instead of collapsing the user prompt into the specification-only shortcut path
 
 ---
 

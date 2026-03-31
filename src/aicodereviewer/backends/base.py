@@ -975,7 +975,7 @@ class AIBackend(ABC):
 
         The message now reminds the model to respond with JSON.
         """
-        has_spec = ("specification" in review_type) and spec_content
+        has_spec = review_type == "specification" and spec_content
         if has_spec:
             return (
                 f"SPECIFICATION DOCUMENT:\n{spec_content}\n\n---\n\n"

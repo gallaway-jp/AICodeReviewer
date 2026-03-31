@@ -613,6 +613,18 @@ class TestUserPromptBuilders:
         assert "Classify these findings as specification instead of functionality" in prompt
         assert "returning partial_success even though the spec says the batch must be atomic" in prompt
 
+    def test_multi_type_prompt_with_specification_preserves_other_focus_blocks(self):
+        prompt = AIBackend._build_user_message(
+            "return {'status': 'partial_success'}",
+            "architecture+specification",
+            spec_content="submit_batch must be atomic and partial success is not allowed.",
+        )
+        assert "SPECIFICATION DOCUMENT:" not in prompt
+        assert "ARCHITECTURE FOCUS" in prompt
+        assert "SPECIFICATION FOCUS" in prompt
+        assert "controller.py importing db.py directly instead of service.py" in prompt
+        assert "returning partial_success even though the spec says the batch must be atomic" in prompt
+
     def test_specification_multi_file_prompt_requests_contract_mismatch_focus(self):
         prompt = AIBackend._build_multi_file_user_message(
             [
