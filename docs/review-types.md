@@ -51,6 +51,14 @@ AICodeReviewer exposes 22 selectable review types.
 
 ## Choosing Review Types
 
+Prefer targeted bundles over very wide sessions. The current prompt-interference analysis shows that prompt size grows from roughly `7.8k` characters for a single-type session to about `25k` at eight selected types and about `68k` at a 22-type "all" session, and the existing empirical sample showed that wide sessions mixed real target-retention drift with command-level failures. In practice:
+
+- treat `3` to `6` related review types as the normal operating range for one session
+- treat `7` or `8` review types as an upper bound for exploratory runs, not a default workflow
+- avoid using `--type all` as the primary quality signal for release checks; use narrower passes instead
+- keep `specification` focused because it introduces an external requirements document and materially increases prompt pressure
+- keep `license` focused because its guidance block is large and tends to overlap with `dependency` classification language
+
 Recommended starting sets:
 
 - Security-sensitive services: `security,error_handling,data_validation,dependency`
@@ -59,6 +67,33 @@ Recommended starting sets:
 - Product release check: `best_practices,testing,regression,documentation`
 - Cleanup and refactor passes: `dead_code,maintainability,testing,regression`
 - Frontend and desktop apps: `ui_ux,accessibility,localization,regression`
+
+Recommended stable bundles:
+
+- Runtime safety: `security,error_handling,data_validation,dependency`
+- Code health: `best_practices,maintainability,dead_code,complexity,regression`
+- Interface and platform: `api_design,compatibility,architecture,scalability`
+- Product surface: `ui_ux,accessibility,localization,documentation`
+- Release safety: `testing,regression,error_handling,compatibility`
+
+Recommended narrow or isolated passes:
+
+- `specification` by itself, or at most with `api_design`, `data_validation`, or `regression` when you are validating an external contract
+- `license` by itself, or with `dependency` only when you are auditing packaging and notice obligations together
+- `architecture` should usually stay with `api_design`, `compatibility`, or `scalability`, not with broad quality bundles that already include heavy classification guidance
+
+High-pressure review types:
+
+- `license`
+- `compatibility`
+- `error_handling`
+- `architecture`
+- `maintainability`
+- `specification`
+- `dependency`
+- `scalability`
+
+When one of these is selected, prefer smaller sessions and avoid stacking several of them into the same review unless you have a specific reason to compare their interaction.
 
 For frontend and desktop apps, the holistic benchmark suite now includes UI/UX fixtures for missing feedback states, form-recovery friction, desktop busy-state feedback gaps, destructive confirmation-flow failures, desktop settings discoverability issues, wizard-orientation gaps, and cross-tab preference dependency failures, so prompt or parser changes can be checked against concrete usability scenarios instead of only generic wording.
 

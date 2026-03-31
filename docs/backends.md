@@ -92,6 +92,7 @@ model = auto
 
 Operational note:
 - The backend uses a temp-file path for large prompts to avoid Windows command-line length and prompt-size issues.
+- Very wide multi-type sessions still produce substantially larger prompts than focused review bundles. Prefer targeted bundles of related review types over `--type all`, especially when you include `specification`, `license`, `architecture`, or other large guidance blocks.
 
 ## Local LLM
 
@@ -131,6 +132,7 @@ Operational notes:
 - The search flow is privacy-constrained: it does not send source code or project-specific identifiers to the search provider.
 - For `performance` reviews, the reviewer also adds a narrow deterministic stale-cache finding when the Local LLM returns no cache/state issue even though the code clearly shows a cache read path and a separate write path for the same entity without invalidation.
 - For `best_practices` reviews, the reviewer also adds a narrow deterministic caller/return-shape finding when the Local LLM returns no contract-style issue even though one file returns a literal dict shape and another caller still reads a removed key from that result.
+- Because Local sessions can also pay a latency penalty on larger prompts, use the same bundle discipline there: several related review types in one pass is fine, but very broad multi-type sessions are lower-confidence and slower than targeted passes.
 
 ## Choosing a Backend
 
