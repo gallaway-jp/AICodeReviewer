@@ -6,17 +6,28 @@ Coordinates scanning, multi-type review collection, interactive
 confirmation, and report generation.
 """
 import logging
-from datetime import datetime
-from typing import Optional, List, Any, Callable, Dict, Union, cast
+from typing import Optional, List, Any, Union
 
 from .backup import cleanup_old_backups
-from .scanner import scan_project_with_scope as default_scan
-from .reviewer import collect_review_issues
-from .interactive import interactive_review_confirmation
-from .reporter import generate_review_report
-from .models import ReviewReport, ReviewIssue, calculate_quality_score
+from .models import ReviewReport, ReviewIssue
 from .i18n import t
 from .backends.base import AIBackend
+from .reviewer import collect_review_issues
+from .execution import (
+    CallbackEventSink,
+    CancelCheck,
+    CompositeEventSink,
+    DeferredReportState,
+    ExecutionEventSink,
+    ProgressCallback,
+    ReviewJob,
+    ReviewExecutionResult,
+    ReviewExecutionService,
+    ReviewRequest,
+    ReviewRunnerState,
+    ReviewSessionState,
+    ScanFunction,
+)
 
 __all__ = [
     "ScanFunction",
@@ -25,26 +36,7 @@ __all__ = [
     "AppRunner",
 ]
 
-# Type aliases for complex callables
-ScanFunction = Callable[
-    [Optional[str], str, Optional[str], Optional[str]],
-    List[Dict[str, Any]]
-]
-ProgressCallback = Callable[[int, int, str], None]
-CancelCheck = Callable[[], bool]
-
 logger = logging.getLogger(__name__)
-
-
-def _target_file_path(target_file: Any) -> str:
-    """Extract a displayable path from a scan result item."""
-    if isinstance(target_file, dict):
-        mapping = cast(dict[str, object], target_file)
-        raw_path = mapping.get("path")
-        if raw_path is not None:
-            return str(raw_path)
-        return str(mapping)
-    return str(cast(object, target_file))
 
 
 class AppRunner:
@@ -60,6 +52,8 @@ class AppRunner:
     client: AIBackend | None
     scan_fn: ScanFunction
     backend_name: str
+    execution_service: ReviewExecutionService
+    _runner_state: ReviewRunnerState
 
     def __init__(
         self,
@@ -67,11 +61,16 @@ class AppRunner:
         *,
         scan_fn: Optional[ScanFunction] = None,
         backend_name: str = "bedrock",
+        execution_service: ReviewExecutionService | None = None,
     ) -> None:
         self.client = client
-        self.scan_fn = scan_fn or default_scan
+        self.execution_service = execution_service or ReviewExecutionService(
+            scan_fn,
+            collect_issues_fn=collect_review_issues,
+        )
+        self.scan_fn = self.execution_service.scan_fn
         self.backend_name = backend_name
-        self._last_run_state: dict[str, Any] = {}
+        self._runner_state = ReviewRunnerState()
 
     def run(
         self,
@@ -87,6 +86,7 @@ class AppRunner:
         dry_run: bool = False,
         output_file: Optional[str] = None,
         progress_callback: Optional[ProgressCallback] = None,
+        event_sink: ExecutionEventSink | None = None,
         interactive: bool = True,
         cancel_check: Optional[CancelCheck] = None,
     ) -> Union[Optional[str], List[ReviewIssue]]:
@@ -96,7 +96,9 @@ class AppRunner:
         Args:
             review_types: One or more review type keys.
             progress_callback: Optional ``(current, total, message)`` callable
-                               used by the GUI progress bar.
+                               preserved for legacy callers.
+            event_sink: Optional typed execution event sink for callers that
+                        want structured progress/state updates.
             interactive: If *False* skip the CLI interactive-review step
                          (used by the GUI which has its own issue cards).
             cancel_check: Optional callable returning *True* when the user
@@ -106,7 +108,19 @@ class AppRunner:
         if path and not dry_run:
             cleanup_old_backups(path)
 
-        diff_source = (diff_file or commits) if scope == "diff" else None
+        request = ReviewRequest(
+            path=path,
+            scope=scope,
+            diff_file=diff_file,
+            commits=commits,
+            review_types=list(review_types),
+            spec_content=spec_content,
+            target_lang=target_lang,
+            backend_name=self.backend_name,
+            programmers=list(programmers),
+            reviewers=list(reviewers),
+            dry_run=dry_run,
+        )
 
         type_label = ", ".join(review_types)
         scope_desc = (
@@ -117,26 +131,37 @@ class AppRunner:
             t("orch.scanning", path=path, scope=scope_desc, types=type_label, language=target_lang),
         )
 
-        target_files: List[Any] = self.scan_fn(path, scope, diff_file, commits)
-        target_paths = [_target_file_path(fi) for fi in target_files]
-        if not target_files:
-            self._set_last_run_state(
-                status="no_files",
-                project_path=path or "",
-                scope=scope,
-                diff_source=diff_source,
-                files_scanned=0,
-                target_paths=[],
-                issue_count=0,
-                review_types=list(review_types),
-                language=target_lang,
-                backend=self.backend_name,
-                dry_run=dry_run,
-            )
+        sinks: list[ExecutionEventSink] = []
+        if event_sink is not None:
+            sinks.append(event_sink)
+        if progress_callback is not None:
+            def _on_event(event: object) -> None:
+                if hasattr(event, "kind") and getattr(event, "kind") == "job.progress":
+                    progress_event = event
+                    progress_callback(
+                        getattr(progress_event, "current"),
+                        getattr(progress_event, "total"),
+                        getattr(progress_event, "message"),
+                    )
+
+            sinks.append(CallbackEventSink(_on_event))
+
+        combined_sink = CompositeEventSink(*sinks) if sinks else None
+
+        job = self.execution_service.create_job(request)
+        execution = self.execution_service.execute_job(
+            job,
+            self.client,
+            sink=combined_sink,
+            cancel_check=cancel_check,
+        )
+        self._set_execution_result(execution, job=job)
+
+        if execution.status == "no_files":
             logger.info(t("orch.no_files"))
             return None
 
-        num_files = len(target_files)
+        num_files = execution.files_scanned
         est = num_files * len(review_types) * 8
         logger.info(
             t("orch.found_files", files=num_files, types=len(review_types),
@@ -144,23 +169,9 @@ class AppRunner:
         )
 
         # ── dry run ───────────────────────────────────────────────────────
-        if dry_run:
-            self._set_last_run_state(
-                status="dry_run",
-                project_path=path or "",
-                scope=scope,
-                diff_source=diff_source,
-                files_scanned=num_files,
-                target_paths=target_paths,
-                issue_count=0,
-                review_types=list(review_types),
-                language=target_lang,
-                backend=self.backend_name,
-                dry_run=True,
-            )
+        if execution.status == "dry_run":
             logger.info(t("orch.dry_run_header"))
-            for i, fi in enumerate(target_files, 1):
-                fp = _target_file_path(fi)
+            for i, fp in enumerate(execution.target_paths, 1):
                 logger.info("  %d. %s", i, fp)
             logger.info(t("orch.dry_run_total", count=num_files))
             logger.info(t("orch.dry_run_types", types=type_label))
@@ -168,70 +179,18 @@ class AppRunner:
             logger.info(t("orch.dry_run_no_api"))
             return None
 
-        if self.client is None:
-            raise RuntimeError("AI backend client is required for non-dry-run review")
-
         # ── collect issues ────────────────────────────────────────────────
         logger.info(t("orch.collecting"))
-        issues: List[ReviewIssue] = collect_review_issues(
-            target_files,
-            review_types,
-            self.client,
-            target_lang,
-            spec_content,
-            progress_callback=progress_callback,
-            cancel_check=cancel_check,
-        )
 
-        if not issues:
-            self._set_last_run_state(
-                status="no_issues",
-                project_path=path or "",
-                scope=scope,
-                diff_source=diff_source,
-                files_scanned=num_files,
-                target_paths=target_paths,
-                issue_count=0,
-                review_types=list(review_types),
-                language=target_lang,
-                backend=self.backend_name,
-                dry_run=False,
-            )
+        if execution.status == "no_issues":
             logger.info(t("orch.no_issues"))
             return None
 
+        issues = execution.issues
         logger.info(t("orch.found_issues", count=len(issues)))
-
-        self._set_last_run_state(
-            status="issues_found",
-            project_path=path or "",
-            scope=scope,
-            diff_source=diff_source,
-            files_scanned=num_files,
-            target_paths=target_paths,
-            issue_count=len(issues),
-            review_types=list(review_types),
-            language=target_lang,
-            backend=self.backend_name,
-            dry_run=False,
-        )
 
         if cancel_check and cancel_check():
             return None
-
-        # Store metadata for deferred report generation
-        self._pending_report_meta = dict(
-            project_path=path or "",
-            review_types=list(review_types),
-            scope=scope,
-            total_files_scanned=num_files,
-            language=target_lang,
-            diff_source=diff_source,
-            programmers=programmers,
-            reviewers=reviewers,
-            backend=self.backend_name,
-        )
-        self._pending_issues = issues
 
         # When interactive=False (GUI mode), return issues without saving
         # a report — the GUI will invoke generate_report() after the user
@@ -239,13 +198,20 @@ class AppRunner:
         if not interactive:
             return issues
 
-        # The interactive step uses the first review_type for verification
-        # prompts; individual issues carry their own issue_type.
-        resolved_issues = interactive_review_confirmation(
-            issues, self.client, review_types[0], target_lang
+        if self.client is None:
+            raise RuntimeError("AI backend client is required for interactive review")
+        result = self.execution_service.complete_interactive_review(
+            job,
+            self.client,
+            output_file=output_file,
         )
-
-        return self.generate_report(resolved_issues, output_file)
+        if result is None:
+            return None
+        self._set_execution_result(result, job=job)
+        if result.report_path is None:
+            return None
+        logger.info(t("orch.complete", path=result.report_path))
+        return result.report_path
 
     # ── Deferred report generation (called by GUI after review) ────────
     def generate_report(
@@ -254,44 +220,111 @@ class AppRunner:
         output_file: Optional[str] = None,
     ) -> Optional[str]:
         """Generate and save the report. Called by the GUI on Finalize."""
-        report = self.build_report(issues)
-        if report is None:
-            return None
+        if self.last_job is not None:
+            result = self.execution_service.generate_report(
+                self.last_job,
+                issues,
+                output_file,
+            )
+            if result is None:
+                return None
+            self._set_execution_result(result, job=self.last_job)
+            if result.report_path is None:
+                return None
+            logger.info(t("orch.complete", path=result.report_path))
+            return result.report_path
 
-        out = generate_review_report(report, output_file)
-        logger.info(t("orch.complete", path=out))
-        return out
+        report_issues = list(issues) if issues is not None else self.pending_issues
+        job = self._runner_state.job_from_pending_state(report_issues)
+        if job is None:
+            return None
+        result = self.execution_service.generate_report(job, report_issues, output_file)
+        if result is None:
+            return None
+        self._set_execution_result(result, job=job)
+        if result.report_path is None:
+            return None
+        logger.info(t("orch.complete", path=result.report_path))
+        return result.report_path
 
     def build_report(
         self,
         issues: Optional[List[ReviewIssue]] = None,
     ) -> Optional[ReviewReport]:
         """Build a review report object without writing it to disk."""
-        meta = getattr(self, "_pending_report_meta", None)
-        if not meta:
+        if self.last_job is not None:
+            report = self.execution_service.build_report(self.last_job, issues)
+            if report is not None:
+                return report
+
+        report_issues = list(issues) if issues is not None else self.pending_issues
+        job = self._runner_state.job_from_pending_state(report_issues)
+        if job is None:
             return None
-        if issues is None:
-            pending: List[ReviewIssue] = getattr(self, "_pending_issues", [])
-            issues = pending
+        return self.execution_service.build_report(job, report_issues)
 
-        quality_score = calculate_quality_score(issues)
+    @property
+    def last_execution(self) -> ReviewExecutionResult | None:
+        """Return the most recent structured execution result."""
+        return self._runner_state.last_execution
 
-        return ReviewReport(
-            project_path=meta["project_path"],
-            review_type=", ".join(meta["review_types"]),
-            scope=meta["scope"],
-            total_files_scanned=meta["total_files_scanned"],
-            issues_found=issues,
-            generated_at=datetime.now(),
-            language=meta["language"],
-            review_types=meta["review_types"],
-            diff_source=meta["diff_source"],
-            quality_score=quality_score,
-            programmers=meta["programmers"],
-            reviewers=meta["reviewers"],
-            backend=meta["backend"],
+    @property
+    def last_job(self) -> ReviewJob | None:
+        """Return the most recent structured review job."""
+        return self._runner_state.last_job
+
+    @property
+    def execution_summary(self) -> dict[str, Any]:
+        """Return the most recent execution summary state."""
+        return self._runner_state.execution_summary()
+
+    @property
+    def serialized_report_context(self) -> dict[str, Any] | None:
+        """Return deferred report metadata for GUI and CLI callers."""
+        return self._runner_state.serialized_report_context()
+
+    @property
+    def deferred_report_state(self) -> DeferredReportState | None:
+        """Return the current typed deferred-report state for restore/finalize flows."""
+        return self._runner_state.deferred_report_state()
+
+    @property
+    def session_state(self) -> ReviewSessionState | None:
+        """Return the current typed GUI session state when session data exists."""
+        return self._runner_state.current_session_state()
+
+    @property
+    def pending_issues(self) -> list[ReviewIssue]:
+        """Return the current deferred issue list for report finalization."""
+        return self._runner_state.pending_issues()
+
+    def restore_serialized_report_context(
+        self,
+        meta: dict[str, Any] | None,
+        issues: list[ReviewIssue] | None = None,
+    ) -> None:
+        """Restore deferred report metadata from a serialized session payload."""
+        self._runner_state = ReviewRunnerState.from_report_context(
+            meta,
+            issues=issues,
+            default_backend=self.backend_name,
         )
 
-    def _set_last_run_state(self, **state: Any) -> None:
-        """Persist summary state for callers that need structured results."""
-        self._last_run_state = dict(state)
+    def restore_deferred_report_state(
+        self,
+        state: DeferredReportState | None,
+        issues: list[ReviewIssue] | None = None,
+    ) -> None:
+        """Restore typed deferred-report state for session resume flows."""
+        self._runner_state = ReviewRunnerState.from_deferred_report_state(
+            state,
+            issues=issues,
+        )
+
+    def restore_session_state(self, session_state: ReviewSessionState) -> None:
+        """Restore a saved GUI session from typed execution/session state."""
+        self._runner_state = ReviewRunnerState.from_session_state(session_state)
+
+    def _set_execution_result(self, result: ReviewExecutionResult, *, job: ReviewJob | None = None) -> None:
+        """Persist structured execution state for compatibility-facing properties."""
+        self._runner_state = self._runner_state.with_execution(result, job=job)

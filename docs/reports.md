@@ -40,10 +40,57 @@ Reports include:
 - selected review types
 - programmer and reviewer metadata
 - issue severity and status
+- issue-level resolution provenance when present
 - file-level findings
 - quality score and summary breakdowns
 
 Tool-mode review reports also include stable `issue_id` values when emitted through the non-interactive `review` command. Those IDs are intended for downstream `fix-plan` and `apply-fixes` workflows.
+
+## Issue Provenance In JSON Reports
+
+JSON review reports preserve issue-level provenance fields when the workflow records them.
+
+Common issue fields relevant to fix provenance:
+
+- `status`
+- `resolution_reason`
+- `resolved_at`
+- `resolution_provenance`
+- `ai_fix_suggested`
+- `ai_fix_applied`
+
+These fields are populated when the issue resolution path carries meaningful provenance. Typical examples:
+
+- direct AI fix application stores both `ai_fix_suggested` and `ai_fix_applied` with `resolution_provenance = "ai_applied"`
+- AI-generated fixes edited before apply store the original suggestion in `ai_fix_suggested`, the final written content in `ai_fix_applied`, and `resolution_provenance = "ai_edited"`
+- manual built-in or external editor flows keep `resolution_provenance` without pretending the final content came directly from AI
+- ignore, skip, verification, and forced-resolution flows store `resolution_provenance` even when no fix content exists
+
+The JSON structure is intentionally straightforward so downstream tooling can distinguish:
+
+- what the AI suggested
+- what the reviewer actually applied
+- whether a result was manual, verified, ignored, skipped, or AI-assisted
+
+## Provenance In TXT And Markdown Reports
+
+Human-readable TXT and Markdown reports include provenance details for each issue when available.
+
+Possible provenance sections include:
+
+- `Resolution Path`
+- `AI Suggestion`
+- `Applied Fix`
+
+Those sections appear only when the underlying issue data contains the relevant fields. This keeps unresolved or non-fix findings readable while still surfacing AI-assisted resolution details for adjudicated issues.
+
+In practice, that means:
+
+- reports can show that an AI suggestion was applied unchanged
+- reports can show that an AI suggestion was edited before apply
+- reports can show manual resolution paths even when no AI patch content exists
+
+This is the same provenance model used by the GUI Results workflow and the interactive CLI review flow.
 
 ## Tool-Mode JSON Envelopes
 
@@ -169,10 +216,20 @@ Typical non-interactive workflow:
 
 In the GUI, final reports are produced from the Results workflow after issues are reviewed or finalized.
 
+The GUI reporting path uses the issue list currently shown in the Results tab together with the saved deferred report metadata attached to the active or restored session state.
+
 The Results tab also supports:
-- session save and load
+- session save and load with the existing JSON file structure preserved on disk
 - AI fix review flows
 - issue filtering before finalization
+
+Session notes:
+- loading a saved session restores finalize-ready reporting state without rerunning the original review
+- loading a saved session also restores persisted issue-level provenance such as `resolution_provenance`, `ai_fix_suggested`, and `ai_fix_applied`
+- editing issue status in the Results tab changes what will be emitted in the final report
+- restoring a session does not reconnect a live backend client, but it does restore the deferred report context needed for finalize to build a report from the currently shown issues
+- the issue detail popup in the Results workflow reflects the same provenance fields that will later be emitted into TXT, Markdown, and JSON reports
+- if no active or restored session carries deferred report metadata, finalize is unavailable in the GUI
 
 ## Recommended Workflow
 

@@ -27,6 +27,7 @@ Local LLM review-quality improvements focused on holistic, cross-file issue dete
 - `tools/compare_review_reports.py` for issue-shape deltas between two review artifacts or tool-mode envelopes
 - A new holistic `best_practices` fixture for direct reads of private backing state instead of a collaborator's public filtered accessor
 - CLI review-type bundle presets such as `runtime_safety`, `code_health`, `interface_platform`, `product_surface`, and `release_safety` for stable multi-review sessions
+- GUI review-type preset picker for the same stable multi-review bundles, plus `--list-type-presets` to print preset definitions directly from the CLI
 
 ### Changed
 - Local LLM prompt enrichment now uses privacy-constrained, high-level public guidance without sending repository source code to the search provider
@@ -34,6 +35,8 @@ Local LLM review-quality improvements focused on holistic, cross-file issue dete
 - Benchmark matching now accepts broader semantic aliases for architecture, validation, cache/state consistency, caller/callee drift, transaction-boundary loss, and invalidation wording
 - Local holistic benchmark recovery now short-circuits `reasoning_content only` failures earlier for supplement-covered review types so deterministic fallback logic runs before a fixture exhausts its subprocess timeout budget
 - Holistic benchmark runs now derive a child tool-mode review timeout automatically from `--fixture-timeout-seconds`, with a tighter default cap for Local backends so sampled Local checkpoints finish in one invocation without manual `--timeout` tuning
+- Review execution and GUI session restore/finalize flows now run through a typed execution/session layer, with `AppRunner` retained as the stable CLI and GUI orchestration facade
+- Saved GUI sessions still preserve the same legacy JSON payload shape on disk while the in-memory restore path now round-trips through typed session-state models
 
 ### Fixed
 - Local LLM combined and per-file reviews now retry once on transient backend errors before failing

@@ -1,6 +1,7 @@
 import json
 import sys
 from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -8,6 +9,7 @@ import pytest
 import aicodereviewer.main as cli
 from aicodereviewer.backends.health import CheckResult, HealthReport
 from aicodereviewer.models import ReviewIssue, ReviewReport
+from aicodereviewer.recommendations import ReviewRecommendationResult, ReviewTypeRecommendation
 
 
 def run_main_with_args(args):
@@ -32,10 +34,10 @@ def test_tool_review_dry_run_outputs_json_and_skips_backend(monkeypatch, capsys)
             self.client = client
             self.scan_fn = scan_fn
             self.backend_name = backend_name
-            self._last_run_state = {}
+            self.execution_summary = {}
 
         def run(self, **kwargs):
-            self._last_run_state = {
+            self.execution_summary = {
                 "status": "dry_run",
                 "files_scanned": 1,
                 "target_paths": ["./proj/file.py"],
@@ -61,6 +63,171 @@ def test_tool_review_dry_run_outputs_json_and_skips_backend(monkeypatch, capsys)
     assert payload["files_scanned"] == 1
     assert payload["issue_count"] == 0
     assert payload["target_paths"] == ["./proj/file.py"]
+
+
+def test_tool_review_prefers_last_execution_over_summary_state(monkeypatch, capsys):
+    create_backend_called = False
+
+    def _fake_create_backend(_name):
+        nonlocal create_backend_called
+        create_backend_called = True
+        raise AssertionError("create_backend should not be called for dry-run")
+
+    class FakeRunner:
+        def __init__(self, client, *, scan_fn, backend_name):
+            self.client = client
+            self.scan_fn = scan_fn
+            self.backend_name = backend_name
+            self.last_execution = None
+
+        def run(self, **kwargs):
+            self.last_execution = SimpleNamespace(
+                status="dry_run",
+                files_scanned=2,
+                target_paths=["./proj/a.py", "./proj/b.py"],
+            )
+            return None
+
+    monkeypatch.setattr(cli, "create_backend", _fake_create_backend)
+    monkeypatch.setattr(cli, "AppRunner", FakeRunner)
+
+    exit_code = run_main_with_args([
+        "review",
+        "./proj",
+        "--type",
+        "security",
+        "--dry-run",
+    ])
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert exit_code == 0
+    assert create_backend_called is False
+    assert payload["status"] == "dry_run"
+    assert payload["files_scanned"] == 2
+    assert payload["target_paths"] == ["./proj/a.py", "./proj/b.py"]
+
+
+def test_tool_review_recommend_types_outputs_json(monkeypatch, capsys):
+    monkeypatch.setattr(cli, "create_backend", lambda _name: object())
+    monkeypatch.setattr(
+        cli,
+        "recommend_review_types",
+        lambda **kwargs: ReviewRecommendationResult(
+            review_types=["ui_ux", "accessibility", "localization"],
+            rationale=[
+                ReviewTypeRecommendation("ui_ux", "Frontend files are in scope."),
+                ReviewTypeRecommendation("accessibility", "Interactive UI surface should be checked."),
+                ReviewTypeRecommendation("localization", "User-facing strings are likely present."),
+            ],
+            project_signals=["Frameworks: react", "Changed files: src/App.tsx"],
+            recommended_preset="product_surface",
+            source="ai",
+        ),
+    )
+
+    exit_code = run_main_with_args([
+        "review",
+        "./proj",
+        "--recommend-types",
+        "--backend",
+        "bedrock",
+    ])
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert exit_code == 0
+    assert payload["status"] == "recommended"
+    assert payload["recommended_preset"] == "product_surface"
+    assert payload["recommended_review_types"] == ["ui_ux", "accessibility", "localization"]
+    assert payload["rationale"][0]["review_type"] == "ui_ux"
+
+
+def test_tool_review_recommend_types_passes_richer_context_to_backend(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+    capsys,
+):
+    project_root = tmp_path / "proj"
+    project_root.mkdir()
+    (project_root / "package.json").write_text(
+        json.dumps(
+            {
+                "dependencies": {"react": "18.3.0", "next": "15.0.0"},
+                "devDependencies": {"typescript": "5.6.0", "eslint": "9.0.0"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    captured_contexts: list[str] = []
+
+    class _FakeBackend:
+        def get_review_recommendations(self, recommendation_context: str, *, lang: str = "en") -> str:
+            captured_contexts.append(recommendation_context)
+            return json.dumps(
+                {
+                    "recommended_review_types": ["ui_ux", "accessibility", "localization"],
+                    "recommended_preset": "product_surface",
+                    "rationale": [
+                        {"review_type": "ui_ux", "reason": "Frontend files are in scope."},
+                        {"review_type": "accessibility", "reason": "Interactive UI surface should be checked."},
+                        {"review_type": "localization", "reason": "User-facing strings are likely present."},
+                    ],
+                    "project_signals": ["Frameworks: react", "Changed files: src/App.tsx"],
+                }
+            )
+
+        def close(self) -> None:
+            return None
+
+    def _fake_scan(path: str | None, scope: str, diff_file: str | None = None, commits: str | None = None):
+        if scope == "diff":
+            return [
+                {
+                    "filename": "src/App.tsx",
+                    "path": project_root / "src" / "App.tsx",
+                    "hunks": [object(), object(), object()],
+                    "commit_messages": "Refine onboarding panel",
+                }
+            ]
+        return [project_root / "src" / "App.tsx"]
+
+    class _FakeProjectContext:
+        frameworks = ["react"]
+        tools = ["eslint"]
+        total_files = 18
+
+    monkeypatch.setattr(cli, "create_backend", lambda _name: _FakeBackend())
+    monkeypatch.setattr("aicodereviewer.recommendations.scan_project_with_scope", _fake_scan)
+    monkeypatch.setattr(
+        "aicodereviewer.recommendations.collect_project_context",
+        lambda *_args, **_kwargs: _FakeProjectContext(),
+    )
+
+    exit_code = run_main_with_args([
+        "review",
+        str(project_root),
+        "--scope",
+        "diff",
+        "--diff-file",
+        "changes.diff",
+        "--recommend-types",
+        "--backend",
+        "bedrock",
+    ])
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert exit_code == 0
+    assert payload["status"] == "recommended"
+    assert captured_contexts
+    recommendation_context = captured_contexts[0]
+    assert "DEPENDENCY SUMMARY:" in recommendation_context
+    assert "Dependencies: package.json runtime deps include next, react" in recommendation_context
+    assert "Tooling: package.json dev deps include eslint, typescript" in recommendation_context
+    assert "DIFF SUMMARY:" in recommendation_context
+    assert "Diff files: src/App.tsx" in recommendation_context
+    assert "Hunks: 3 across 1 file(s)" in recommendation_context
+    assert "Changed file types: .tsx x1" in recommendation_context
+    assert "Commit messages: Refine onboarding panel" in recommendation_context
 
 
 def test_tool_review_outputs_report_and_issue_ids(monkeypatch, capsys):
@@ -94,10 +261,10 @@ def test_tool_review_outputs_report_and_issue_ids(monkeypatch, capsys):
             self.client = client
             self.scan_fn = scan_fn
             self.backend_name = backend_name
-            self._last_run_state = {}
+            self.execution_summary = {}
 
         def run(self, **kwargs):
-            self._last_run_state = {
+            self.execution_summary = {
                 "status": "issues_found",
                 "files_scanned": 1,
                 "target_paths": ["src/example.py"],
@@ -167,10 +334,10 @@ def test_tool_review_without_output_does_not_write_report_file(monkeypatch, caps
             self.client = client
             self.scan_fn = scan_fn
             self.backend_name = backend_name
-            self._last_run_state = {}
+            self.execution_summary = {}
 
         def run(self, **kwargs):
-            self._last_run_state = {
+            self.execution_summary = {
                 "status": "issues_found",
                 "files_scanned": 1,
                 "target_paths": ["src/example.py"],
@@ -216,11 +383,11 @@ def test_tool_review_cancel_file_returns_cancelled_exit(monkeypatch, capsys, tmp
             self.client = client
             self.scan_fn = scan_fn
             self.backend_name = backend_name
-            self._last_run_state = {}
+            self.execution_summary = {}
 
         def run(self, **kwargs):
             kwargs["cancel_check"]()
-            self._last_run_state = {
+            self.execution_summary = {
                 "status": "issues_found",
                 "files_scanned": 1,
                 "target_paths": ["src/example.py"],
@@ -389,10 +556,10 @@ def test_tool_review_accepts_backend_alias(monkeypatch, capsys):
             self.client = client
             self.scan_fn = scan_fn
             self.backend_name = backend_name
-            self._last_run_state = {}
+            self.execution_summary = {}
 
         def run(self, **kwargs):
-            self._last_run_state = {
+            self.execution_summary = {
                 "status": "no_issues",
                 "files_scanned": 1,
                 "target_paths": ["./proj/file.py"],

@@ -5,7 +5,6 @@ Tests for AI Code Reviewer data models.
 Covers ReviewIssue, ReviewReport (including new v2.0 fields review_types,
 backend, programmers, reviewers, quality_score), and calculate_quality_score.
 """
-import pytest
 from datetime import datetime
 from aicodereviewer.models import ReviewIssue, ReviewReport, calculate_quality_score
 
@@ -35,6 +34,8 @@ class TestReviewIssue:
         assert issue.status == "pending"
         assert issue.resolution_reason is None
         assert issue.resolved_at is None
+        assert issue.resolution_provenance is None
+        assert issue.ai_fix_suggested is None
         assert issue.ai_fix_applied is None
 
     def test_review_issue_with_defaults(self):
@@ -77,6 +78,34 @@ class TestReviewIssue:
         assert issue.systemic_impact == "Breaks callers expecting display_name"
         assert issue.confidence == "high"
         assert issue.evidence_basis == "batch code"
+
+    def test_review_issue_resolution_helpers(self):
+        """Resolution helpers should keep issue state consistent."""
+        issue = ReviewIssue(file_path="/path/to/file.py")
+
+        issue.set_resolution(
+            status="resolved",
+            provenance="ai_edited",
+            reason="Reviewed and applied",
+            ai_fix_suggested="print('old')\n",
+            ai_fix_applied="print('new')\n",
+        )
+
+        assert issue.status == "resolved"
+        assert issue.resolution_reason == "Reviewed and applied"
+        assert issue.resolution_provenance == "ai_edited"
+        assert issue.ai_fix_suggested == "print('old')\n"
+        assert issue.ai_fix_applied == "print('new')\n"
+        assert issue.resolved_at is not None
+
+        issue.clear_resolution()
+
+        assert issue.status == "pending"
+        assert issue.resolution_reason is None
+        assert issue.resolved_at is None
+        assert issue.resolution_provenance is None
+        assert issue.ai_fix_suggested is None
+        assert issue.ai_fix_applied is None
 
 
 class TestReviewReport:
@@ -211,6 +240,8 @@ class TestReviewReport:
                 'status': "resolved",
                 'resolution_reason': None,
                 'resolved_at': datetime.now().isoformat(),
+                'resolution_provenance': 'ai_applied',
+                'ai_fix_suggested': "print('hello')\n",
                 'ai_fix_applied': None,
                 'context_scope': 'cross_file',
                 'related_files': ['/path/to/caller.py'],
@@ -245,6 +276,8 @@ class TestReviewReport:
         assert len(report.issues_found) == 1
         assert isinstance(report.generated_at, datetime)
         assert isinstance(report.issues_found[0].resolved_at, datetime)
+        assert report.issues_found[0].resolution_provenance == 'ai_applied'
+        assert report.issues_found[0].ai_fix_suggested == "print('hello')\n"
         assert report.issues_found[0].context_scope == 'cross_file'
         assert report.issues_found[0].related_files == ['/path/to/caller.py']
         assert report.issues_found[0].systemic_impact == 'Breaks callers relying on the old contract'

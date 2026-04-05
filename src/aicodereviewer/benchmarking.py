@@ -10,6 +10,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Sequence
 
+from aicodereviewer.registries import get_review_registry
+
 
 _SEVERITY_ORDER = {
     "info": 0,
@@ -646,6 +648,7 @@ class FixtureEvaluation:
     total_expectations: int
     missing_report: bool
     expectation_results: list[ExpectationEvaluation]
+    benchmark_metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -816,6 +819,13 @@ def _issue_type_matches(expected: str, actual: str) -> bool:
         re.sub(r"[\s\-\|/]+", "_", alias.lower().strip())
         for alias in _ISSUE_TYPE_ALIASES.get(expected_normalized, set())
     }
+    try:
+        aliases.update(
+            re.sub(r"[\s\-\|/]+", "_", alias.lower().strip())
+            for alias in get_review_registry().get(expected_normalized).category_aliases
+        )
+    except (KeyError, RuntimeError):
+        pass
     actual_parts = {part for part in actual_normalized.split("_") if part}
     if aliases is not None and (
         actual_normalized in aliases
@@ -884,6 +894,120 @@ def _issue_matches(issue: dict[str, Any], expectation: BenchmarkExpectation) -> 
     return all(_issue_match_diagnostics(issue, expectation).values())
 
 
+def _string_list_metadata(value: Any) -> list[str]:
+    if isinstance(value, str):
+        normalized = value.strip()
+        return [normalized] if normalized else []
+    if isinstance(value, list):
+        return [entry.strip() for entry in value if isinstance(entry, str) and entry.strip()]
+    return []
+
+
+def collect_benchmark_metadata(review_types: Sequence[str]) -> dict[str, Any]:
+    """Aggregate registry-backed benchmark metadata for selected review types."""
+    try:
+        registry = get_review_registry()
+    except RuntimeError:
+        return {}
+
+    review_type_entries: list[dict[str, Any]] = []
+    fixture_tags: list[str] = []
+    expected_focus: list[str] = []
+    seen_review_types: set[str] = set()
+    seen_tags: set[str] = set()
+    seen_focus: set[str] = set()
+
+    for raw_review_type in review_types:
+        try:
+            canonical_key = registry.resolve_key(raw_review_type)
+            definition = registry.get(canonical_key)
+        except KeyError:
+            continue
+        if canonical_key in seen_review_types:
+            continue
+        seen_review_types.add(canonical_key)
+        metadata = dict(definition.benchmark_metadata)
+        if not metadata:
+            continue
+
+        review_type_entries.append(
+            {
+                "key": canonical_key,
+                "label": definition.label,
+                "group": definition.group,
+                "metadata": metadata,
+            }
+        )
+
+        for tag in _string_list_metadata(metadata.get("fixture_tags")):
+            normalized_tag = tag.lower()
+            if normalized_tag not in seen_tags:
+                fixture_tags.append(tag)
+                seen_tags.add(normalized_tag)
+
+        for focus in _string_list_metadata(metadata.get("expected_focus")):
+            normalized_focus = focus.lower()
+            if normalized_focus not in seen_focus:
+                expected_focus.append(focus)
+                seen_focus.add(normalized_focus)
+
+    aggregated: dict[str, Any] = {}
+    if fixture_tags:
+        aggregated["fixture_tags"] = fixture_tags
+    if expected_focus:
+        aggregated["expected_focus"] = expected_focus
+    if review_type_entries:
+        aggregated["review_types"] = review_type_entries
+    return aggregated
+
+
+def _summarize_benchmark_metadata(results: Sequence[FixtureEvaluation]) -> dict[str, Any]:
+    fixture_tags: list[str] = []
+    expected_focus: list[str] = []
+    review_type_entries: list[dict[str, Any]] = []
+    seen_tags: set[str] = set()
+    seen_focus: set[str] = set()
+    seen_review_types: set[str] = set()
+
+    for result in results:
+        metadata = result.benchmark_metadata
+        if not metadata:
+            continue
+
+        for tag in _string_list_metadata(metadata.get("fixture_tags")):
+            normalized_tag = tag.lower()
+            if normalized_tag not in seen_tags:
+                fixture_tags.append(tag)
+                seen_tags.add(normalized_tag)
+
+        for focus in _string_list_metadata(metadata.get("expected_focus")):
+            normalized_focus = focus.lower()
+            if normalized_focus not in seen_focus:
+                expected_focus.append(focus)
+                seen_focus.add(normalized_focus)
+
+        raw_review_types = metadata.get("review_types")
+        if not isinstance(raw_review_types, list):
+            continue
+        for entry in raw_review_types:
+            if not isinstance(entry, dict):
+                continue
+            key = str(entry.get("key") or "").strip().lower()
+            if not key or key in seen_review_types:
+                continue
+            review_type_entries.append(entry)
+            seen_review_types.add(key)
+
+    aggregated: dict[str, Any] = {}
+    if fixture_tags:
+        aggregated["fixture_tags"] = fixture_tags
+    if expected_focus:
+        aggregated["expected_focus"] = expected_focus
+    if review_type_entries:
+        aggregated["review_types"] = review_type_entries
+    return aggregated
+
+
 def _best_candidate_match(
     issues: Sequence[dict[str, Any]],
     expectation: BenchmarkExpectation,
@@ -929,6 +1053,7 @@ def evaluate_fixture(fixture: BenchmarkFixture, report: dict[str, Any], report_p
     if not isinstance(raw_issues, list):
         raise ValueError("Report must contain an 'issues_found' list")
     issues = [_normalize_issue(issue, raw_issues) for issue in raw_issues if isinstance(issue, dict)]
+    benchmark_metadata = collect_benchmark_metadata(fixture.review_types)
 
     used_indices: set[int] = set()
     expectation_results: list[ExpectationEvaluation] = []
@@ -982,12 +1107,14 @@ def evaluate_fixture(fixture: BenchmarkFixture, report: dict[str, Any], report_p
         matched_expectations=matched_count,
         total_expectations=len(fixture.expected_findings),
         missing_report=False,
+        benchmark_metadata=benchmark_metadata,
         expectation_results=expectation_results,
     )
 
 
 def evaluate_fixture_file(fixture: BenchmarkFixture, report_path: Path) -> FixtureEvaluation:
     """Evaluate a report file against one fixture."""
+    benchmark_metadata = collect_benchmark_metadata(fixture.review_types)
     try:
         report = load_report(report_path)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
@@ -1001,6 +1128,7 @@ def evaluate_fixture_file(fixture: BenchmarkFixture, report_path: Path) -> Fixtu
             matched_expectations=0,
             total_expectations=len(fixture.expected_findings),
             missing_report=False,
+            benchmark_metadata=benchmark_metadata,
             expectation_results=[
                 ExpectationEvaluation(
                     expectation_id=expectation.id,
@@ -1018,6 +1146,7 @@ def evaluate_fixture_directory(fixtures: Sequence[BenchmarkFixture], reports_dir
     results: list[FixtureEvaluation] = []
     for fixture in fixtures:
         report_path = reports_dir / f"{fixture.id}.json"
+        benchmark_metadata = collect_benchmark_metadata(fixture.review_types)
         if not report_path.exists():
             results.append(
                 FixtureEvaluation(
@@ -1030,6 +1159,7 @@ def evaluate_fixture_directory(fixtures: Sequence[BenchmarkFixture], reports_dir
                     matched_expectations=0,
                     total_expectations=len(fixture.expected_findings),
                     missing_report=True,
+                    benchmark_metadata=benchmark_metadata,
                     expectation_results=[
                         ExpectationEvaluation(
                             expectation_id=expectation.id,
@@ -1052,13 +1182,17 @@ def summarize_results(results: Sequence[FixtureEvaluation]) -> dict[str, Any]:
     overall_score = (
         sum(result.score for result in results) / total if total else 0.0
     )
-    return {
+    summary = {
         "fixtures_evaluated": total,
         "fixtures_passed": passed,
         "fixtures_failed": total - passed,
         "overall_score": round(overall_score, 4),
         "results": [result.to_dict() for result in results],
     }
+    benchmark_metadata = _summarize_benchmark_metadata(results)
+    if benchmark_metadata:
+        summary["benchmark_metadata"] = benchmark_metadata
+    return summary
 
 
 def describe_fixture_invocation(fixture: BenchmarkFixture) -> dict[str, Any]:
@@ -1068,12 +1202,29 @@ def describe_fixture_invocation(fixture: BenchmarkFixture) -> dict[str, Any]:
         "scope": fixture.scope,
         "review_types": list(fixture.review_types),
     }
+    benchmark_metadata = collect_benchmark_metadata(fixture.review_types)
+    if benchmark_metadata:
+        payload["benchmark_metadata"] = benchmark_metadata
     if fixture.project_dir is not None:
         payload["path"] = str(fixture.project_dir)
     if fixture.diff_file is not None:
         payload["diff_file"] = str(fixture.diff_file)
     if fixture.spec_file is not None:
         payload["spec_file"] = str(fixture.spec_file)
+    return payload
+
+
+def describe_fixture_catalog_entry(fixture: BenchmarkFixture) -> dict[str, Any]:
+    """Return fixture metadata for selection or comparison UIs."""
+    payload = {
+        "id": fixture.id,
+        "title": fixture.title,
+        "scope": fixture.scope,
+        "review_types": list(fixture.review_types),
+    }
+    benchmark_metadata = collect_benchmark_metadata(fixture.review_types)
+    if benchmark_metadata:
+        payload["benchmark_metadata"] = benchmark_metadata
     return payload
 
 
@@ -1123,12 +1274,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.list_fixtures:
         payload = {
             "fixtures": [
-                {
-                    "id": fixture.id,
-                    "title": fixture.title,
-                    "scope": fixture.scope,
-                    "review_types": fixture.review_types,
-                }
+                describe_fixture_catalog_entry(fixture)
                 for fixture in fixtures
             ]
         }

@@ -6,6 +6,7 @@ import logging
 import re
 import threading
 import webbrowser
+from typing import Any
 
 import customtkinter as ctk  # type: ignore[import-untyped]
 
@@ -19,7 +20,7 @@ from aicodereviewer.backends.health import (
 from aicodereviewer.config import config
 from aicodereviewer.i18n import t
 
-from .widgets import _fix_titlebar
+from .popup_utils import schedule_titlebar_fix
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,23 @@ __all__ = ["HealthMixin"]
 
 class HealthMixin:
     """Mixin supplying backend health checking and model list refresh."""
+
+    def _dispatch_health_ui(self, callback: Any, *args: Any, **kwargs: Any) -> bool:
+        """Marshal worker-thread callbacks onto the main UI loop when available."""
+        dispatcher = getattr(self, "_run_on_ui_thread", None)
+        if callable(dispatcher):
+            return bool(dispatcher(callback, *args, **kwargs))
+        schedule_after = getattr(self, "_schedule_app_after", self.after)
+        schedule_after(0, lambda: callback(*args, **kwargs))
+        return True
+
+    def _model_refresh_controller(self) -> Any:
+        """Return the runtime owner for backend model-refresh state."""
+        return getattr(self, "_active_model_refresh")
+
+    def _schedule_titlebar_fix(self, window: Any) -> None:
+        """Defer titlebar tweaks for popup windows without leaking fragile Tk callbacks in tests."""
+        schedule_titlebar_fix(window, host=self)
 
     # ══════════════════════════════════════════════════════════════════════
     #  BACKEND HEALTH CHECK
@@ -46,102 +64,100 @@ class HealthMixin:
 
     def _check_backend_health(self):
         if self._testing_mode:
-            if self._health_check_backend:
+            if self._is_health_check_running():
                 return
             logger.info("Simulating health check for backend %s", self.backend_var.get())
-            self._health_check_backend = "simulated"
+            self._begin_active_health_check("simulated")
             self._set_action_buttons_state("disabled")
-            self.cancel_btn.configure(state="normal")
+            self._sync_global_cancel_button()
             self.status_var.set("Simulating health check…")
             self._start_health_countdown()
 
             def _sim_complete():
-                self._health_check_backend = None
+                self._finish_active_health_check()
                 self._stop_health_countdown()
                 self._set_action_buttons_state("normal")
-                self.cancel_btn.configure(state="disabled")
+                self._sync_global_cancel_button()
                 self.status_var.set(t("common.ready"))
                 self._show_toast(
                     "Check Setup is simulated in testing mode — "
                     "backend connectivity is not tested", error=False)
 
-            self.after(10_000, _sim_complete)
+            schedule_after = getattr(self, "_schedule_app_after", self.after)
+            schedule_after(10_000, _sim_complete)
             return
         self._run_health_check(self.backend_var.get(), always_show_dialog=True)
 
     def _run_health_check(self, backend_name: str, *, always_show_dialog: bool):
-        if self._running:
+        if self._is_busy() and not self._is_health_check_running():
             return
-        if self._health_check_backend == backend_name:
+        if self._active_health_check_matches(backend_name):
             return
 
-        if self._health_check_timer:
-            self._health_check_timer.cancel()
-            self._health_check_timer = None
+        self._cancel_active_health_check_timer()
 
-        self._health_check_backend = backend_name
+        self._begin_active_health_check(backend_name)
         self._set_action_buttons_state("disabled")
-        self.cancel_btn.configure(state="normal")
+        self._sync_global_cancel_button()
         self.status_var.set(t("health.checking", backend=backend_name))
 
         def _on_timeout():
-            if self._health_check_backend == backend_name:
-                self._health_check_backend = None
-                self._health_check_timer = None
-                self.after(0, self._stop_health_countdown)
-                self.after(0, lambda: self._show_health_error(
-                    t("health.timeout", backend=backend_name)))
-                self.after(0, lambda: self._set_action_buttons_state("normal"))
-                self.after(0, lambda: self.cancel_btn.configure(state="disabled"))
-                self.after(0, lambda: self.status_var.set(t("common.ready")))
+            if self._active_health_check_matches(backend_name):
+                self._finish_active_health_check()
+                self._dispatch_health_ui(self._stop_health_countdown)
+                self._dispatch_health_ui(
+                    self._show_health_error,
+                    t("health.timeout", backend=backend_name),
+                )
+                self._dispatch_health_ui(self._set_action_buttons_state, "normal")
+                self._dispatch_health_ui(self._sync_global_cancel_button)
+                self._dispatch_health_ui(self.status_var.set, t("common.ready"))
 
-        self._health_check_timer = threading.Timer(60, _on_timeout)
-        self._health_check_timer.daemon = True
-        self._health_check_timer.start()
+        timeout_timer = threading.Timer(60, _on_timeout)
+        timeout_timer.daemon = True
+        self._bind_active_health_check_timer(timeout_timer)
+        timeout_timer.start()
         self._start_health_countdown()
 
         def _worker():
             try:
                 report = check_backend(backend_name)
-                if self._health_check_backend == backend_name:
-                    if self._health_check_timer:
-                        self._health_check_timer.cancel()
-                        self._health_check_timer = None
-
-                    self._health_check_backend = None
-                    self.after(0, self._stop_health_countdown)
+                if self._active_health_check_matches(backend_name):
+                    self._cancel_active_health_check_timer()
+                    self._finish_active_health_check()
+                    self._dispatch_health_ui(self._stop_health_countdown)
 
                     if always_show_dialog:
-                        self.after(0, lambda: self._show_health_dialog(report))
-                        self.after(0, lambda: self.status_var.set(t("common.ready")))
+                        self._dispatch_health_ui(self._show_health_dialog, report)
+                        self._dispatch_health_ui(self.status_var.set, t("common.ready"))
                     else:
                         if report.ready:
-                            self.after(0, lambda: self.status_var.set(
-                                t("health.auto_ok", backend=backend_name)))
+                            self._dispatch_health_ui(
+                                self.status_var.set,
+                                t("health.auto_ok", backend=backend_name),
+                            )
                             if backend_name == "copilot":
-                                self.after(0, self._refresh_copilot_model_list)
+                                self._dispatch_health_ui(self._refresh_copilot_model_list)
                             elif backend_name == "bedrock":
-                                self.after(0, self._refresh_bedrock_model_list)
+                                self._dispatch_health_ui(self._refresh_bedrock_model_list)
                             elif backend_name == "local":
-                                self.after(0, self._refresh_local_model_list)
+                                self._dispatch_health_ui(self._refresh_local_model_list)
                         else:
-                            self.after(0, lambda: self._show_health_dialog(report))
-                            self.after(0, lambda: self.status_var.set(t("common.ready")))
+                            self._dispatch_health_ui(self._show_health_dialog, report)
+                            self._dispatch_health_ui(self.status_var.set, t("common.ready"))
 
-                    self.after(0, lambda: self._set_action_buttons_state("normal"))
-                    self.after(0, lambda: self.cancel_btn.configure(state="disabled"))
+                    self._dispatch_health_ui(self._set_action_buttons_state, "normal")
+                    self._dispatch_health_ui(self._sync_global_cancel_button)
             except Exception as exc:
-                if self._health_check_backend == backend_name:
+                if self._active_health_check_matches(backend_name):
                     logger.error("Health check failed: %s", exc)
-                    if self._health_check_timer:
-                        self._health_check_timer.cancel()
-                        self._health_check_timer = None
-                    self._health_check_backend = None
-                    self.after(0, lambda: self._show_health_error(str(exc)))
-                    self.after(0, self._stop_health_countdown)
-                    self.after(0, lambda: self._set_action_buttons_state("normal"))
-                    self.after(0, lambda: self.cancel_btn.configure(state="disabled"))
-                    self.after(0, lambda: self.status_var.set(t("common.ready")))
+                    self._cancel_active_health_check_timer()
+                    self._finish_active_health_check()
+                    self._dispatch_health_ui(self._show_health_error, str(exc))
+                    self._dispatch_health_ui(self._stop_health_countdown)
+                    self._dispatch_health_ui(self._set_action_buttons_state, "normal")
+                    self._dispatch_health_ui(self._sync_global_cancel_button)
+                    self._dispatch_health_ui(self.status_var.set, t("common.ready"))
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -154,7 +170,7 @@ class HealthMixin:
         win.title(t("health.dialog_title"))
         win.geometry("600x450")
         win.grab_set()
-        win.after(10, lambda w=win: _fix_titlebar(w))
+        self._schedule_titlebar_fix(win)
         win.bind("<Control-w>", lambda e: win.destroy())
 
         if report.backend == "copilot" and report.ready:
@@ -170,7 +186,7 @@ class HealthMixin:
                       font=ctk.CTkFont(size=14, weight="bold")).pack(
             padx=10, pady=(10, 6))
 
-        scroll = ctk.CTkScrollableFrame(win)
+        scroll = ctk.CTkFrame(win) if self._testing_mode else ctk.CTkScrollableFrame(win)
         scroll.pack(fill="both", expand=True, padx=10, pady=4)
         scroll.grid_columnconfigure(1, weight=1)
 
@@ -260,16 +276,16 @@ class HealthMixin:
             self._copilot_model_combo.set(current)
 
     def _refresh_copilot_model_list_async(self):
-        if "copilot" in self._model_refresh_in_progress:
+        controller = self._model_refresh_controller()
+        if not controller.begin("copilot"):
             return
-        self._model_refresh_in_progress.add("copilot")
 
         def _worker():
             try:
                 models = get_copilot_models()
-                self.after(0, lambda: self._apply_copilot_models(models))
+                self._dispatch_health_ui(self._apply_copilot_models, models)
             finally:
-                self._model_refresh_in_progress.discard("copilot")
+                controller.finish("copilot")
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -282,18 +298,18 @@ class HealthMixin:
     # ── Kiro CLI ────────────────────────────────────────────────────────────
 
     def _refresh_kiro_model_list_async(self):
-        if "kiro" in self._model_refresh_in_progress:
+        controller = self._model_refresh_controller()
+        if not controller.begin("kiro"):
             return
-        self._model_refresh_in_progress.add("kiro")
 
         def _worker():
             try:
                 kiro_path = config.get("kiro", "cli_command", "kiro")
                 wsl_distro = config.get("kiro", "wsl_distro", "")
                 models = get_kiro_models(kiro_path, wsl_distro)
-                self.after(0, lambda: self._apply_kiro_models(models))
+                self._dispatch_health_ui(self._apply_kiro_models, models)
             finally:
-                self._model_refresh_in_progress.discard("kiro")
+                controller.finish("kiro")
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -315,16 +331,16 @@ class HealthMixin:
                 self._bedrock_model_combo.set(current)
 
     def _refresh_bedrock_model_list_async(self):
-        if "bedrock" in self._model_refresh_in_progress:
+        controller = self._model_refresh_controller()
+        if not controller.begin("bedrock"):
             return
-        self._model_refresh_in_progress.add("bedrock")
 
         def _worker():
             try:
                 models = get_bedrock_models()
-                self.after(0, lambda: self._apply_bedrock_models(models))
+                self._dispatch_health_ui(self._apply_bedrock_models, models)
             finally:
-                self._model_refresh_in_progress.discard("bedrock")
+                controller.finish("bedrock")
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -348,18 +364,18 @@ class HealthMixin:
                 self._local_model_combo.set(current)
 
     def _refresh_local_model_list_async(self):
-        if "local" in self._model_refresh_in_progress:
+        controller = self._model_refresh_controller()
+        if not controller.begin("local"):
             return
-        self._model_refresh_in_progress.add("local")
 
         def _worker():
             try:
                 api_url = config.get("local_llm", "api_url", "http://localhost:1234")
                 api_type = config.get("local_llm", "api_type", "lmstudio")
                 models = get_local_models(api_url, api_type)
-                self.after(0, lambda: self._apply_local_models(models))
+                self._dispatch_health_ui(self._apply_local_models, models)
             finally:
-                self._model_refresh_in_progress.discard("local")
+                controller.finish("local")
 
         threading.Thread(target=_worker, daemon=True).start()
 

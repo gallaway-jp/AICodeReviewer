@@ -21,6 +21,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from .models import ReviewIssue
 from .config import config
 from .backends.base import AIBackend
+from .registries import get_review_registry
 from .response_parser import parse_review_response, parse_single_file_response
 from .context_collector import collect_project_context
 
@@ -1789,7 +1790,14 @@ def _normalize_review_type_aliases(review_type: str, issues: Sequence[ReviewIssu
             if normalized_issue_type == canonical_type:
                 issue.issue_type = canonical_type
                 break
-            aliases = _REVIEW_TYPE_ISSUE_ALIASES.get(canonical_type, frozenset())
+            aliases = set(_REVIEW_TYPE_ISSUE_ALIASES.get(canonical_type, frozenset()))
+            try:
+                aliases.update(
+                    re.sub(r"[\s\-/]+", "_", alias.lower()).strip("_")
+                    for alias in get_review_registry().get(canonical_type).category_aliases
+                )
+            except (KeyError, RuntimeError):
+                pass
             if normalized_issue_type in aliases:
                 issue.issue_type = canonical_type
                 break

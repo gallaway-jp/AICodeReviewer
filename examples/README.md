@@ -16,6 +16,9 @@ Use the main docs for setup and reference:
 - [QUICK_REFERENCE.md](QUICK_REFERENCE.md) — command and issue cheat sheet
 - [sample_project/README.md](sample_project/README.md) — inventory of intentional issues in the sample project
 - `run_demo.py` — helper script for local demo runs
+- [addon-secure-defaults/addon.json](addon-secure-defaults/addon.json) — manifest-only addon example that contributes review packs
+- [addon-echo-backend/addon.json](addon-echo-backend/addon.json) — code-backed addon example that contributes a backend provider
+- [addon-editor-hooks/addon.json](addon-editor-hooks/addon.json) — code-backed addon example that contributes editor and diff-preview hooks
 
 ## When To Use Examples
 
@@ -32,3 +35,9 @@ aicodereviewer examples/sample_project --type security --programmers Demo --revi
 ```
 
 Expected outputs are described in the walkthrough and quick-reference documents.
+
+## Addon Examples
+
+- `addon-secure-defaults/` shows the manifest shape for review-pack contributions.
+- `addon-echo-backend/` shows a code-backed addon that registers an in-process backend provider through `entry_points.backend_providers` and contributes a Settings surface through `entry_points.ui_contributors`.
+- `addon-editor-hooks/` shows a code-backed addon that registers editor hooks through `entry_points.editor_hooks`, returns diagnostics for the popup editor and diff preview, and observes lifecycle plus staged-preview events.

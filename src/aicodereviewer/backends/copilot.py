@@ -133,6 +133,15 @@ class CopilotBackend(AIBackend):
             return result.strip()
         return None
 
+    def get_review_recommendations(
+        self,
+        recommendation_context: str,
+        lang: str = "en",
+    ) -> str:
+        system_prompt = self._build_recommendation_system_prompt(lang)
+        user_message = self._build_recommendation_user_message(recommendation_context)
+        return self._run_sdk(system_prompt, user_message)
+
     def validate_connection(self) -> bool:
         """Check Copilot CLI is installed, reachable via the SDK, and authenticated."""
         found = shutil.which(self.copilot_path)

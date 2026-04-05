@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "review_definitions": [
+    {
+      "key": "secure_defaults",
+      "parent_key": "security",
+      "label": "Secure Defaults",
+      "summary_key": "",
+      "aliases": [
+        "secure-defaults"
+      ],
+      "prompt_append": "Also check for unsafe default configuration, opt-out security controls, and features that ship enabled without an explicit hardening step.",
+      "category_aliases": [
+        "insecure_configuration",
+        "unsafe_default_configuration"
+      ],
+      "context_augmentation_rules": [
+        "Inspect bootstrap, setup, and default-config paths before treating a missing control as unreachable.",
+        "Prefer findings that tie insecure defaults to the first-run or tenant-provisioning path that enables them."
+      ],
+      "benchmark_metadata": {
+        "fixture_tags": [
+          "security",
+          "defaults"
+        ],
+        "expected_focus": "default configuration safety"
+      }
+    }
+  ],
+  "review_presets": [
+    {
+      "key": "secure_runtime",
+      "group": "Custom Bundles",
+      "aliases": [
+        "secure-runtime"
+      ],
+      "label": "Secure Runtime",
+      "summary": "Security defaults plus runtime validation and failure-path checks.",
+      "review_types": [
+        "secure_defaults",
+        "data_validation",
+        "error_handling"
+      ]
+    }
+  ]
+}

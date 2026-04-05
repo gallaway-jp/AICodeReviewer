@@ -248,6 +248,7 @@ Typical `resume` output includes:
 
 ## Related Guides
 
+- [HTTP API Guide](http-api.md)
 - [Review Types Reference](review-types.md)
 - [Reports and Outputs](reports.md)
 - [Troubleshooting](troubleshooting.md)

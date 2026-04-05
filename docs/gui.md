@@ -55,6 +55,11 @@ Additional controls:
 - elapsed timer
 - backend health checks from the status area
 
+Review-type defaults:
+- the Review tab can recommend a preset bundle and let you pin the current review-type selection as your default starting point
+- a pinned default is explicit and wins on restart until you clear it
+- last-used selections are only the most recent ad hoc checkboxes you ran; they are restored only when no pinned default is set
+
 ### Results Tab
 
 Use the Results tab to inspect and act on findings.
@@ -66,9 +71,9 @@ Capabilities:
 - issue cards with scope/status badges, richer metadata, and detail views
 - AI Fix mode for single and batch workflows
 - preview and edit proposed changes before applying them; preview edits stay staged until you use Apply Selected Fixes
-- save and load review sessions
+- save and load review sessions with the existing JSON file format preserved on disk
 - review changes for resolved items
-- finalize reports
+- finalize reports from the current active or restored session state
 
 ### Settings Tab
 
@@ -100,7 +105,7 @@ Capabilities:
 4. Choose the backend and enter reviewer metadata.
 5. Start the review.
 6. Use the Results tab overview cards and quick triage filters to prioritize findings.
-7. Inspect issue cards, apply fixes, save sessions, reload sessions, and finalize reports from the restored issue state.
+7. Inspect issue cards, apply fixes, save sessions, reload sessions, and finalize reports from the current in-memory issue list.
 8. Use the Output Log tab if anything looks wrong or you need runtime detail.
 
 ## GUI Workflow Diagram
@@ -136,6 +141,13 @@ flowchart LR
 	ResultsTab --> LogTab
 ```
 
+## Session And Finalize Notes
+
+- Saving a session preserves the same JSON payload shape used by earlier versions of the GUI.
+- Loading a session rebuilds typed saved-session state before the Results tab repopulates issue cards.
+- Finalize uses the issue list currently visible in the Results tab together with the restored deferred report metadata carried by that session state.
+- Loading a session restores finalize-ready state for reporting only; it does not reconnect a live backend client or rerun the review.
+
 ## Testing and Manual Validation
 
 The repository includes a manual GUI harness:
@@ -154,4 +166,6 @@ This is useful for validating:
 
 - [Getting Started](getting-started.md)
 - [Configuration Reference](configuration.md)
+- [GUI Architecture Plan](handoffs/gui-architecture-plan-2026-04-05.md)
+- [GUI UX Audit And Backlog](gui-ux-audit.md)
 - [Troubleshooting](troubleshooting.md)

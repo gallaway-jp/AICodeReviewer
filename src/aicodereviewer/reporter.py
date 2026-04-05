@@ -22,6 +22,22 @@ __all__ = ["ReportStatistics", "generate_review_report"]
 logger = logging.getLogger(__name__)
 
 
+_PROVENANCE_LABELS = {
+    "ai_applied": "AI suggestion applied",
+    "ai_edited": "AI suggestion edited before apply",
+    "builtin_editor": "Manual edit in built-in editor",
+    "external_editor": "Manual edit in external editor",
+    "verified_resolved": "Marked resolved after verification",
+    "manual_forced": "Manually forced to resolved",
+    "ignored": "Ignored by reviewer",
+    "skipped": "Skipped by reviewer",
+}
+
+
+def _empty_counts() -> dict[str, int]:
+    return {}
+
+
 def _parse_enabled_formats(raw_formats: str) -> list[str]:
     formats = [fmt.strip().lower() for fmt in raw_formats.split(",") if fmt.strip()]
     return formats or ["json", "txt"]
@@ -49,13 +65,43 @@ def _build_output_paths(output_file: str) -> dict[str, str]:
     return paths
 
 
+def _preview_text(content: str | None, limit: int) -> str | None:
+    if not content:
+        return None
+    flattened = " ".join(content.split())
+    if len(flattened) <= limit:
+        return flattened
+    return flattened[:limit] + "..."
+
+
+def _resolution_details(issue: object) -> list[tuple[str, str]]:
+    provenance = getattr(issue, "resolution_provenance", None)
+    ai_fix_suggested = getattr(issue, "ai_fix_suggested", None)
+    ai_fix_applied = getattr(issue, "ai_fix_applied", None)
+
+    details: list[tuple[str, str]] = []
+    if provenance:
+        provenance_label = _PROVENANCE_LABELS.get(provenance)
+        if provenance_label is None:
+            provenance_label = str(provenance).replace("_", " ").title()
+        details.append(("Resolution Path", provenance_label))
+
+    suggestion_preview = _preview_text(ai_fix_suggested, 120)
+    applied_preview = _preview_text(ai_fix_applied, 120)
+    if suggestion_preview:
+        details.append(("AI Suggestion", suggestion_preview))
+    if applied_preview:
+        details.append(("Applied Fix", applied_preview))
+    return details
+
+
 @dataclass
 class ReportStatistics:
     """Aggregated statistics computed from a :class:`ReviewReport`."""
 
-    status_counts: dict[str, int] = field(default_factory=dict)
-    severity_counts: dict[str, int] = field(default_factory=dict)
-    type_counts: dict[str, int] = field(default_factory=dict)
+    status_counts: dict[str, int] = field(default_factory=_empty_counts)
+    severity_counts: dict[str, int] = field(default_factory=_empty_counts)
+    type_counts: dict[str, int] = field(default_factory=_empty_counts)
 
     @classmethod
     def from_report(cls, report: ReviewReport) -> ReportStatistics:
@@ -175,6 +221,8 @@ def _write_summary(fh: TextIO, report: ReviewReport) -> None:
         w(f"  {t('report.status', lang=lang):9s}: {issue.status}\n")
         if issue.resolution_reason:
             w(f"  {t('report.reason', lang=lang):9s}: {issue.resolution_reason}\n")
+        for label, value in _resolution_details(issue):
+            w(f"  {label:14s}: {value}\n")
         w(f"  {t('report.desc', lang=lang):9s}: {issue.description}\n")
         w(f"  {t('report.snippet', lang=lang):9s}: {issue.code_snippet[:120]}\n")
         feedback_preview = issue.ai_feedback[:300]
@@ -252,6 +300,8 @@ def _write_markdown(fh: TextIO, report: ReviewReport) -> None:
         w(f"- **{t('report.status', lang=lang)}**: {issue.status}\n")
         if issue.resolution_reason:
             w(f"- **{t('report.reason', lang=lang)}**: {issue.resolution_reason}\n")
+        for label, value in _resolution_details(issue):
+            w(f"- **{label}**: {value}\n")
         w(f"- **{t('report.desc', lang=lang)}**: {issue.description}\n")
         
         # Code snippet (limited size)

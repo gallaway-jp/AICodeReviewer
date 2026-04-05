@@ -110,6 +110,15 @@ class BedrockBackend(AIBackend):
             return result.strip()
         return None
 
+    def get_review_recommendations(
+        self,
+        recommendation_context: str,
+        lang: str = "en",
+    ) -> str:
+        system_prompt = self._build_recommendation_system_prompt(lang)
+        user_message = self._build_recommendation_user_message(recommendation_context)
+        return self._invoke(system_prompt, user_message, max_tokens=1200, temperature=0.2)
+
     def validate_connection(self) -> bool:
         try:
             self.client.converse(

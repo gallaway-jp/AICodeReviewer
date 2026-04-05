@@ -14,7 +14,12 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from aicodereviewer.backends.base import REVIEW_TYPE_KEYS
-from aicodereviewer.benchmarking import BenchmarkFixture, describe_fixture_invocation, evaluate_fixture_file
+from aicodereviewer.benchmarking import (
+    BenchmarkFixture,
+    describe_fixture_catalog_entry,
+    describe_fixture_invocation,
+    evaluate_fixture_file,
+)
 from tools import run_holistic_benchmarks as benchmark_runner
 from tools import run_review_type_degradation_study as degradation_study
 from tools.compare_review_reports import compare_reports
@@ -146,6 +151,7 @@ def _run_session(
         "fixture_title": fixture.title,
         "target_review_type": fixture.review_types[0],
         "selected_review_types": list(selected_types),
+        "benchmark_metadata": dict(invocation.get("benchmark_metadata", {})),
         "exit_code": exit_code,
         "status": payload.get("status"),
         "score": evaluation.score,
@@ -258,6 +264,7 @@ def _build_summary_payload(
         "expected_pair_runs": sum(len(_candidate_distractors(args, fixture)) for fixture in selected_fixtures),
         "command_failures": command_failures,
         "representative_fixture_ids": [fixture.id for fixture in selected_fixtures],
+        "representative_fixtures": [describe_fixture_catalog_entry(fixture) for fixture in selected_fixtures],
         "baseline_results": baseline_results,
         "pair_summaries": pair_summaries,
         "pair_results": pair_results,

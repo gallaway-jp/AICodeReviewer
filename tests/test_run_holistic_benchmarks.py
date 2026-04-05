@@ -176,6 +176,81 @@ def test_runner_forwards_fixture_spec_file(monkeypatch, capsys, tmp_path):
     assert forwarded_path.name == "requirements.md"
 
 
+def test_runner_emits_benchmark_metadata_in_generated_reports(monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(
+        run_holistic_benchmarks,
+        "_health_payload",
+        lambda backend_name: {
+            "backend": backend_name,
+            "ready": True,
+            "summary": "ready",
+            "checks": [],
+        },
+    )
+
+    original_describe = run_holistic_benchmarks.describe_fixture_invocation
+
+    def _describe_fixture_invocation(fixture):
+        payload = original_describe(fixture)
+        payload["benchmark_metadata"] = {
+            "fixture_tags": ["security", "auth"],
+            "expected_focus": ["authorization guard coverage"],
+        }
+        return payload
+
+    def _fake_invoke_review_tool(args):
+        output_path = Path(args[args.index("--json-out") + 1])
+        output_path.write_text(
+            json.dumps(
+                {
+                    "status": "completed",
+                    "success": True,
+                    "issue_count": 1,
+                    "report": {
+                        "issues_found": [
+                            {
+                                "file_path": "src/admin.py",
+                                "issue_type": "security",
+                                "severity": "high",
+                                "description": "The admin endpoint bypasses the admin guard by skipping require_admin and accepts any authenticated user.",
+                                "context_scope": "cross_file",
+                                "related_files": ["src/auth.py"],
+                                "systemic_impact": "Privilege checks are inconsistent across admin routes.",
+                                "evidence_basis": "admin.py stopped calling require_admin before returning sensitive data.",
+                            }
+                        ]
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        return 0, {"status": "completed", "success": True, "issue_count": 1}
+
+    monkeypatch.setattr(run_holistic_benchmarks, "describe_fixture_invocation", _describe_fixture_invocation)
+    monkeypatch.setattr(run_holistic_benchmarks, "_invoke_review_tool", _fake_invoke_review_tool)
+
+    exit_code = run_holistic_benchmarks.main(
+        [
+            "--fixtures-root",
+            str(FIXTURES_ROOT),
+            "--output-dir",
+            str(tmp_path),
+            "--fixture",
+            "auth-guard-regression",
+            "--skip-health-check",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["generated_reports"][0]["benchmark_metadata"] == {
+        "fixture_tags": ["security", "auth"],
+        "expected_focus": ["authorization guard coverage"],
+    }
+    assert payload["generated_reports"][0]["review_types"] == ["security"]
+
+
 def test_runner_repeats_runs_and_emits_stability_summary(monkeypatch, capsys, tmp_path):
     monkeypatch.setattr(
         run_holistic_benchmarks,

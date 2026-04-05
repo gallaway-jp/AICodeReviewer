@@ -16,6 +16,7 @@ if str(REPO_ROOT) not in sys.path:
 from aicodereviewer.backends.base import REVIEW_TYPE_KEYS
 from aicodereviewer.benchmarking import (
     BenchmarkFixture,
+    describe_fixture_catalog_entry,
     describe_fixture_invocation,
     discover_fixtures,
     evaluate_fixture_file,
@@ -214,6 +215,7 @@ def _run_fixture_level(
         "fixture_title": fixture.title,
         "target_review_type": fixture.review_types[0],
         "selected_review_types": list(selected_types),
+        "benchmark_metadata": dict(invocation.get("benchmark_metadata", {})),
         "type_count": len(selected_types),
         "exit_code": exit_code,
         "status": payload.get("status"),
@@ -322,6 +324,7 @@ def _build_summary_payload(
         "fixtures_evaluated": len(selected_fixtures),
         "levels": levels,
         "representative_fixture_ids": [fixture.id for fixture in selected_fixtures],
+        "representative_fixtures": [describe_fixture_catalog_entry(fixture) for fixture in selected_fixtures],
         "completed_runs": len(level_results),
         "expected_runs": len(selected_fixtures) * len(levels),
         "command_failures": command_failures,

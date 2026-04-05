@@ -20,33 +20,29 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Sequence, cast
 
+from aicodereviewer.addons import AddonRuntime, get_active_addon_runtime, install_addon_runtime
 from aicodereviewer.auth import get_system_language, set_profile_name, clear_profile
-from aicodereviewer.backends import BACKEND_CHOICES, create_backend, resolve_backend_type
+from aicodereviewer.backends import create_backend, get_backend_choices, resolve_backend_type
 from aicodereviewer.backends.health import check_backend, HealthReport
-from aicodereviewer.backends.base import REVIEW_TYPE_KEYS, REVIEW_TYPE_META
 from aicodereviewer.config import config
 from aicodereviewer.fixer import apply_ai_fix
 from aicodereviewer.models import ReviewIssue, ReviewReport
 from aicodereviewer.scanner import scan_project_with_scope
 from aicodereviewer.orchestration import AppRunner
+from aicodereviewer.http_api import create_local_http_app, run_local_http_server
 from aicodereviewer.i18n import t, set_locale
+from aicodereviewer.recommendations import recommend_review_types
+from aicodereviewer.registries import get_review_registry
+from aicodereviewer.review_definitions import install_review_registry, merge_review_pack_paths
+from aicodereviewer.review_presets import REVIEW_TYPE_PRESETS, format_review_type_preset_lines, resolve_review_preset_key
 
 logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 1
-TOOL_COMMANDS = {"review", "health", "fix-plan", "apply-fixes", "resume"}
+TOOL_COMMANDS = {"review", "health", "fix-plan", "apply-fixes", "resume", "serve-api"}
 EXIT_OK = 0
 EXIT_FAILURE = 1
 EXIT_CANCELLED = 3
-
-REVIEW_TYPE_PRESETS: dict[str, list[str]] = {
-    "runtime_safety": ["security", "error_handling", "data_validation", "dependency"],
-    "code_health": ["best_practices", "maintainability", "dead_code", "complexity", "regression"],
-    "interface_platform": ["api_design", "compatibility", "architecture", "scalability"],
-    "product_surface": ["ui_ux", "accessibility", "localization", "documentation"],
-    "release_safety": ["testing", "regression", "error_handling", "compatibility"],
-}
-
 
 def cleanup_old_backups(path: str) -> None:
     """Compatibility shim kept for legacy tests and integrations."""
@@ -80,23 +76,45 @@ def _determine_target_lang(argv: Sequence[str]) -> str:
     return args.lang if args.lang != "default" else get_system_language()
 
 
+def _extract_review_pack_paths(argv: Sequence[str]) -> list[str]:
+    pack_paths: list[str] = []
+    index = 0
+    argv_list = list(argv)
+    while index < len(argv_list):
+        token = argv_list[index]
+        if token == "--review-pack":
+            if index + 1 < len(argv_list):
+                pack_paths.append(argv_list[index + 1])
+                index += 2
+                continue
+            break
+        if token.startswith("--review-pack="):
+            _, value = token.split("=", 1)
+            if value.strip():
+                pack_paths.append(value.strip())
+        index += 1
+    return pack_paths
+
+
 def _build_epilog() -> str:
     """Generate CLI epilog with review type listing."""
+    review_registry = get_review_registry()
     lines = [
         t("cli.epilog_types"),
     ]
-    for key in REVIEW_TYPE_KEYS:
-        meta = REVIEW_TYPE_META.get(key, {})
-        # Use translated label if available, otherwise fall back to meta label
+    for definition, depth in review_registry.iter_hierarchy(visible_only=True):
+        key = definition.key
+        display_key = f"{'  ' * depth}{key}"
+        # Use translated label if available, otherwise fall back to registry metadata.
         label = t(f"review_type.{key}")
         if label == f"review_type.{key}":
-            label = meta.get("label", key)
-        group = meta.get("group", "")
-        summary_key = meta.get("summary_key", "")
+            label = definition.label or key
+        group = definition.group
+        summary_key = definition.summary_key
         summary = t(summary_key) if summary_key else ""
         if summary == summary_key:
             summary = ""
-        lines.append(f"  {key:20s}  {label}  [{group}]")
+        lines.append(f"  {display_key:20s}  {label}  [{group}]")
         if summary:
             lines.append(f"{'':24s}{summary}")
 
@@ -104,8 +122,7 @@ def _build_epilog() -> str:
         "",
         t("cli.epilog_presets"),
     ]
-    for key, review_types in REVIEW_TYPE_PRESETS.items():
-        lines.append(f"  {key:20s}  {', '.join(review_types)}")
+    lines.extend(format_review_type_preset_lines())
 
     lines += [
         "",
@@ -119,6 +136,10 @@ def _build_epilog() -> str:
 
 def main(argv: Sequence[str] | None = None) -> int:
     argv = list(argv) if argv is not None else sys.argv[1:]
+
+    addon_runtime = install_addon_runtime()
+    invocation_review_packs = _extract_review_pack_paths(argv)
+    install_review_registry(merge_review_pack_paths(invocation_review_packs) if invocation_review_packs else None)
 
     target_lang = _determine_target_lang(argv)
     set_locale(target_lang)
@@ -156,11 +177,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--type", dest="review_types", default="best_practices",
         help=t("cli.help_type"),
     )
+    parser.add_argument(
+        "--review-pack",
+        action="append",
+        default=[],
+        metavar="FILE",
+        help=t("cli.help_review_pack"),
+    )
+    parser.add_argument("--list-type-presets", action="store_true",
+                        help=t("cli.help_list_type_presets"))
     parser.add_argument("--spec-file", metavar="FILE",
                         help=t("cli.help_spec_file"))
 
     # ── backend ────────────────────────────────────────────────────────────
-    parser.add_argument("--backend", choices=BACKEND_CHOICES,
+    parser.add_argument("--backend", choices=get_backend_choices(),
                         default=None,
                         help=t("cli.help_backend"))
 
@@ -181,10 +211,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     # ── flags ──────────────────────────────────────────────────────────────
     parser.add_argument("--dry-run", action="store_true",
                         help=t("cli.help_dry_run"))
+    parser.add_argument("--recommend-types", action="store_true",
+                        help=t("cli.help_recommend_types"))
     parser.add_argument("--gui", action="store_true",
                         help=t("cli.help_gui"))
     parser.add_argument("--check-connection", action="store_true",
                         help=t("cli.help_check_connection"))
+    parser.add_argument("--list-addons", action="store_true",
+                        help=t("cli.help_list_addons"))
 
     args = parser.parse_args(argv)
 
@@ -206,9 +240,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     # ── connection check ───────────────────────────────────────────────────
     if args.check_connection:
         return _check_connection(args.backend)
+    if args.list_addons:
+        return _print_addons(addon_runtime)
+    if args.list_type_presets:
+        return _print_review_type_presets()
 
     # ── parse review types ─────────────────────────────────────────────────
-    review_types = _parse_review_types(args.review_types)
+    review_types = [] if args.recommend_types else _parse_review_types(args.review_types)
 
     # ── validation ─────────────────────────────────────────────────────────
     _validate_review_args(parser, args, review_types)
@@ -229,6 +267,8 @@ def _validate_review_args(
         parser.error("Cannot use both --diff-file and --commits")
     if args.scope == "project" and not args.path:
         parser.error("path is required for project scope")
+    if args.recommend_types:
+        return
     if not args.dry_run:
         if not args.programmers:
             parser.error("--programmers is required for a review")
@@ -243,12 +283,31 @@ def _run_review(args: argparse.Namespace, review_types: list[str], target_lang: 
     backend_name = args.backend or "bedrock"
 
     client = None
-    if not args.dry_run:
+    if not args.dry_run or args.recommend_types:
         try:
             client = create_backend(backend_name)
         except Exception as exc:
             logger.error("Failed to create backend '%s': %s", backend_name, exc)
             return 1
+
+    if args.recommend_types:
+        result = recommend_review_types(
+            path=args.path,
+            scope=args.scope,
+            diff_file=args.diff_file,
+            commits=args.commits,
+            target_lang=target_lang,
+            client=client,
+        )
+        _print_console(t("cli.recommendation_header"))
+        if result.recommended_preset:
+            _print_console(t("cli.recommendation_preset", preset=result.recommended_preset))
+        _print_console(t("cli.recommendation_types", types=", ".join(result.review_types)))
+        if result.project_signals:
+            _print_console(t("cli.recommendation_signals", signals="; ".join(result.project_signals)))
+        for item in result.rationale:
+            _print_console(f"- {item.review_type}: {item.reason}")
+        return 0
 
     spec_content = None
     if args.spec_file and not args.dry_run:
@@ -303,7 +362,7 @@ def _build_tool_parser() -> argparse.ArgumentParser:
     )
     health_parser.add_argument(
         "--backend",
-        choices=BACKEND_CHOICES,
+        choices=get_backend_choices(),
         default=None,
         help="Backend override",
     )
@@ -328,7 +387,7 @@ def _build_tool_parser() -> argparse.ArgumentParser:
     fix_plan_parser.add_argument("--issue-id", action="append", dest="issue_ids", default=[])
     fix_plan_parser.add_argument(
         "--backend",
-        choices=BACKEND_CHOICES,
+        choices=get_backend_choices(),
         default=None,
     )
     fix_plan_parser.add_argument("--lang", choices=["en", "ja", "default"], default="default")
@@ -351,6 +410,16 @@ def _build_tool_parser() -> argparse.ArgumentParser:
     resume_parser.add_argument("--issue-id", action="append", dest="issue_ids", default=[])
     resume_parser.add_argument("--json-out", metavar="FILE")
 
+    serve_api_parser = subparsers.add_parser(
+        "serve-api",
+        help="Run the local HTTP API service",
+    )
+    serve_api_parser.add_argument("--host", default="127.0.0.1", metavar="HOST")
+    serve_api_parser.add_argument("--port", type=int, default=8765, metavar="PORT")
+    serve_api_parser.add_argument("--max-concurrent-jobs", type=int, default=1, metavar="COUNT")
+    serve_api_parser.add_argument("--review-pack", action="append", default=[], metavar="FILE")
+    _add_runtime_override_args(serve_api_parser)
+
     return parser
 
 
@@ -361,10 +430,11 @@ def _add_common_review_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--diff-file", metavar="FILE")
     parser.add_argument("--commits", metavar="RANGE")
     parser.add_argument("--type", dest="review_types", default="best_practices")
+    parser.add_argument("--review-pack", action="append", default=[], metavar="FILE")
     parser.add_argument("--spec-file", metavar="FILE")
     parser.add_argument(
         "--backend",
-        choices=BACKEND_CHOICES,
+        choices=get_backend_choices(),
         default=None,
     )
     parser.add_argument("--lang", choices=["en", "ja", "default"], default="default")
@@ -372,6 +442,7 @@ def _add_common_review_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--programmers", nargs="+", metavar="NAME")
     parser.add_argument("--reviewers", nargs="+", metavar="NAME")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--recommend-types", action="store_true")
     parser.add_argument("--json-out", metavar="FILE")
     parser.add_argument("--cancel-file", metavar="FILE")
     parser.add_argument("--timeout-seconds", type=float)
@@ -410,7 +481,7 @@ def _run_tool_command(
 ) -> int:
     """Dispatch a tool-mode subcommand."""
     if args.command == "review":
-        review_types = _parse_review_types(args.review_types)
+        review_types = [] if args.recommend_types else _parse_review_types(args.review_types)
         _validate_review_args(parser, args, review_types)
         return _run_review_tool_mode(args, review_types, target_lang)
     if args.command == "health":
@@ -421,7 +492,18 @@ def _run_tool_command(
         return _run_apply_fixes_tool_mode(args)
     if args.command == "resume":
         return _run_resume_tool_mode(args)
+    if args.command == "serve-api":
+        return _run_serve_api_tool_mode(args)
     raise ValueError(f"Unsupported tool command: {args.command}")
+
+
+def _run_serve_api_tool_mode(args: argparse.Namespace) -> int:
+    """Run the local HTTP API on the configured host and port."""
+    _apply_runtime_overrides(args)
+    app = create_local_http_app(max_concurrent_jobs=args.max_concurrent_jobs)
+    logger.info("Starting local HTTP API on http://%s:%s", args.host, args.port)
+    run_local_http_server(app, host=args.host, port=args.port)
+    return 0
 
 
 def _apply_runtime_overrides(args: argparse.Namespace) -> str:
@@ -746,8 +828,34 @@ def _run_review_tool_mode(
 
     client = None
     try:
-        if not args.dry_run:
+        if not args.dry_run or args.recommend_types:
             client = create_backend(backend_name)
+
+        if args.recommend_types:
+            recommendation = recommend_review_types(
+                path=args.path,
+                scope=args.scope,
+                diff_file=args.diff_file,
+                commits=args.commits,
+                target_lang=target_lang,
+                client=client,
+            )
+            payload.update({
+                "status": "recommended",
+                "success": True,
+                "exit_code": EXIT_OK,
+                "recommended_review_types": list(recommendation.review_types),
+                "recommended_preset": recommendation.recommended_preset,
+                "project_signals": list(recommendation.project_signals),
+                "rationale": [
+                    {"review_type": item.review_type, "reason": item.reason}
+                    for item in recommendation.rationale
+                ],
+                "source": recommendation.source,
+                "review_types": list(recommendation.review_types),
+            })
+            _write_json_result(payload, args.json_out)
+            return EXIT_OK
 
         spec_content = _load_spec_content(args.spec_file, args.dry_run)
         if args.spec_file and not args.dry_run and spec_content is None:
@@ -785,7 +893,22 @@ def _run_review_tool_mode(
             _write_json_result(payload, args.json_out)
             return EXIT_CANCELLED
 
-        run_state = getattr(runner, "_last_run_state", {}) or {}
+        execution = getattr(runner, "last_execution", None)
+        if callable(execution):
+            execution = execution()
+
+        run_state: dict[str, Any]
+        if execution is not None:
+            run_state = {
+                "files_scanned": getattr(execution, "files_scanned", 0),
+                "target_paths": list(getattr(execution, "target_paths", []) or []),
+                "status": getattr(execution, "status", "completed"),
+            }
+        else:
+            raw_run_state = getattr(runner, "execution_summary", None)
+            if callable(raw_run_state):
+                raw_run_state = raw_run_state()
+            run_state = cast(dict[str, Any], raw_run_state or {})
         payload.update({
             "files_scanned": run_state.get("files_scanned", 0),
             "target_paths": run_state.get("target_paths", []),
@@ -1092,23 +1215,31 @@ def _parse_review_types(raw: str) -> list[str]:
 
     Returns a validated and deduplicated list.
     """
+    review_registry = get_review_registry()
     parts = [p.strip().lower() for p in raw.replace("+", ",").split(",") if p.strip()]
     if "all" in parts:
-        return list(REVIEW_TYPE_KEYS)
+        return list(review_registry.visible_keys())
     seen: set[str] = set()
     result: list[str] = []
     for p in parts:
-        if p in REVIEW_TYPE_PRESETS:
-            for review_type in REVIEW_TYPE_PRESETS[p]:
+        try:
+            preset_key = resolve_review_preset_key(p)
+        except KeyError:
+            preset_key = None
+        if preset_key is not None:
+            for review_type in REVIEW_TYPE_PRESETS[preset_key]:
                 if review_type not in seen:
                     result.append(review_type)
                     seen.add(review_type)
             continue
-        if p in REVIEW_TYPE_KEYS and p not in seen:
-            result.append(p)
-            seen.add(p)
-        elif p not in REVIEW_TYPE_KEYS:
+        try:
+            resolved_key = review_registry.resolve_key(p)
+        except KeyError:
             logger.warning(t("cli.unknown_type", type=p))
+            continue
+        if resolved_key not in seen and review_registry.get(resolved_key).selectable:
+            result.append(resolved_key)
+            seen.add(resolved_key)
     return result or ["best_practices"]
 
 
@@ -1160,6 +1291,68 @@ def _check_connection(backend_name: str | None) -> int:
             _print_console(t("conn.hint_local_model"))
             _print_console(t("conn.hint_local_api_type"))
         return 1
+
+
+def _print_addons(runtime: AddonRuntime | None = None) -> int:
+    runtime = runtime or get_active_addon_runtime()
+    _print_console(t("cli.addons.header"))
+    if runtime.manifests:
+        for manifest in runtime.manifests:
+            _print_console(
+                t(
+                    "cli.addons.manifest",
+                    addon_id=manifest.addon_id,
+                    version=manifest.addon_version,
+                    name=manifest.name,
+                )
+            )
+            if manifest.review_pack_paths:
+                _print_console(
+                    t("cli.addons.review_packs", count=len(manifest.review_pack_paths))
+                )
+            if manifest.backend_provider_specs:
+                _print_console(
+                    t("cli.addons.backend_providers", count=len(manifest.backend_provider_specs))
+                )
+                for provider in manifest.backend_provider_specs:
+                    _print_console(
+                        t(
+                            "cli.addons.backend_provider_entry",
+                            backend_key=provider.key,
+                            display_name=provider.display_name,
+                        )
+                    )
+            if manifest.ui_contributor_specs:
+                _print_console(
+                    t("cli.addons.ui_contributors", count=len(manifest.ui_contributor_specs))
+                )
+                for contributor in manifest.ui_contributor_specs:
+                    _print_console(
+                        t(
+                            "cli.addons.ui_contributor_entry",
+                            surface=contributor.surface,
+                            title=contributor.title,
+                        )
+                    )
+    else:
+        _print_console(t("cli.addons.none"))
+
+    if runtime.diagnostics:
+        _print_console("")
+        _print_console(t("cli.addons.diagnostics_header"))
+        for diagnostic in runtime.diagnostics:
+            _print_console(f"- {diagnostic.message}")
+    else:
+        _print_console("")
+        _print_console(t("cli.addons.diagnostics_none"))
+    return EXIT_OK
+
+
+def _print_review_type_presets() -> int:
+    _print_console(t("cli.epilog_presets"))
+    for line in format_review_type_preset_lines():
+        _print_console(line)
+    return EXIT_OK
 
 
 def _setup_logging():

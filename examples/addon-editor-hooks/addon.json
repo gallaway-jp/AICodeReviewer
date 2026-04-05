@@ -1,0 +1,32 @@
+{
+  "manifest_version": 1,
+  "id": "editor-hook-addon",
+  "version": "1.0.0",
+  "name": "Editor Hook Addon",
+  "compatibility": {
+    "min_app_version": "2.0.0"
+  },
+  "permissions": [
+    "ui_contributors"
+  ],
+  "entry_points": {
+    "editor_hooks": [
+      {
+        "module": "editor_hooks.py",
+        "factory": "build_editor_hooks"
+      }
+    ],
+    "ui_contributors": [
+      {
+        "surface": "settings_section",
+        "title": "Editor Hook Addon",
+        "description": "Demonstrates popup editor and diff-preview hook registration for diagnostics and staged-review events.",
+        "lines": [
+          "Hooks: buffer lifecycle, staged preview, patch applied",
+          "Diagnostics: popup editor and diff preview",
+          "Events: staged_preview_opened, change_navigation, preview_staged"
+        ]
+      }
+    ]
+  }
+}

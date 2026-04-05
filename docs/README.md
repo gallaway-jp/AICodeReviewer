@@ -12,7 +12,9 @@ The goal of this docs set is simple:
 - [Getting Started](getting-started.md)
 - [Backend Guide](backends.md)
 - [CLI Guide](cli.md)
+- [HTTP API Guide](http-api.md)
 - [GUI Guide](gui.md)
+- [GUI UX Audit And Backlog](gui-ux-audit.md)
 - [Configuration Reference](configuration.md)
 - [Review Types Reference](review-types.md)
 - [Quality Benchmarks](benchmarks.md)
@@ -39,6 +41,7 @@ Use these guides if you are:
 - A first-time user: start with [Getting Started](getting-started.md)
 - Choosing a backend: read [Backend Guide](backends.md)
 - Running reviews from the terminal: read [CLI Guide](cli.md)
+- Integrating with the local HTTP surface: read [HTTP API Guide](http-api.md)
 - Using the desktop app: read [GUI Guide](gui.md)
 - Tuning settings: read [Configuration Reference](configuration.md)
 - Understanding review coverage: read [Review Types Reference](review-types.md)
@@ -46,6 +49,7 @@ Use these guides if you are:
 - Integrating outputs into workflows: read [Reports and Outputs](reports.md)
 - Fixing setup problems: read [Troubleshooting](troubleshooting.md)
 - Contributing to the project: read [Contributing](contributing.md)
+- Building or debugging addons: read [Architecture](architecture.md)
 - Preparing and documenting a release: read [Release Process](release-process.md)
 
 ## Scope of This Revamp

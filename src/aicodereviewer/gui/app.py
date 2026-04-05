@@ -20,30 +20,21 @@ The implementation is decomposed into mixins for maintainability:
 * :class:`SettingsTabMixin`  - Settings tab, save / reset
 * :class:`HealthMixin`       - Backend health checks, model refresh
 """
-import logging
-import queue
-import time
-from pathlib import Path
-from tkinter import filedialog
-from typing import Any, List, Optional
+from typing import Any
 
 import customtkinter as ctk  # type: ignore[import-untyped]
 
-from aicodereviewer.config import config
-from aicodereviewer.auth import get_system_language
-from aicodereviewer.i18n import t, set_locale
-from aicodereviewer.models import ReviewIssue
-from aicodereviewer.orchestration import AppRunner
+from aicodereviewer.execution import ReviewExecutionRuntime
+from aicodereviewer.http_api import create_local_http_app, start_local_http_server
+from aicodereviewer.i18n import t
 
-from .widgets import QueueLogHandler, _Tooltip
+from .app_composition import AppCompositionHelper
+from .benchmark_mixin import BenchmarkTabMixin
 from .review_mixin import ReviewTabMixin
+from .popup_utils import schedule_popup_after, schedule_titlebar_fix
 from .results_mixin import ResultsTabMixin, IssueCard, _NUMERIC_SETTINGS
 from .settings_mixin import SettingsTabMixin
 from .health_mixin import HealthMixin
-
-logger = logging.getLogger(__name__)
-
-LogEntry = tuple[int, str]
 
 # Re-export for backward compatibility (tests, tools, etc.)
 from .widgets import _CancelledError, _fix_titlebar, InfoTooltip  # noqa: F401
@@ -64,6 +55,7 @@ __all__ = [
 
 class App(
     ReviewTabMixin,
+    BenchmarkTabMixin,
     ResultsTabMixin,
     SettingsTabMixin,
     HealthMixin,
@@ -73,104 +65,65 @@ class App(
 
     WIDTH = 1100
     HEIGHT = 820
+    _testing_mode: bool
+    tabs: Any
 
-    def __init__(self, *, testing_mode: bool = False):
+    def __init__(self, *, testing_mode: bool = False, review_runtime: ReviewExecutionRuntime | None = None):
         super().__init__()
-        self._testing_mode = testing_mode
+        self._app_helpers().bootstrap().initialize(
+            testing_mode=testing_mode,
+            review_runtime=review_runtime,
+        )
 
-        # -- Detect language & apply saved preferences --
-        saved_lang = config.get("gui", "language", "").strip()
-        if saved_lang and saved_lang != "system":
-            self._ui_lang = saved_lang
-        else:
-            self._ui_lang = get_system_language()
-        set_locale(self._ui_lang)
+        self._app_helpers().lifecycle().run_startup()
 
-        # -- Apply saved theme --
-        saved_theme = config.get("gui", "theme", "").strip() or "system"
-        theme_map = {"system": "System", "dark": "Dark", "light": "Light"}
-        ctk.set_appearance_mode(theme_map.get(saved_theme, "System"))
-        ctk.set_default_color_theme("blue")
+    def _app_helpers(self) -> AppCompositionHelper:
+        helper = getattr(self, "_app_composition_delegate", None)
+        if helper is None:
+            helper = AppCompositionHelper(self)
+            self._app_composition_delegate = helper
+        return helper
 
-        self.title(t("common.app_title"))
-        self.geometry(f"{self.WIDTH}x{self.HEIGHT}")
-        self.minsize(900, 680)
+    def _cancel_widget_after_callbacks(self, widget: Any) -> None:
+        self._app_helpers().runtime().cancel_widget_after_callbacks(widget)
 
-        # Logging queue
-        self._log_queue: queue.Queue[LogEntry] = queue.Queue(maxsize=5000)
-        self._log_lines: List[LogEntry] = []
-        self._install_log_handler()
+    def _ensure_widget_after_cleanup(self, widget: Any) -> None:
+        self._app_helpers().runtime().ensure_widget_after_cleanup(widget)
 
-        # State
-        self._issues: List[ReviewIssue] = []
-        self._running = False
-        self._review_client = None
-        self._health_check_backend = None
-        self._health_check_timer = None
-        self._model_refresh_in_progress: set[str] = set()
-        self._elapsed_start: Optional[float] = None
-        self._elapsed_after_id: Optional[str] = None
-        self._health_countdown_end: Optional[float] = None
-        self._health_countdown_after_id: Optional[str] = None
+    def _schedule_widget_after(
+        self,
+        widget: Any,
+        delay_ms: int,
+        callback: Any,
+        *,
+        skip_in_tests: bool = False,
+    ) -> Any:
+        return self._app_helpers().runtime().schedule_widget_after(
+            widget,
+            delay_ms,
+            callback,
+            skip_in_tests=skip_in_tests,
+        )
 
-        # Forward declarations for dynamically-set attributes
-        self._settings_backend_var: Any = None
-        self._copilot_model_combo: Any = None
-        self._bedrock_model_combo: Any = None
-        self._local_model_combo: Any = None
-        self._review_runner: Optional[AppRunner] = None
+    def _schedule_app_after(self, delay_ms: int, callback: Any) -> Any:
+        return self._app_helpers().runtime().schedule_app_after(delay_ms, callback)
 
-        # Layout
-        self._build_ui()
-        self._poll_log_queue()
+    def _schedule_popup_after(self, window: Any, delay_ms: int, callback: Any) -> Any:
+        return schedule_popup_after(window, delay_ms, callback, host=self, skip_in_tests=True)
 
-        # Refresh model list for current backend in background (non-blocking)
-        if not self._testing_mode:
-            self.after(100, self._refresh_current_backend_models_async)
-            self.after(500, self._auto_health_check)
+    def _schedule_titlebar_fix(self, window: Any) -> None:
+        schedule_titlebar_fix(window, host=self, testing_mode=self._testing_mode)
 
     # -- UI construction --
 
     def _build_ui(self):
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(0, weight=1)
-
-        self.tabs = ctk.CTkTabview(self, anchor="nw")
-        self.tabs.grid(row=0, column=0, sticky="nsew", padx=10, pady=(10, 0))
-
-        self._build_review_tab()
-        self._build_results_tab()
-        self._build_settings_tab()
-        self._build_log_tab()
-
-        # Bottom status bar with cancel button
-        status_frame = ctk.CTkFrame(self, fg_color="transparent")
-        status_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=(2, 6))
-        status_frame.grid_columnconfigure(0, weight=1)
-
-        self.status_var = ctk.StringVar(value=t("common.ready"))
-        ctk.CTkLabel(status_frame, textvariable=self.status_var,
-                     anchor="w").grid(row=0, column=0, sticky="ew")
-
-        self.cancel_btn = ctk.CTkButton(
-            status_frame, text=t("gui.cancel_btn"), width=80,
-            fg_color="#dc2626", hover_color="#b91c1c",
-            state="disabled", command=self._cancel_operation)
-        self.cancel_btn.grid(row=0, column=1, padx=(8, 0))
-
-        self._health_countdown_lbl = ctk.CTkLabel(
-            status_frame, text="",
-            font=ctk.CTkFont(size=11),
-            text_color=("gray40", "gray60"),
-            width=56, anchor="e")
-        self._health_countdown_lbl.grid(row=0, column=2, padx=(4, 0))
-
-        self._bind_shortcuts()
+        self._app_helpers().bootstrap().build_ui()
 
     def _bind_shortcuts(self) -> None:
-        self.bind_all("<Control-Return>",
-                      lambda e: self._start_review() if not self._running else None)
-        self.bind_all("<Control-s>", self._on_ctrl_s)
+        self._app_helpers().bootstrap().bind_shortcuts()
+
+    def _install_tab_selection_layout_hooks(self) -> None:
+        self._app_helpers().shell_layout().install_tab_selection_layout_hooks()
 
     def _on_ctrl_s(self, event: Any) -> None:
         if self.tabs.get() == t("gui.tab.settings"):
@@ -179,159 +132,82 @@ class App(
     # -- LOG TAB --
 
     def _build_log_tab(self):
-        tab = self.tabs.add(t("gui.tab.log"))
-        tab.grid_columnconfigure(0, weight=1)
-        tab.grid_rowconfigure(1, weight=1)
+        self._app_helpers().surfaces().build_log_tab()
 
-        filter_frame = ctk.CTkFrame(tab, fg_color="transparent")
-        filter_frame.grid(row=0, column=0, sticky="ew", padx=6, pady=(4, 0))
+    def _log_logical_width(self, *candidates: Any) -> float:
+        return self._app_helpers().surfaces().resolve_logical_width(*candidates)
 
-        ctk.CTkLabel(filter_frame, text="Level:").grid(row=0, column=0, padx=(0, 4))
-        self._log_level_var = ctk.StringVar(value="All")
-        _LOG_LEVELS = ["All", "DEBUG", "INFO", "WARNING", "ERROR"]
-        self._log_level_menu = ctk.CTkOptionMenu(
-            filter_frame,
-            variable=self._log_level_var,
-            values=_LOG_LEVELS,
-            width=110,
-            command=self._on_log_level_changed)
-        self._log_level_menu.grid(row=0, column=1, padx=(0, 8))
+    def _schedule_log_layout_refresh(self, *_args: Any) -> None:
+        self._refresh_log_tab_layout()
 
-        self.log_box = ctk.CTkTextbox(tab, state="disabled", wrap="word",
-                                       font=ctk.CTkFont(family="Consolas", size=12))
-        self.log_box.grid(row=1, column=0, sticky="nsew", padx=6, pady=6)
-
-        btn_frame = ctk.CTkFrame(tab, fg_color="transparent")
-        btn_frame.grid(row=2, column=0, pady=4)
-
-        ctk.CTkButton(btn_frame, text=t("gui.log.clear"), width=110,
-                      command=self._clear_log).grid(row=0, column=0, padx=6)
-        ctk.CTkButton(btn_frame, text=t("gui.log.save"), width=110,
-                      command=self._save_log).grid(row=0, column=1, padx=6)
+    def _refresh_log_tab_layout(self) -> None:
+        self._app_helpers().surfaces().refresh_log_tab_layout()
 
     # -- LOG handling --
 
     def _install_log_handler(self):
-        level_name = (config.get("logging", "log_level", "INFO") or "INFO").upper()
-        level = getattr(logging, level_name, logging.INFO)
-        root_logger = logging.getLogger()
-        if root_logger.level == logging.NOTSET or root_logger.level > level:
-            root_logger.setLevel(level)
-        self._queue_handler = QueueLogHandler(self._log_queue)
-        self._queue_handler.setFormatter(logging.Formatter("%(message)s"))
-        self._queue_handler.setLevel(level)
-        root_logger.addHandler(self._queue_handler)
+        self._app_helpers().bootstrap().install_log_handler()
+
+    def geometry(self, geometry_string: str | None = None) -> Any:
+        if geometry_string is None:
+            return super().geometry()
+
+        self._app_helpers().shell_layout().update_requested_geometry_width(geometry_string)
+        result = super().geometry(geometry_string)
+        if hasattr(self, "tabs"):
+            self._app_helpers().shell_layout().schedule_geometry_refreshes()
+        return result
 
     def destroy(self):
         """Clean up log handler and stop poll loop before destroying the window."""
-        self._log_polling = False
-        if hasattr(self, "_queue_handler"):
-            logging.getLogger().removeHandler(self._queue_handler)
-        if hasattr(self, "_release_review_client"):
-            self._release_review_client()
+        self._app_helpers().lifecycle().prepare_for_destroy()
         super().destroy()
 
+    def _run_on_ui_thread(self, callback: Any, *args: Any, **kwargs: Any) -> bool:
+        """Run the callback on the UI thread or enqueue it for the next poll tick."""
+        return self._app_helpers().runtime().run_on_ui_thread(callback, *args, **kwargs)
+
+    def _drain_ui_call_queue(self) -> None:
+        """Execute any pending worker-thread UI callbacks on the main loop."""
+        self._app_helpers().runtime().drain_ui_call_queue()
+
+    def _start_local_http_server_from_settings(self) -> None:
+        self._app_helpers().local_http().start_from_settings()
+
+    def _create_local_http_app(self, *, runtime: Any = None) -> Any:
+        return create_local_http_app(runtime=runtime)
+
+    def _start_local_http_server(self, app: Any, *, host: str, port: int) -> Any:
+        return start_local_http_server(app, host=host, port=port)
+
+    def _stop_local_http_server(self) -> None:
+        self._app_helpers().local_http().stop()
+
+    def _local_http_runtime_status_snapshot(self) -> tuple[str, str]:
+        return self._app_helpers().local_http().runtime_status_snapshot()
+
     def _poll_log_queue(self):
-        if not getattr(self, "_log_polling", True):
-            return
-        _LEVEL_MAP = {"All": 0, "DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40}
-        min_level = _LEVEL_MAP.get(
-            getattr(self, "_log_level_var", None) and self._log_level_var.get(), 0)
-        batch = []
-        while True:
-            try:
-                batch.append(self._log_queue.get_nowait())
-            except queue.Empty:
-                break
-        if batch:
-            self._log_lines.extend(batch)
-            visible = [text for lvl, text in batch if lvl >= min_level]
-            if visible:
-                self.log_box.configure(state="normal")
-                self.log_box.insert("end", "\n".join(visible) + "\n")
-                self.log_box.see("end")
-                self.log_box.configure(state="disabled")
-        self.after(100, self._poll_log_queue)
+        self._app_helpers().surfaces().poll_log_queue()
 
     def _on_log_level_changed(self, _value: str = "") -> None:
-        _LEVEL_MAP = {"All": 0, "DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40}
-        min_level = _LEVEL_MAP.get(self._log_level_var.get(), 0)
-        visible = [text for lvl, text in self._log_lines if lvl >= min_level]
-        self.log_box.configure(state="normal")
-        self.log_box.delete("0.0", "end")
-        if visible:
-            self.log_box.insert("0.0", "\n".join(visible) + "\n")
-            self.log_box.see("end")
-        self.log_box.configure(state="disabled")
+        self._app_helpers().surfaces().on_log_level_changed()
 
     def _clear_log(self):
-        self._log_lines.clear()
-        self.log_box.configure(state="normal")
-        self.log_box.delete("0.0", "end")
-        self.log_box.configure(state="disabled")
+        self._app_helpers().surfaces().clear_log()
 
     def _save_log(self):
-        path = filedialog.asksaveasfilename(
-            defaultextension=".txt",
-            filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
-            title=t("gui.log.save_dialog_title"),
-        )
-        if not path:
-            return
-        try:
-            content = self.log_box.get("0.0", "end")
-            with open(path, "w", encoding="utf-8") as fh:
-                fh.write(content)
-            self._show_toast(t("gui.log.saved", path=Path(path).name))
-        except Exception as exc:
-            self._show_toast(str(exc), error=True)
+        self._app_helpers().surfaces().save_log()
 
     # -- TOAST NOTIFICATIONS --
 
     _TOAST_SLOT_PX = 52
 
     def _restack_toasts(self) -> None:
-        win_h = self.winfo_height() or self.HEIGHT
-        for i, frame in enumerate(self._active_toasts):
-            offset_px = i * self._TOAST_SLOT_PX
-            rely = 1.0 - (offset_px + 24) / win_h
-            try:
-                frame.place(relx=0.5, rely=rely, anchor="s")
-                frame.lift()
-            except Exception:
-                pass
+        self._app_helpers().surfaces().restack_toasts()
 
     def _show_toast(self, message: str, *, duration: int = 6000,
                     error: bool = False):
-        if error:
-            logger.warning("UI toast: %s", message)
-        else:
-            logger.info("UI toast: %s", message)
-        bg = "#dc2626" if error else ("#1a7f37", "#2ea043")
-        fg = "white"
-
-        toast = ctk.CTkFrame(self, corner_radius=8,
-                              fg_color=bg, border_width=0)
-        self._active_toasts.append(toast)
-        self._restack_toasts()
-
-        lbl = ctk.CTkLabel(toast, text=message, text_color=fg,
-                            font=ctk.CTkFont(size=12),
-                            wraplength=600, anchor="center")
-        lbl.pack(padx=16, pady=8)
-
-        def _dismiss():
-            try:
-                toast.destroy()
-            except Exception:
-                pass
-            try:
-                self._active_toasts.remove(toast)
-            except ValueError:
-                pass
-            self._restack_toasts()
-
-        self.after(duration, _dismiss)
+        self._app_helpers().surfaces().show_toast(message, duration=duration, error=error)
 
 
 # -- public launcher --

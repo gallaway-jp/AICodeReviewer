@@ -1,0 +1,42 @@
+{
+  "manifest_version": 1,
+  "id": "echo-backend-addon",
+  "version": "1.0.0",
+  "name": "Echo Backend Addon",
+  "compatibility": {
+    "min_app_version": "2.0.0"
+  },
+  "permissions": [
+    "backend_providers",
+    "ui_contributors"
+  ],
+  "entry_points": {
+    "backend_providers": [
+      {
+        "key": "echo-addon",
+        "display_name": "Echo Addon Backend",
+        "module": "backend_provider.py",
+        "factory": "build_backend",
+        "aliases": [
+          "echo-addon-example"
+        ],
+        "capabilities": [
+          "example",
+          "offline"
+        ]
+      }
+    ],
+    "ui_contributors": [
+      {
+        "surface": "settings_section",
+        "title": "Echo Backend Addon",
+        "description": "This addon installs a deterministic example backend for testing addon discovery and GUI contribution rendering.",
+        "lines": [
+          "Backend key: echo-addon",
+          "Alias: echo-addon-example",
+          "Capabilities: example, offline"
+        ]
+      }
+    ]
+  }
+}

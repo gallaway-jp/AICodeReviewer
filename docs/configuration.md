@@ -16,6 +16,8 @@ Configuration is loaded from `config.ini` in the working directory or project ro
 | `copilot` | CLI path, timeout, model |
 | `local_llm` | Local server URL, API mode, model, token limits |
 | `gui` | Theme, language, and saved GUI state |
+| `review_packs` | Extra review-pack discovery paths |
+| `addons` | Extra addon discovery paths |
 | `output` | Report output formats |
 
 ## Example
@@ -49,6 +51,9 @@ api_key =
 timeout = 300
 max_tokens = 4096
 enable_web_search = true
+
+[addons]
+paths = examples/addon-echo-backend
 
 [output]
 formats = json,txt,md
@@ -154,6 +159,21 @@ Common persisted fields:
 - `gui.review_types`
 - `gui.file_select_mode`
 - `gui.selected_files`
+
+## Addons
+
+Use `addons.paths` to point discovery at one or more addon directories or manifest files.
+
+Paths are resolved relative to the directory containing `config.ini` when they are not absolute.
+
+Example:
+
+```ini
+[addons]
+paths = examples/addon-echo-backend
+```
+
+That example points at the checked-in code-backed addon under [examples/addon-echo-backend/addon.json](../examples/addon-echo-backend/addon.json). You can verify discovery with `aicodereviewer --list-addons`.
 
 ## Output Formats
 

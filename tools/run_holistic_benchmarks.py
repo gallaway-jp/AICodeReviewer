@@ -405,6 +405,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "status": payload.get("status"),
                     "issue_count": payload.get("issue_count"),
                     "success": payload.get("success", False),
+                    "scope": invocation.get("scope"),
+                    "review_types": list(invocation.get("review_types", [])),
+                    "benchmark_metadata": dict(invocation.get("benchmark_metadata", {})),
                 }
             )
             if exit_code != 0:

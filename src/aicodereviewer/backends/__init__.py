@@ -1,21 +1,9 @@
 # src/aicodereviewer/backends/__init__.py
-"""
-AI backend implementations for AICodeReviewer.
-
-Provides a unified factory for creating AI clients backed by different
-services: AWS Bedrock, Kiro CLI (via WSL), GitHub Copilot CLI, and
-local LLM servers (OpenAI / Anthropic compatible).
-
-Functions:
-    create_backend: Factory that returns an AIBackend based on configuration.
-
-Performance Note:
-    Backend classes are imported lazily to avoid loading heavy dependencies
-    (e.g. boto3 for Bedrock) until actually needed.
-"""
+"""Public backend factory and lazy class exports."""
 from typing import Any, Dict, Optional, Type, TYPE_CHECKING
 
 from .base import AIBackend
+from aicodereviewer.registries import get_backend_registry
 
 # Type-checking imports (not executed at runtime)
 if TYPE_CHECKING:
@@ -31,6 +19,8 @@ __all__ = [
     "CopilotBackend",
     "LocalLLMBackend",
     "BACKEND_CHOICES",
+    "get_backend_choices",
+    "get_backend_registry",
     "create_backend",
     "resolve_backend_type",
 ]
@@ -38,24 +28,12 @@ __all__ = [
 # Lazy-loaded backend class cache
 _backend_classes: Dict[str, Type[AIBackend]] = {}
 
-_BACKEND_ALIASES: Dict[str, str] = {
-    "aws": "bedrock",
-    "aws-bedrock": "bedrock",
-    "bedrock-runtime": "bedrock",
-    "kiro-cli": "kiro",
-    "github-copilot": "copilot",
-    "copilot-cli": "copilot",
-    "local-llm": "local",
-    "local-llm-server": "local",
-    "local-llm-backend": "local",
-    "local-llm-api": "local",
-}
+BACKEND_CHOICES = get_backend_registry().backend_choices
 
-_LOCAL_PROVIDER_ALIASES = {"lmstudio", "ollama", "openai", "anthropic"}
 
-BACKEND_CHOICES = tuple(
-    ["bedrock", "kiro", "copilot", "local", *_BACKEND_ALIASES.keys(), *_LOCAL_PROVIDER_ALIASES]
-)
+def get_backend_choices() -> tuple[str, ...]:
+    """Return the current backend choices from the active registry."""
+    return get_backend_registry().backend_choices
 
 
 def __getattr__(name: str) -> Type[AIBackend]:
@@ -85,23 +63,7 @@ def __getattr__(name: str) -> Type[AIBackend]:
 
 def resolve_backend_type(backend_type: Optional[str] = None) -> tuple[str, Dict[str, Any]]:
     """Resolve backend aliases to a canonical backend type plus constructor overrides."""
-    resolved_type: str
-    if backend_type is None:
-        from aicodereviewer.config import config as app_config
-        resolved_type = app_config.get("backend", "type", "bedrock")
-    else:
-        resolved_type = backend_type
-
-    normalized = str(resolved_type or "bedrock").strip().lower()
-    if not normalized:
-        normalized = "bedrock"
-
-    alias_key = normalized.replace("_", "-").replace(" ", "-")
-    if alias_key in _LOCAL_PROVIDER_ALIASES:
-        return "local", {"api_type": alias_key}
-
-    canonical = _BACKEND_ALIASES.get(alias_key, alias_key)
-    return canonical, {}
+    return get_backend_registry().resolve(backend_type)
 
 
 def create_backend(backend_type: Optional[str] = None, **kwargs: Any) -> AIBackend:
@@ -119,23 +81,4 @@ def create_backend(backend_type: Optional[str] = None, **kwargs: Any) -> AIBacke
     Raises:
         ValueError: If *backend_type* is unrecognised.
     """
-    _type, backend_kwargs = resolve_backend_type(backend_type)
-    backend_kwargs.update(kwargs)
-
-    if _type == "bedrock":
-        from .bedrock import BedrockBackend
-        return BedrockBackend(**backend_kwargs)
-    elif _type == "kiro":
-        from .kiro import KiroBackend
-        return KiroBackend(**backend_kwargs)
-    elif _type == "copilot":
-        from .copilot import CopilotBackend
-        return CopilotBackend(**backend_kwargs)
-    elif _type == "local":
-        from .local_llm import LocalLLMBackend
-        return LocalLLMBackend(**backend_kwargs)
-    else:
-        raise ValueError(
-            f"Unknown backend type '{_type}'. "
-            "Supported backends: bedrock, kiro, copilot, local"
-        )
+    return get_backend_registry().create(backend_type, **kwargs)

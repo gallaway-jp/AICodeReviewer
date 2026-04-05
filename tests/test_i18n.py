@@ -153,6 +153,7 @@ class TestKnownKeys:
     SAMPLE_KEYS = [
         "common.app_title",
         "gui.tab.review",
+        "gui.tab.benchmarks",
         "gui.review.start",
         "gui.review.backend_local",
         "gui.review.test_connection",

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
+from aicodereviewer.execution import DeferredReportState, ReviewSessionState
+from aicodereviewer.execution.models import SESSION_PAYLOAD_VERSION, SESSION_REPORT_CONTEXT_KEY
 from aicodereviewer.gui.results_mixin import ResultsTabMixin
 from aicodereviewer.models import ReviewIssue
 
@@ -40,7 +43,7 @@ class _DummyResultsApp(ResultsTabMixin):
         self._path = session_path
         self._issues: list[ReviewIssue] = []
         self._issue_cards: list[dict[str, object]] = []
-        self._review_runner = None
+        self._session_runner = None
         self._testing_mode = False
         self.results_summary = _DummyWidget()
         self.review_changes_btn = _DummyWidget()
@@ -55,6 +58,15 @@ class _DummyResultsApp(ResultsTabMixin):
     def _session_path(self) -> Path:
         return self._path
 
+    def _current_session_runner(self):
+        return getattr(self, "_session_runner", None)
+
+    def _bind_session_runner(self, runner) -> None:
+        self._session_runner = runner
+
+    def _clear_session_runner(self) -> None:
+        self._session_runner = None
+
     def _show_toast(self, message: str, *, duration: int = 6000, error: bool = False) -> None:
         self.toasts.append((message, error))
 
@@ -63,12 +75,28 @@ class _DummyResultsApp(ResultsTabMixin):
         self._issue_cards = [{"issue": issue} for issue in issues]
 
 
-def test_save_and_load_session_round_trips_report_metadata(monkeypatch, tmp_path: Path):
+def _runner_with_report_context(meta: dict[str, object]) -> SimpleNamespace:
+    return SimpleNamespace(
+        serialized_report_context=dict(meta),
+        session_state=ReviewSessionState.from_report_context(dict(meta)),
+    )
+
+
+def test_save_and_load_session_round_trips_report_context(monkeypatch, tmp_path: Path):
     session_path = tmp_path / 'session.json'
     app = _DummyResultsApp(session_path)
-    issue = ReviewIssue(file_path='a.py', issue_type='security', description='x')
+    issue = ReviewIssue(
+        file_path='a.py',
+        issue_type='security',
+        description='x',
+        status='resolved',
+        resolution_reason='Applied after review',
+        resolution_provenance='ai_edited',
+        ai_fix_suggested='unsafe()\n',
+        ai_fix_applied='safe()\n',
+    )
     app._issues = [issue]
-    app._review_runner = SimpleNamespace(_pending_report_meta={
+    app._bind_session_runner(_runner_with_report_context({
         'project_path': 'proj',
         'review_types': ['security'],
         'scope': 'project',
@@ -78,22 +106,39 @@ def test_save_and_load_session_round_trips_report_metadata(monkeypatch, tmp_path
         'programmers': ['Alice'],
         'reviewers': ['Bob'],
         'backend': 'local',
-    })
+    }))
 
     app._save_session()
 
+    saved_payload = json.loads(session_path.read_text(encoding='utf-8'))
+    assert saved_payload["format_version"] == SESSION_PAYLOAD_VERSION
+    assert saved_payload[SESSION_REPORT_CONTEXT_KEY]["backend"] == 'local'
+    assert saved_payload["issues"][0]["resolution_provenance"] == 'ai_edited'
+    assert saved_payload["issues"][0]["ai_fix_suggested"] == 'unsafe()\n'
+    assert saved_payload["issues"][0]["ai_fix_applied"] == 'safe()\n'
+
     app._issues = []
-    app._review_runner = None
+    app._clear_session_runner()
 
     monkeypatch.setattr('aicodereviewer.gui.results_mixin.filedialog.askopenfilename', lambda **_: str(session_path))
     monkeypatch.setattr('aicodereviewer.gui.results_mixin.messagebox.showerror', lambda *args, **kwargs: None)
 
     app._load_session()
 
+    runner = app._current_session_runner()
+
     assert len(app.shown_issues) == 1
-    assert app._review_runner is not None
-    assert app._review_runner._pending_report_meta['backend'] == 'local'
-    assert app._review_runner._pending_report_meta['project_path'] == 'proj'
+    assert app.shown_issues[0].resolution_provenance == 'ai_edited'
+    assert app.shown_issues[0].ai_fix_suggested == 'unsafe()\n'
+    assert app.shown_issues[0].ai_fix_applied == 'safe()\n'
+    assert runner is not None
+    meta = runner.serialized_report_context
+    assert meta['backend'] == 'local'
+    assert meta['project_path'] == 'proj'
+    assert runner.last_execution is not None
+    assert runner.last_execution.status == 'issues_found'
+    assert runner.last_job is not None
+    assert runner.last_job.state == 'awaiting_gui_finalize'
 
 
 def test_finalize_without_report_context_preserves_loaded_issues() -> None:

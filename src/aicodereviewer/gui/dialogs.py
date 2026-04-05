@@ -16,19 +16,20 @@ import customtkinter as ctk  # type: ignore[import-untyped]
 from aicodereviewer.i18n import t
 from aicodereviewer.scanner import scan_project
 
-from .widgets import _fix_titlebar
+from .popup_utils import resolve_popup_testing_mode, schedule_popup_after, schedule_titlebar_fix
 
 __all__ = [
     "FileSelector",
     "ConfirmDialog",
 ]
 
-
 class FileSelector(ctk.CTkToplevel):
     """Custom file selector window with tree structure and checkboxes."""
 
     def __init__(self, parent: Any, project_path: str, preselected: List[str]):
         super().__init__(parent)
+        self._ui_parent = parent
+        self._testing_mode = resolve_popup_testing_mode(parent)
         self.result: list = []
         self.project_path = Path(project_path)
         self.preselected = set(preselected)
@@ -40,7 +41,11 @@ class FileSelector(ctk.CTkToplevel):
         # Make window modal
         self.transient(parent)
         self.grab_set()
-        self.after(10, lambda: _fix_titlebar(self))
+        schedule_titlebar_fix(
+            self,
+            host=parent,
+            testing_mode=self._testing_mode,
+        )
 
         # Build UI
         self._build_ui()
@@ -64,7 +69,11 @@ class FileSelector(ctk.CTkToplevel):
         select_all_cb.pack(side="left", padx=5)
 
         # Scrollable file tree (populated asynchronously)
-        self._file_frame = ctk.CTkScrollableFrame(self, label_text="Reviewable Files")
+        if self._testing_mode:
+            ctk.CTkLabel(self, text="Reviewable Files", anchor="w").pack(fill="x", padx=10, pady=(0, 4))
+            self._file_frame = ctk.CTkFrame(self)
+        else:
+            self._file_frame = ctk.CTkScrollableFrame(self, label_text="Reviewable Files")
         self._file_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
         # Loading indicator shown while the background scan runs
@@ -94,7 +103,20 @@ class FileSelector(ctk.CTkToplevel):
             files = []
         # Schedule the tree population back on the Tk main thread
         try:
-            self.after(0, lambda: self._populate_tree(files))
+            dispatcher = getattr(self._ui_parent, "_run_on_ui_thread", None)
+            if callable(dispatcher):
+                dispatcher(self._populate_tree, files)
+            else:
+                def _apply_population() -> None:
+                    self._populate_tree(files)
+
+                schedule_popup_after(
+                    self,
+                    0,
+                    _apply_population,
+                    host=self._ui_parent,
+                    skip_in_tests=self._testing_mode,
+                )
         except Exception:
             pass  # window may have been closed before scan finished
 
@@ -174,10 +196,15 @@ class ConfirmDialog(ctk.CTkToplevel):
 
     def __init__(self, parent: ctk.CTk, *, title: str, message: str) -> None:
         super().__init__(parent)
+        self._ui_parent = parent
         self.title(title)
         self.resizable(False, False)
         self.grab_set()
-        self.after(10, lambda: _fix_titlebar(self))
+        schedule_titlebar_fix(
+            self,
+            host=parent,
+            testing_mode=resolve_popup_testing_mode(parent),
+        )
         self.confirmed: bool = False
 
         self.grid_columnconfigure(0, weight=1)

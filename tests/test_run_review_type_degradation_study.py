@@ -62,3 +62,30 @@ def test_select_fixtures_rejects_unknown_review_type():
 
     with pytest.raises(ValueError, match="Unknown review types"):
         study._select_fixtures(args, fixtures)
+
+
+def test_build_summary_payload_includes_representative_fixture_metadata():
+    fixture = type(
+        "Fixture",
+        (),
+        {
+            "id": "fixture-1",
+            "title": "Fixture 1",
+            "scope": "project",
+            "review_types": ["security"],
+        },
+    )()
+    args = type("Args", (), {"backend": None})()
+
+    payload = study._build_summary_payload(
+        args,
+        [fixture],
+        [1, 2],
+        [],
+        0,
+        status="completed",
+    )
+
+    assert payload["representative_fixture_ids"] == ["fixture-1"]
+    assert payload["representative_fixtures"][0]["id"] == "fixture-1"
+    assert payload["representative_fixtures"][0]["review_types"] == ["security"]

@@ -78,6 +78,11 @@ Recommended stable bundles:
 
 These presets can be passed directly to the CLI, for example:
 
+- `aicodereviewer --type runtime_safety ./path/to/project --programmers Alice --reviewers Bob`
+- `aicodereviewer --list-type-presets`
+
+The GUI Review tab now exposes the same preset bundles in the review-type picker. Selecting a preset replaces the current checkbox selection with that stable bundle, while exact manual matches are reflected back into the preset dropdown. If you pin the current set in the GUI, that pinned bundle becomes the startup default until you clear it; ordinary last-used selections are only restored when no pinned default exists.
+
 - `--type runtime_safety`
 - `--type code_health,testing`
 - `--type product_surface`

@@ -41,6 +41,8 @@ class ReviewIssue:
         status: 'pending', 'resolved', 'ignored', or 'ai_fixed'.
         resolution_reason: User-provided reason when ignoring.
         resolved_at: Timestamp when the issue was resolved.
+        resolution_provenance: How the final disposition was reached.
+        ai_fix_suggested: Original AI-generated fix before user edits.
         ai_fix_applied: Code content of the applied fix.
         context_scope: Scope of evidence for the finding.
         related_files: Other files implicated by the finding.
@@ -60,6 +62,8 @@ class ReviewIssue:
     status: str = "pending"
     resolution_reason: str | None = None
     resolved_at: datetime | None = None
+    resolution_provenance: str | None = None
+    ai_fix_suggested: str | None = None
     ai_fix_applied: str | None = None
     context_scope: str = "local"
     related_files: list[str] = field(default_factory=_empty_str_list)
@@ -69,6 +73,33 @@ class ReviewIssue:
     issue_id: str | None = None
     related_issues: list[int] = field(default_factory=_empty_int_list)
     interaction_summary: str | None = None
+
+    def set_resolution(
+        self,
+        *,
+        status: str,
+        provenance: str,
+        resolved_at: datetime | None = None,
+        reason: str | None = None,
+        ai_fix_suggested: str | None = None,
+        ai_fix_applied: str | None = None,
+    ) -> None:
+        """Store a consistent final disposition for the issue."""
+        self.status = status
+        self.resolved_at = resolved_at or datetime.now()
+        self.resolution_reason = reason
+        self.resolution_provenance = provenance
+        self.ai_fix_suggested = ai_fix_suggested
+        self.ai_fix_applied = ai_fix_applied
+
+    def clear_resolution(self) -> None:
+        """Reset the issue back to an unresolved state."""
+        self.status = "pending"
+        self.resolution_reason = None
+        self.resolved_at = None
+        self.resolution_provenance = None
+        self.ai_fix_suggested = None
+        self.ai_fix_applied = None
 
 
 @dataclass

@@ -1,0 +1,17 @@
+{
+  "manifest_version": 1,
+  "id": "secure-defaults-addon",
+  "version": "1.0.0",
+  "name": "Secure Defaults Addon",
+  "compatibility": {
+    "min_app_version": "2.0.0"
+  },
+  "permissions": [
+    "review_definitions"
+  ],
+  "entry_points": {
+    "review_packs": [
+      "../review-pack-secure-defaults.json"
+    ]
+  }
+}

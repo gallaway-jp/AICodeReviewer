@@ -74,6 +74,8 @@ In the GUI:
 4. Enter programmer and reviewer names.
 5. Run a dry run or start the review.
 
+If you find yourself using the same recommended bundle repeatedly, pin the current review-type selection in the Review tab. Pinned defaults are deliberate startup defaults; ordinary last-used selections are only restored when no pin is set.
+
 ## Recommended Reading
 
 - [Backend Guide](backends.md)

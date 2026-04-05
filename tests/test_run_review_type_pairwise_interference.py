@@ -69,3 +69,37 @@ def test_recommended_bundle_candidates_prioritize_low_retention():
         "security",
         "ui_ux",
     ]
+
+
+def test_build_summary_payload_includes_representative_fixture_metadata():
+    fixture = type(
+        "Fixture",
+        (),
+        {
+            "id": "fixture-1",
+            "title": "Fixture 1",
+            "scope": "project",
+            "review_types": ["security"],
+            "project_dir": None,
+            "diff_file": None,
+            "spec_file": None,
+        },
+    )()
+    args = type(
+        "Args",
+        (),
+        {"backend": None, "distractor_types": [], "max_distractors": None},
+    )()
+
+    payload = pairwise._build_summary_payload(
+        args,
+        [fixture],
+        [],
+        [],
+        0,
+        status="completed",
+    )
+
+    assert payload["representative_fixture_ids"] == ["fixture-1"]
+    assert payload["representative_fixtures"][0]["id"] == "fixture-1"
+    assert payload["representative_fixtures"][0]["review_types"] == ["security"]

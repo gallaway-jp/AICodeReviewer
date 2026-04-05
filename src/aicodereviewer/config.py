@@ -40,6 +40,9 @@ _CONVERTERS: list[tuple[str, str, Any]] = [
     ("processing",  "batch_size",        int),
     ("processing",  "enable_*",          _to_bool),
     ("local_llm",   "enable_*",          _to_bool),
+    ("local_http",  "enabled",           _to_bool),
+    ("local_http",  "enable_*",          _to_bool),
+    ("local_http",  "port",              int),
     # Logging section
     ("logging",     "enable_*",          _to_bool),
 ]
@@ -167,6 +170,18 @@ class Config:
         self._add("gui", "theme", "system")
         self._add("gui", "language", "system")
         self._add("gui", "review_language", "system")
+        self._add("gui", "pinned_review_types", "")
+        self._add("gui", "pinned_review_preset", "")
+
+        # ── local http ─────────────────────────────────────────────────────
+        self._add("local_http", "enabled", "false")
+        self._add("local_http", "port", "8765")
+
+        # ── review packs ───────────────────────────────────────────────────
+        self._add("review_packs", "paths", "")
+
+        # ── addons ─────────────────────────────────────────────────────────
+        self._add("addons", "paths", "")
 
     # ── typed access ───────────────────────────────────────────────────────
 

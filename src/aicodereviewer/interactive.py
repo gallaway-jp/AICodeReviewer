@@ -90,16 +90,22 @@ def _action_resolve(
     issue: ReviewIssue, client: AIBackend, review_type: str, lang: str
 ) -> None:
     if verify_issue_resolved(issue, client, review_type, lang):
-        issue.status = "resolved"
-        issue.resolved_at = datetime.now()
+        issue.set_resolution(
+            status="resolved",
+            provenance="verified_resolved",
+            resolved_at=datetime.now(),
+        )
         print(t("interactive.verified"))
     else:
         print(t("interactive.verify_failed"))
         force = get_valid_choice(t("interactive.force_resolve"), ["y", "n"])
         if force == "y":
-            issue.status = "resolved"
-            issue.resolved_at = datetime.now()
-            issue.resolution_reason = t("interactive.force_reason")
+            issue.set_resolution(
+                status="resolved",
+                provenance="manual_forced",
+                resolved_at=datetime.now(),
+                reason=t("interactive.force_reason"),
+            )
             print(t("interactive.force_resolved"))
 
 
@@ -109,9 +115,12 @@ def _action_ignore(issue: ReviewIssue) -> None:
     except (KeyboardInterrupt, EOFError):
         return
     if len(reason) >= 3:
-        issue.status = "ignored"
-        issue.resolution_reason = reason
-        issue.resolved_at = datetime.now()
+        issue.set_resolution(
+            status="ignored",
+            provenance="ignored",
+            resolved_at=datetime.now(),
+            reason=reason,
+        )
         print(t("interactive.ignored"))
     else:
         print(t("interactive.reason_too_short"))
@@ -143,9 +152,13 @@ def _action_ai_fix(
             print(t("interactive.backup_created", path=backup))
             with open(issue.file_path, "w", encoding="utf-8") as fh:
                 fh.write(fix_result)
-            issue.status = "ai_fixed"
-            issue.ai_fix_applied = fix_result
-            issue.resolved_at = datetime.now()
+            issue.set_resolution(
+                status="ai_fixed",
+                provenance="ai_applied",
+                resolved_at=datetime.now(),
+                ai_fix_suggested=fix_result,
+                ai_fix_applied=fix_result,
+            )
             print(t("interactive.fix_applied"))
         except Exception as exc:
             print(t("interactive.fix_error", error=exc))

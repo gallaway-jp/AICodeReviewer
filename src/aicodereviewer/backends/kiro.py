@@ -100,6 +100,15 @@ class KiroBackend(AIBackend):
             return result.strip()
         return None
 
+    def get_review_recommendations(
+        self,
+        recommendation_context: str,
+        lang: str = "en",
+    ) -> str:
+        system_prompt = self._build_recommendation_system_prompt(lang)
+        user_message = self._build_recommendation_user_message(recommendation_context)
+        return self._run_kiro_prompt(f"{system_prompt}\n\n{user_message}")
+
     def validate_connection(self) -> bool:
         if os.name == "nt":
             if not is_wsl_available():

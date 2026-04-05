@@ -5,7 +5,6 @@ Tests for AI Code Reviewer reporter functionality.
 Updated for v2.0: ReviewReport now includes review_types, backend, programmers,
 reviewers, quality_score fields. Summary includes severity/type breakdowns.
 """
-import pytest
 import json
 import tempfile
 from datetime import datetime
@@ -28,7 +27,10 @@ class TestGenerateReviewReport:
                 description="Security issue",
                 code_snippet="insecure_code()",
                 ai_feedback="This is insecure",
-                status="resolved"
+                status="resolved",
+                resolution_provenance="ai_edited",
+                ai_fix_suggested="old_fix()\n",
+                ai_fix_applied="new_fix()\n",
             ),
             ReviewIssue(
                 file_path="/path/to/file2.py",
@@ -38,6 +40,7 @@ class TestGenerateReviewReport:
                 code_snippet="slow_code()",
                 ai_feedback="This is slow",
                 status="ignored",
+                resolution_provenance="ignored",
                 resolution_reason="Not applicable"
             )
         ]
@@ -125,6 +128,10 @@ class TestGenerateReviewReport:
             assert "bedrock" in content
             assert "By Severity" in content
             assert "By Review Type" in content
+            assert "Resolution Path" in content
+            assert "AI suggestion edited before apply" in content
+            assert "AI Suggestion" in content
+            assert "Applied Fix" in content
 
     def test_generate_review_report_quality_score(self):
         """Test that quality score appears in summary."""
@@ -163,6 +170,8 @@ class TestGenerateReviewReport:
             md_content = md_file.read_text(encoding='utf-8')
             assert 'AI Code Review Report' in txt_content
             assert '# AI Code Review Report' in md_content
+            assert 'Resolution Path' in txt_content
+            assert '**Resolution Path**' in md_content
 
     def test_generate_review_report_trims_configured_formats(self):
         """Whitespace in output.formats should not suppress valid formats."""

@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from aicodereviewer import benchmarking
+from aicodereviewer.review_definitions import install_review_registry
 
 
 FIXTURES_ROOT = Path(__file__).resolve().parents[1] / "benchmarks" / "holistic_review" / "fixtures"
@@ -4268,6 +4269,120 @@ def test_evaluate_fixture_directory_marks_missing_reports(tmp_path):
     assert all(result.missing_report is True for result in results)
 
 
+def test_describe_fixture_invocation_includes_review_type_benchmark_metadata(tmp_path):
+    pack_path = tmp_path / "review-pack.json"
+    pack_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "review_definitions": [
+                    {
+                        "key": "secure_defaults",
+                        "parent_key": "security",
+                        "label": "Secure Defaults",
+                        "prompt_append": "Check unsafe defaults.",
+                        "benchmark_metadata": {
+                            "fixture_tags": ["security", "defaults"],
+                            "expected_focus": "default configuration safety",
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    install_review_registry([pack_path])
+    try:
+        fixture = benchmarking.BenchmarkFixture(
+            id="secure-defaults-fixture",
+            title="Secure Defaults Fixture",
+            description="Synthetic fixture for benchmark metadata aggregation.",
+            scope="project",
+            review_types=["secure_defaults", "data_validation"],
+            minimum_score=0.0,
+            manifest_path=tmp_path / "fixture.json",
+            project_dir=None,
+            diff_file=None,
+            spec_file=None,
+            expected_findings=[],
+        )
+
+        payload = benchmarking.describe_fixture_invocation(fixture)
+    finally:
+        install_review_registry([])
+
+    assert payload["benchmark_metadata"]["fixture_tags"] == ["security", "defaults"]
+    assert payload["benchmark_metadata"]["expected_focus"] == ["default configuration safety"]
+    assert len(payload["benchmark_metadata"]["review_types"]) == 1
+    review_type_metadata = payload["benchmark_metadata"]["review_types"][0]
+    assert review_type_metadata["key"] == "secure_defaults"
+    assert review_type_metadata["label"] == "Secure Defaults"
+    assert review_type_metadata["group"]
+    assert review_type_metadata["metadata"] == {
+        "fixture_tags": ["security", "defaults"],
+        "expected_focus": "default configuration safety",
+    }
+
+
+def test_summarize_results_aggregates_benchmark_metadata(tmp_path):
+    pack_path = tmp_path / "review-pack.json"
+    pack_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "review_definitions": [
+                    {
+                        "key": "secure_defaults",
+                        "parent_key": "security",
+                        "label": "Secure Defaults",
+                        "prompt_append": "Check unsafe defaults.",
+                        "benchmark_metadata": {
+                            "fixture_tags": ["security", "defaults"],
+                            "expected_focus": ["default configuration safety"],
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    install_review_registry([pack_path])
+    try:
+        fixture = benchmarking.BenchmarkFixture(
+            id="secure-defaults-fixture",
+            title="Secure Defaults Fixture",
+            description="Synthetic fixture for benchmark metadata aggregation.",
+            scope="project",
+            review_types=["secure_defaults"],
+            minimum_score=0.0,
+            manifest_path=tmp_path / "fixture.json",
+            project_dir=None,
+            diff_file=None,
+            spec_file=None,
+            expected_findings=[],
+        )
+
+        result = benchmarking.evaluate_fixture(fixture, {"issues_found": []})
+        summary = benchmarking.summarize_results([result])
+    finally:
+        install_review_registry([])
+
+    assert result.benchmark_metadata["fixture_tags"] == ["security", "defaults"]
+    assert summary["benchmark_metadata"]["fixture_tags"] == ["security", "defaults"]
+    assert summary["benchmark_metadata"]["expected_focus"] == ["default configuration safety"]
+    assert len(summary["benchmark_metadata"]["review_types"]) == 1
+    review_type_metadata = summary["benchmark_metadata"]["review_types"][0]
+    assert review_type_metadata["key"] == "secure_defaults"
+    assert review_type_metadata["label"] == "Secure Defaults"
+    assert review_type_metadata["group"]
+    assert review_type_metadata["metadata"] == {
+        "fixture_tags": ["security", "defaults"],
+        "expected_focus": ["default configuration safety"],
+    }
+
+
 def test_evaluate_fixture_file_tolerates_error_envelope_without_report(tmp_path):
     fixture = benchmarking.load_fixture(
         FIXTURES_ROOT / "specification-type-mismatch-vs-spec-enum" / "fixture.json"
@@ -5288,3 +5403,65 @@ def test_cli_single_fixture_returns_success_for_matching_report(tmp_path, capsys
     assert exit_code == 0
     assert payload["fixtures_passed"] == 1
     assert payload["results"][0]["fixture_id"] == "auth-guard-regression"
+
+
+def test_list_fixtures_includes_benchmark_metadata(monkeypatch, tmp_path, capsys):
+    pack_path = tmp_path / "review-pack.json"
+    pack_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "review_definitions": [
+                    {
+                        "key": "secure_defaults",
+                        "parent_key": "security",
+                        "label": "Secure Defaults",
+                        "prompt_append": "Check unsafe defaults.",
+                        "benchmark_metadata": {
+                            "fixture_tags": ["security", "defaults"],
+                            "expected_focus": ["default configuration safety"],
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    install_review_registry([pack_path])
+    try:
+        fixture = benchmarking.BenchmarkFixture(
+            id="secure-defaults-fixture",
+            title="Secure Defaults Fixture",
+            description="Synthetic fixture for listing benchmark metadata.",
+            scope="project",
+            review_types=["secure_defaults"],
+            minimum_score=0.0,
+            manifest_path=tmp_path / "fixture.json",
+            project_dir=None,
+            diff_file=None,
+            spec_file=None,
+            expected_findings=[],
+        )
+        monkeypatch.setattr(benchmarking, "discover_fixtures", lambda _root: [fixture])
+
+        exit_code = benchmarking.main(["--fixtures-root", str(tmp_path), "--list-fixtures"])
+    finally:
+        install_review_registry([])
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["fixtures"][0]["id"] == "secure-defaults-fixture"
+    metadata = payload["fixtures"][0]["benchmark_metadata"]
+    assert metadata["fixture_tags"] == ["security", "defaults"]
+    assert metadata["expected_focus"] == ["default configuration safety"]
+    assert len(metadata["review_types"]) == 1
+    review_type_metadata = metadata["review_types"][0]
+    assert review_type_metadata["key"] == "secure_defaults"
+    assert review_type_metadata["label"] == "Secure Defaults"
+    assert review_type_metadata["group"]
+    assert review_type_metadata["metadata"] == {
+        "fixture_tags": ["security", "defaults"],
+        "expected_focus": ["default configuration safety"],
+    }

@@ -12,6 +12,11 @@ It supports 22 selectable review types across quality, architecture, and complia
 
 The repository also includes holistic benchmark fixtures that score review quality against known cross-file and UI/UX scenarios.
 
+Implementation snapshot:
+- `src/aicodereviewer/execution/` is the typed execution and session core used by both CLI and GUI flows.
+- `AppRunner` remains the public orchestration entry point, but it now acts primarily as a compatibility facade over the execution service and runner-state models.
+- GUI session save/load still uses the same JSON shape on disk, while the in-memory restore/finalize path now round-trips through typed session state.
+
 ## What This Repository Contains
 
 - CLI entry point and interactive review workflow
@@ -76,11 +81,17 @@ aicodereviewer --check-connection --backend bedrock
 aicodereviewer --check-connection --backend local
 ```
 
+Start the local HTTP API:
+
+```bash
+aicodereviewer serve-api --host 127.0.0.1 --port 8765
+```
+
 ## GUI Preview
 
 ![AICodeReviewer GUI Results tab](docs/images/gui-results-tab.png)
 
-The desktop GUI now uses a clearer sectioned Review tab and a Results tab with overview cards, quick triage filters, and richer issue cards. See [docs/gui.md](docs/gui.md) for the full workflow and all screenshots.
+The desktop GUI now uses a clearer sectioned Review tab and a Results tab with overview cards, quick triage filters, and richer issue cards. The Review tab can also pin a recommended review-type bundle as the startup default, distinct from ordinary last-used selections. See [docs/gui.md](docs/gui.md) for the full workflow and all screenshots.
 
 ## Documentation
 
@@ -88,7 +99,7 @@ The desktop GUI now uses a clearer sectioned Review tab and a Results tab with o
 - Code and tests implement and verify that documented contract.
 - For internal implementation details not yet covered by the docs, code and tests remain authoritative.
 
-See [docs/README.md](D:/Development/Python/AICodeReviewer/docs/README.md) for the maintained documentation set.
+See [docs/README.md](docs/README.md) for the maintained documentation set.
 
 Start with [docs/README.md](docs/README.md).
 
@@ -107,6 +118,49 @@ Core guides:
 
 Examples:
 - [examples/README.md](examples/README.md)
+- [examples/addon-editor-hooks/addon.json](examples/addon-editor-hooks/addon.json)
+
+## Local HTTP API
+
+The shared local HTTP API exposes the same review runtime used by the desktop GUI and the CLI tool-mode flows.
+
+Start it explicitly from the CLI:
+
+```bash
+aicodereviewer serve-api --host 127.0.0.1 --port 8765
+```
+
+Or enable the embedded local API from the desktop Settings panel.
+
+Common routes:
+- `GET /api/backends`
+- `GET /api/review-types`
+- `GET /api/review-presets`
+- `POST /api/recommendations/review-types`
+- `GET /api/jobs`
+- `POST /api/jobs`
+- `GET /api/jobs/{job_id}`
+- `POST /api/jobs/{job_id}/cancel`
+- `GET /api/jobs/{job_id}/report`
+- `GET /api/jobs/{job_id}/artifacts`
+- `GET /api/jobs/{job_id}/artifacts/{artifact_key}/raw`
+- `GET /api/events`
+- `GET /api/jobs/{job_id}/events`
+
+Recommendation requests accept the same targeting inputs already used by the GUI and CLI, including project path, diff scope, `selected_files`, and diff-filter fields. Example:
+
+```json
+{
+	"path": ".",
+	"scope": "project",
+	"backend_name": "local",
+	"target_lang": "en",
+	"selected_files": ["src/app.py"],
+	"diff_filter_file": "changes.diff"
+}
+```
+
+The response includes the recommended review bundle, optional preset, project signals, rationale, and the recommendation source.
 
 Quality regression:
 - Holistic benchmark fixtures live under [benchmarks/holistic_review/fixtures](benchmarks/holistic_review/fixtures)
@@ -135,6 +189,11 @@ Quality regression:
 ## Repository Status
 
 The documentation now uses curated Markdown guides instead of generated HTML API pages. The code and tests are the source of truth for product behavior.
+
+The current execution/session architecture is split intentionally:
+- user-facing CLI and GUI entry points stay stable
+- shared execution, deferred-report, and saved-session behavior lives in the typed execution package
+- contributor-oriented implementation details are summarized in [docs/architecture.md](docs/architecture.md)
 
 ## License
 
