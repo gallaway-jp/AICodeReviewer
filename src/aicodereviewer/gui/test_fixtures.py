@@ -299,6 +299,10 @@ def apply_test_config() -> None:
     config.set_value("gui", "reviewers", "Charlie")
     config.set_value("gui", "project_path", "C:/Projects/sample-app")
     config.set_value("gui", "spec_file", "review_spec.md")
+    config.set_value("gui", "detached_pages", "")
+    config.set_value("gui", "detached_log_geometry", "")
+    config.set_value("gui", "detached_settings_geometry", "")
+    config.set_value("gui", "detached_benchmark_geometry", "")
 
     # ── Output formats ─────────────────────────────────────────────────────
     config.set_value("output", "formats", "json,txt,md")

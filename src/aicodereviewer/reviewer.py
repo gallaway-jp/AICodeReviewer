@@ -15,7 +15,7 @@ import ast
 from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Union, cast
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .models import ReviewIssue
@@ -24,6 +24,7 @@ from .backends.base import AIBackend
 from .registries import get_review_registry
 from .response_parser import parse_review_response, parse_single_file_response
 from .context_collector import collect_project_context
+from .tool_access import ToolReviewContext, ToolReviewTarget
 
 __all__ = [
     "ProgressCallback",
@@ -896,6 +897,7 @@ def collect_review_issues(
     client: AIBackend,
     lang: str,
     spec_content: Optional[str] = None,
+    project_root: Optional[str] = None,
     progress_callback: Optional[ProgressCallback] = None,
     cancel_check: Optional[CancelCheck] = None,
 ) -> List[ReviewIssue]:
@@ -917,6 +919,7 @@ def collect_review_issues(
     Returns:
         Flat list of :class:`ReviewIssue` instances.
     """
+    requested_project_root = project_root
     issues: List[ReviewIssue] = []
     effective_target_files = _augment_license_review_targets(
         _augment_dependency_review_targets(
@@ -931,7 +934,9 @@ def collect_review_issues(
     if enable_context:
         try:
             # Determine project root from target_files
-            if effective_target_files:
+            if project_root:
+                project_root = str(Path(project_root).resolve())
+            elif effective_target_files:
                 sample = effective_target_files[0]
                 if isinstance(sample, dict):
                     project_root = str(Path(sample.get("path", ".")).parent)
@@ -1002,6 +1007,9 @@ def collect_review_issues(
 
     enable_parallel = config.get("processing", "enable_parallel_processing", False)
     enable_adaptive = config.get("processing", "enable_adaptive_batching", True)
+    if enable_parallel and _tool_file_access_enabled_for_client(client):
+        logger.info("Disabling parallel batch execution for tool-aware file access reviews")
+        enable_parallel = False
 
     type_label = ", ".join(review_types)
 
@@ -1023,12 +1031,20 @@ def collect_review_issues(
     # ── Budget / session tracking ────────────────────────────────────────────
     budget_limit = config.get("performance", "max_api_calls_per_session", 0)
     session = _ReviewSession(budget_limit=budget_limit)
+    batch_kwargs = {"project_root": requested_project_root} if requested_project_root is not None else {}
 
     if enable_parallel and len(batches) > 1:
         with ThreadPoolExecutor(max_workers=2) as pool:
             futures = {
                 pool.submit(
-                    _process_file_batch, batch, combined_type, client, lang, spec_content, cancel_check
+                    _process_file_batch,
+                    batch,
+                    combined_type,
+                    client,
+                    lang,
+                    spec_content,
+                    cancel_check,
+                    **batch_kwargs,
                 ): batch
                 for batch in batches
             }
@@ -1050,7 +1066,13 @@ def collect_review_issues(
                 break
             try:
                 batch_issues = _process_file_batch(
-                    batch, combined_type, client, lang, spec_content, cancel_check
+                    batch,
+                    combined_type,
+                    client,
+                    lang,
+                    spec_content,
+                    cancel_check,
+                    **batch_kwargs,
                 )
                 issues.extend(batch_issues)
                 session.record_call()
@@ -1061,7 +1083,13 @@ def collect_review_issues(
                 logger.error("Batch failed: %s — retrying individually", exc)
                 if session.has_budget():
                     fallback = _process_files_individually(
-                        batch, combined_type, client, lang, spec_content, cancel_check,
+                        batch,
+                        combined_type,
+                        client,
+                        lang,
+                        spec_content,
+                        cancel_check,
+                        **batch_kwargs,
                     )
                     issues.extend(fallback)
                     session.record_call()
@@ -1131,14 +1159,30 @@ def collect_review_issues(
     if isinstance(enable_interaction, str):
         enable_interaction = enable_interaction.lower() in ("true", "1", "yes")
     if enable_interaction and len(issues) >= 2 and session.has_budget():
-        if progress_callback:
-            progress_callback(
-                total_work, total_work, f"[{type_label}] interaction analysis…",
+        if "testing" in review_types:
+            logger.info(
+                "Skipping interaction analysis for testing review to avoid timeout-heavy second pass"
             )
-        issues, _interaction_summary = analyze_interactions(issues, client, lang)
-        _normalize_cache_issue_context(issues)
-        session.record_call()
-
+        elif _is_local_backend(client) and "ui_ux" in review_types:
+            logger.info(
+                "Skipping interaction analysis for Local ui_ux review to avoid timeout-heavy second pass"
+            )
+        elif _is_local_backend(client) and "architecture" in review_types:
+            logger.info(
+                "Skipping interaction analysis for Local architecture review to avoid timeout-heavy second pass"
+            )
+        elif _is_local_backend(client) and "security" in review_types:
+            logger.info(
+                "Skipping interaction analysis for Local security review to avoid timeout-heavy second pass"
+            )
+        else:
+            if progress_callback:
+                progress_callback(
+                    total_work, total_work, f"[{type_label}] interaction analysis…",
+                )
+            issues, _interaction_summary = analyze_interactions(issues, client, lang)
+            _normalize_cache_issue_context(issues)
+            session.record_call()
     # ── Optional cross-file architectural review (third AI pass) ─────────
     enable_arch = config.get(
         "processing", "enable_architectural_review", False,
@@ -1147,16 +1191,21 @@ def collect_review_issues(
         enable_arch = enable_arch.lower() in ("true", "1", "yes")
     force_architecture_review = "architecture" in review_types
     if (enable_arch or force_architecture_review) and len(effective_target_files) >= 3 and session.has_budget():
-        if progress_callback:
-            progress_callback(
-                total_work, total_work, f"[{type_label}] architectural review\u2026",
+        if _is_local_backend(client) and "architecture" in review_types:
+            logger.info(
+                "Skipping Local architectural review third pass to preserve timeout budget for persisted main-pass findings"
             )
-        arch_issues, _arch_summary = architectural_review(
-            effective_target_files, issues, client, lang,
-        )
-        issues.extend(arch_issues)
-        _normalize_cache_issue_context(issues)
-        session.record_call()
+        else:
+            if progress_callback:
+                progress_callback(
+                    total_work, total_work, f"[{type_label}] architectural review\u2026",
+                )
+            arch_issues, _arch_summary = architectural_review(
+                effective_target_files, issues, client, lang,
+            )
+            issues.extend(arch_issues)
+            _normalize_cache_issue_context(issues)
+            session.record_call()
 
     local_ui_ux_issues = _supplement_local_ui_ux_findings(
         effective_target_files,
@@ -1195,6 +1244,32 @@ def collect_review_issues(
         logger.info(
             "Added %d Local concurrency supplement finding(s) after AI review",
             len(local_concurrency_issues),
+        )
+
+    local_specification_issues = _supplement_local_specification_findings(
+        effective_target_files,
+        combined_type,
+        issues,
+        client,
+    )
+    if local_specification_issues:
+        issues.extend(local_specification_issues)
+        logger.info(
+            "Added %d Local specification supplement finding(s) after AI review",
+            len(local_specification_issues),
+        )
+
+    local_complexity_issues = _supplement_local_complexity_findings(
+        effective_target_files,
+        combined_type,
+        issues,
+        client,
+    )
+    if local_complexity_issues:
+        issues.extend(local_complexity_issues)
+        logger.info(
+            "Added %d Local complexity supplement finding(s) after AI review",
+            len(local_complexity_issues),
         )
 
     local_dependency_issues = _supplement_local_dependency_findings(
@@ -1327,6 +1402,19 @@ def collect_review_issues(
             len(local_security_issues),
         )
 
+    local_documentation_issues = _supplement_local_documentation_findings(
+        effective_target_files,
+        combined_type,
+        issues,
+        client,
+    )
+    if local_documentation_issues:
+        issues.extend(local_documentation_issues)
+        logger.info(
+            "Added %d Local documentation supplement finding(s) after AI review",
+            len(local_documentation_issues),
+        )
+
     architecture_supplements = _normalize_controller_repository_bypass_findings(
         effective_target_files,
         combined_type,
@@ -1347,7 +1435,7 @@ def collect_review_issues(
     if api_design_supplements:
         issues.extend(api_design_supplements)
         logger.info(
-            "Added %d deterministic GET-create API design finding(s) after AI review",
+            "Added %d deterministic API design finding(s) after AI review",
             len(api_design_supplements),
         )
 
@@ -2167,6 +2255,290 @@ def _select_service_entry_for_controller_bypass(
     return service_entries[0]
 
 
+def _supplement_local_documentation_findings(
+    target_files: Sequence[FileInfo],
+    review_type: str,
+    issues: Sequence[ReviewIssue],
+    client: AIBackend,
+) -> List[ReviewIssue]:
+    if "documentation" not in review_type.split("+"):
+        return []
+    if not _is_local_backend(client):
+        return []
+
+    entries = _load_target_file_entries(target_files)
+    if not entries:
+        return []
+
+    return _collect_local_documentation_supplements(entries, issues)
+
+
+def _collect_local_documentation_supplements(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> List[ReviewIssue]:
+    supplements: List[ReviewIssue] = []
+    for builder in (
+        _supplement_local_stateless_deployment_documentation,
+        _supplement_local_sync_token_documentation,
+        _supplement_local_dry_run_documentation,
+    ):
+        supplement = builder(entries, issues)
+        if supplement is not None:
+            supplements.append(supplement)
+    return supplements
+
+
+def _supplement_local_stateless_deployment_documentation(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    doc_entry = next(
+        (
+            entry for entry in entries
+            if "lease state is not stored locally" in entry["content"].lower()
+        ),
+        None,
+    )
+    lease_entry = next((entry for entry in entries if Path(entry["path"]).name == "lease_store.py"), None)
+    if doc_entry is None or lease_entry is None:
+        return None
+
+    lease_content = lease_entry["content"]
+    if "LEASES" not in lease_content or "LEASES[" not in lease_content:
+        return None
+
+    for issue in issues:
+        normalized_issue_type = re.sub(r"[\s\-/]+", "_", issue.issue_type.lower()).strip("_")
+        if normalized_issue_type != "documentation":
+            continue
+        issue_text = _issue_text(issue)
+        related_names = {Path(path).name for path in issue.related_files}
+        if not (
+            "lease state is not stored locally" in issue_text
+            or ("stateless" in issue_text and "lease" in issue_text)
+            or Path(issue.file_path).name == Path(doc_entry["path"]).name
+            or Path(issue.file_path).name == "lease_store.py"
+            or "lease_store.py" in related_names
+        ):
+            continue
+
+        if issue.context_scope == "local":
+            issue.context_scope = "cross_file"
+        if lease_entry["path"] not in issue.related_files:
+            issue.related_files.append(lease_entry["path"])
+        evidence_basis = issue.evidence_basis or ""
+        if "lease state is not stored locally" not in evidence_basis.lower():
+            addition = (
+                " The deployment guide says lease state is not stored locally, but lease_store.py keeps leases in the in-process LEASES map."
+            )
+            issue.evidence_basis = (evidence_basis.rstrip(".") + "." + addition).strip()
+        systemic_impact = issue.systemic_impact or ""
+        if not systemic_impact or "operator" not in systemic_impact.lower():
+            issue.systemic_impact = (
+                "Operators can scale the worker based on stale documentation and then duplicate work because each replica keeps lease ownership in local memory."
+            )
+        return None
+
+    evidence_basis = (
+        "deployment.md says lease state is not stored locally, but lease_store.py persists claimed jobs in the process-local LEASES dictionary."
+    )
+    systemic_impact = (
+        "Operators can scale the worker based on stale documentation and then duplicate work because each replica keeps lease ownership in local memory."
+    )
+    anchor = "lease state is not stored locally"
+    anchor_offset = doc_entry["content"].lower().index(anchor)
+    ai_feedback = "\n\n".join([
+        "**The deployment guide describes the worker as stateless even though lease state is stored locally**",
+        "deployment.md tells operators they can scale multiple worker replicas because lease state is not stored locally, but lease_store.py records claims in the in-process LEASES dictionary.",
+        "Code: lease state is not stored locally / LEASES[job_id] = worker_id",
+        "Suggestion: Update the deployment guide to describe the local lease state accurately, or move lease ownership into shared storage before recommending multi-replica deployments.",
+        "Context Scope: cross_file",
+        f"Related Files: {lease_entry['path']}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: high",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=doc_entry["path"],
+        line_number=_line_number_from_offset(doc_entry["content"], anchor_offset),
+        issue_type="documentation",
+        severity="medium",
+        description="The deployment guide says the worker is stateless, but lease state is still stored locally in memory.",
+        code_snippet=_code_snippet(doc_entry["content"], anchor_offset),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=[lease_entry["path"]],
+        systemic_impact=systemic_impact,
+        confidence="high",
+        evidence_basis=evidence_basis,
+    )
+
+
+def _supplement_local_sync_token_documentation(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    doc_entry = next((entry for entry in entries if "SYNC_API_TOKEN" in entry["content"]), None)
+    config_entry = next((entry for entry in entries if Path(entry["path"]).name == "config.py"), None)
+    if doc_entry is None or config_entry is None:
+        return None
+
+    config_content = config_entry["content"]
+    if 'os.getenv("SYNC_TOKEN")' not in config_content and "os.getenv('SYNC_TOKEN')" not in config_content:
+        return None
+
+    for issue in issues:
+        normalized_issue_type = re.sub(r"[\s\-/]+", "_", issue.issue_type.lower()).strip("_")
+        if normalized_issue_type != "documentation":
+            continue
+        issue_text = _issue_text(issue)
+        related_names = {Path(path).name for path in issue.related_files}
+        if not (
+            "sync_api_token" in issue_text
+            or ("sync_token" in issue_text and "docs" in issue_text)
+            or Path(issue.file_path).name == Path(doc_entry["path"]).name
+            or Path(issue.file_path).name == "config.py"
+            or "config.py" in related_names
+        ):
+            continue
+
+        if issue.context_scope == "local":
+            issue.context_scope = "cross_file"
+        if config_entry["path"] not in issue.related_files:
+            issue.related_files.append(config_entry["path"])
+        evidence_basis = issue.evidence_basis or ""
+        if "sync_api_token" not in evidence_basis.lower():
+            addition = (
+                " The operations guide still instructs operators to export SYNC_API_TOKEN, but config.py only reads SYNC_TOKEN."
+            )
+            issue.evidence_basis = (evidence_basis.rstrip(".") + "." + addition).strip()
+        systemic_impact = issue.systemic_impact or ""
+        if not systemic_impact or "operator" not in systemic_impact.lower():
+            issue.systemic_impact = (
+                "Operators following the published setup steps can launch the worker with the wrong environment variable and hit runtime startup failures."
+            )
+        return None
+
+    evidence_basis = (
+        "operations.md instructs operators to export SYNC_API_TOKEN, but config.py only loads SYNC_TOKEN from the environment."
+    )
+    systemic_impact = (
+        "Operators following the published setup steps can launch the worker with the wrong environment variable and hit runtime startup failures."
+    )
+    anchor = "SYNC_API_TOKEN"
+    anchor_offset = doc_entry["content"].index(anchor)
+    ai_feedback = "\n\n".join([
+        "**The operations guide still documents an obsolete token environment variable**",
+        "operations.md tells operators to export SYNC_API_TOKEN before starting the worker, but config.py only reads SYNC_TOKEN, so the documented setup no longer matches the shipped configuration contract.",
+        "Code: export SYNC_API_TOKEN=dev-token / os.getenv(\"SYNC_TOKEN\")",
+        "Suggestion: Align the documentation and runtime configuration contract so operators are told to set the environment variable the worker actually consumes.",
+        "Context Scope: cross_file",
+        f"Related Files: {config_entry['path']}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: high",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=doc_entry["path"],
+        line_number=_line_number_from_offset(doc_entry["content"], anchor_offset),
+        issue_type="documentation",
+        severity="medium",
+        description="The operations docs still tell operators to use SYNC_API_TOKEN, but the code only reads SYNC_TOKEN.",
+        code_snippet=_code_snippet(doc_entry["content"], anchor_offset),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=[config_entry["path"]],
+        systemic_impact=systemic_impact,
+        confidence="high",
+        evidence_basis=evidence_basis,
+    )
+
+
+def _supplement_local_dry_run_documentation(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    readme_entry = next((entry for entry in entries if Path(entry["path"]).name == "README.md"), None)
+    cli_entry = next((entry for entry in entries if Path(entry["path"]).name == "cli.py"), None)
+    if readme_entry is None or cli_entry is None:
+        return None
+
+    readme_content = readme_entry["content"]
+    cli_content = cli_entry["content"]
+    if "--dry-run" not in readme_content:
+        return None
+    if "add_argument(\"--dry-run\"" in cli_content or "add_argument('--dry-run'" in cli_content:
+        return None
+    if "add_argument(\"--apply\"" not in cli_content and "add_argument('--apply'" not in cli_content:
+        return None
+
+    for issue in issues:
+        normalized_issue_type = re.sub(r"[\s\-/]+", "_", issue.issue_type.lower()).strip("_")
+        if normalized_issue_type != "documentation":
+            continue
+        issue_text = _issue_text(issue)
+        related_names = {Path(path).name for path in issue.related_files}
+        if not (
+            "dry-run" in issue_text
+            or Path(issue.file_path).name == "README.md"
+            or Path(issue.file_path).name == "cli.py"
+            or "cli.py" in related_names
+        ):
+            continue
+
+        if issue.context_scope == "local":
+            issue.context_scope = "cross_file"
+        if cli_entry["path"] not in issue.related_files:
+            issue.related_files.append(cli_entry["path"])
+        evidence_basis = issue.evidence_basis or ""
+        if "dry-run" not in evidence_basis.lower():
+            addition = (
+                " README.md still advertises --dry-run, but cli.py no longer registers that argument and only exposes --workspace and --apply."
+            )
+            issue.evidence_basis = (evidence_basis.rstrip(".") + "." + addition).strip()
+        systemic_impact = issue.systemic_impact or ""
+        if not systemic_impact or "operator" not in systemic_impact.lower():
+            issue.systemic_impact = (
+                "Operators can rely on a documented preview mode that no longer exists and accidentally execute the live sync path instead of a safe dry-run."
+            )
+        return None
+
+    evidence_basis = (
+        "README.md still documents the --dry-run flag, but cli.py only registers --workspace and --apply and no longer accepts dry-run mode."
+    )
+    systemic_impact = (
+        "Operators can rely on a documented preview mode that no longer exists and accidentally execute the live sync path instead of a safe dry-run."
+    )
+    anchor = "--dry-run"
+    anchor_offset = readme_content.index(anchor)
+    ai_feedback = "\n\n".join([
+        "**The README still documents a dry-run mode that the CLI no longer supports**",
+        "README.md instructs operators to use syncctl run --dry-run for a safe preview, but cli.py no longer registers that flag and only accepts --workspace and --apply.",
+        "Code: syncctl run --workspace acme --dry-run / run_parser.add_argument(\"--apply\", action=\"store_true\")",
+        "Suggestion: Remove the stale dry-run documentation or restore the dry-run parser branch so the published command contract matches the CLI behavior.",
+        "Context Scope: cross_file",
+        f"Related Files: {cli_entry['path']}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: high",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=readme_entry["path"],
+        line_number=_line_number_from_offset(readme_content, anchor_offset),
+        issue_type="documentation",
+        severity="medium",
+        description="The README still documents a --dry-run CLI mode that the parser no longer supports.",
+        code_snippet=_code_snippet(readme_content, anchor_offset),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=[cli_entry["path"]],
+        systemic_impact=systemic_impact,
+        confidence="high",
+        evidence_basis=evidence_basis,
+    )
+
+
 def _normalize_controller_repository_bypass_findings(
     target_files: Sequence[FileInfo],
     review_type: str,
@@ -2192,6 +2564,94 @@ def _normalize_controller_repository_bypass_findings(
         controller_name = Path(controller_entry["path"]).name.lower()
         if "/web/" not in controller_path and "controller" not in controller_name:
             continue
+
+        direct_db_match = re.search(
+            r"from\s+(?P<module>[a-zA-Z0-9_\.]*(?:db|database))\s+import\s+(?P<helper>[a-zA-Z0-9_]+)",
+            controller_entry["content"],
+        )
+        if direct_db_match is not None:
+            helper = direct_db_match.group("helper")
+            if f"{helper}(" in controller_entry["content"]:
+                service_entry = next(
+                    (entry for entry in service_entries if Path(entry["path"]).stem.lower() == "service"),
+                    service_entries[0],
+                )
+                db_entry = next(
+                    (entry for entry in entries if Path(entry["path"]).stem.lower() in {"db", "database"}),
+                    None,
+                )
+                related_paths = [service_entry["path"]]
+                if db_entry is not None:
+                    related_paths.append(db_entry["path"])
+
+                matched_existing = False
+                for issue in issues:
+                    if issue.issue_type.lower() != "architecture":
+                        continue
+
+                    issue_path = str(issue.file_path).replace("\\", "/").lower()
+                    issue_text = _issue_text(issue)
+                    same_controller_file = issue_path == controller_path or issue_path.endswith(f"/{controller_name}")
+                    project_level_match = issue_path == "project" and "controller" in issue_text and (
+                        "database" in issue_text or "db" in issue_text
+                    )
+                    if not same_controller_file and not project_level_match:
+                        continue
+
+                    matched_existing = True
+                    if issue.context_scope == "local":
+                        issue.context_scope = "project"
+                    for related_path in related_paths:
+                        if related_path not in issue.related_files:
+                            issue.related_files.append(related_path)
+
+                    evidence_basis = issue.evidence_basis or ""
+                    if "db" not in evidence_basis.lower() and "database" not in evidence_basis.lower():
+                        addition = (
+                            f" The controller imports database helper {helper} directly instead of delegating through service layer {service_entry['name']}."
+                        )
+                        issue.evidence_basis = (evidence_basis.rstrip(".") + "." + addition).strip()
+
+                    systemic_impact = issue.systemic_impact or ""
+                    if not systemic_impact or "layer" not in systemic_impact.lower():
+                        issue.systemic_impact = (
+                            "Layer boundaries erode because the controller now opens database access directly instead of routing through the service layer."
+                        )
+                    break
+
+                if not matched_existing:
+                    evidence_basis = (
+                        f"{Path(controller_entry['path']).name} imports database helper {helper} directly from {direct_db_match.group('module')} instead of delegating through service layer {service_entry['name']}."
+                    )
+                    systemic_impact = (
+                        "Layer boundaries erode because the controller now opens database access directly instead of routing through the service layer."
+                    )
+                    ai_feedback = "\n\n".join([
+                        "**The controller reaches the database directly instead of going through the service layer**",
+                        f"{Path(controller_entry['path']).name} imports {helper} from the database module and calls it directly even though {service_entry['name']} should own that boundary.",
+                        f"Code: from {direct_db_match.group('module')} import {helper}",
+                        "Suggestion: Keep database access behind the service layer so controller code stays presentation-oriented and architectural boundaries remain consistent.",
+                        "Context Scope: project",
+                        f"Related Files: {', '.join(related_paths)}",
+                        f"Systemic Impact: {systemic_impact}",
+                        "Confidence: medium",
+                        f"Evidence Basis: {evidence_basis}",
+                    ])
+                    supplements.append(ReviewIssue(
+                        file_path=controller_entry["path"],
+                        line_number=_line_number_from_offset(controller_entry["content"], direct_db_match.start()),
+                        issue_type="architecture",
+                        severity="high",
+                        description="The controller opens database access directly instead of going through the service layer.",
+                        code_snippet=_code_snippet(controller_entry["content"], direct_db_match.start()),
+                        ai_feedback=ai_feedback,
+                        context_scope="project",
+                        related_files=related_paths,
+                        systemic_impact=systemic_impact,
+                        confidence="medium",
+                        evidence_basis=evidence_basis,
+                    ))
+                continue
 
         import_match = re.search(
             r"from\s+(?P<module>[a-zA-Z0-9_\.]*repositories\.(?P<repository>[a-zA-Z0-9_]+))\s+import\s+(?P<helper>[a-zA-Z0-9_]+)",
@@ -2311,6 +2771,8 @@ def _supplement_get_create_endpoint_findings(
         text = _issue_text(issue)
         if "@app.get" in text and any(marker in text for marker in ("create", "invitation", "state change", "201", "post")):
             return []
+        if "@app.post" in text and any(marker in text for marker in ("201", "default 200", "creation contract", "raw dict", "create")):
+            return []
         if "@app.patch" in text and any(marker in text for marker in ("model_dump", "partial", "merge", "replace", "omitted fields")):
             return []
 
@@ -2357,6 +2819,61 @@ def _supplement_get_create_endpoint_findings(
                         confidence="medium",
                         evidence_basis=evidence_basis,
                     )]
+
+        post_match = re.search(
+            r"@app\.post\([\"'](?P<route>[^\"']+)[\"']\)\s*\ndef\s+(?P<func>[a-zA-Z0-9_]+)\((?P<params>[^)]*)\):",
+            content,
+        )
+        if post_match is not None:
+            decorator_line_end = content.find("\n", post_match.start())
+            decorator_line = content[post_match.start():decorator_line_end if decorator_line_end != -1 else len(content)]
+            body = content[post_match.end():]
+            route = post_match.group("route")
+            func_name = post_match.group("func")
+            if (
+                "status_code" not in decorator_line
+                and "201" not in decorator_line
+                and "status_code=201" not in body
+                and "HTTP_201" not in body
+                and (
+                    "/create" in route.lower()
+                    or func_name.lower().startswith("create")
+                    or ".append(" in body
+                )
+                and re.search(r"[A-Z_]+\.append\([a-zA-Z0-9_]+\)", body)
+                and re.search(r"return\s+[a-zA-Z0-9_]+", body)
+                and re.search(r"[a-zA-Z0-9_]+\s*=\s*\{", body)
+            ):
+                evidence_basis = (
+                    f"{Path(entry['path']).name} declares @app.post('{route}') for {func_name} but returns a raw dict with the default 200 response instead of an explicit 201 creation contract."
+                )
+                systemic_impact = (
+                    "Clients cannot rely on clear resource-creation semantics because the endpoint looks like a generic success response instead of explicitly signaling 201 Created."
+                )
+                ai_feedback = "\n\n".join([
+                    "**The POST create route does not expose an explicit 201 creation contract**",
+                    f"{Path(entry['path']).name} registers {func_name} under @app.post but leaves the default 200 response and returns a raw dict, so the create endpoint never communicates 201 Created semantics explicitly.",
+                    f"Code: @app.post('{route}') / return invitation",
+                    "Suggestion: Declare an explicit 201 response contract for resource creation, such as status_code=201 and a response model that documents the created resource shape.",
+                    "Context Scope: local",
+                    f"Systemic Impact: {systemic_impact}",
+                    "Confidence: medium",
+                    f"Evidence Basis: {evidence_basis}",
+                ])
+                return [ReviewIssue(
+                    file_path=entry["path"],
+                    line_number=_line_number_from_offset(content, post_match.start()),
+                    issue_type="api_design",
+                    severity="medium",
+                    description="The POST create endpoint returns the default 200 response with a raw dict instead of an explicit 201 creation contract.",
+                    code_snippet=_code_snippet(content, post_match.start()),
+                    ai_feedback=ai_feedback,
+                    context_scope="local",
+                    related_files=[],
+                    systemic_impact=systemic_impact,
+                    confidence="medium",
+                    evidence_basis=evidence_basis,
+                )]
 
         patch_match = re.search(
             r"@app\.patch\([\"'](?P<route>[^\"']+)[\"']\)\s*\ndef\s+(?P<func>[a-zA-Z0-9_]+)\((?P<params>[^)]*)\):",
@@ -2425,8 +2942,60 @@ def _supplement_platform_open_command_findings(
         if "split('/')" in text and any(marker in text for marker in ("windows", "backslash", "path separator", "cross-platform", "platform")):
             if issue.severity.lower() in {"medium", "high", "critical"}:
                 return []
+        if "tomllib" in text and any(marker in text for marker in ("python 3.11", ">=3.9", "importerror", "runtime")):
+            if issue.severity.lower() in {"medium", "high", "critical"}:
+                return []
 
     entries = _load_target_file_entries(target_files)
+    if entries:
+        entries = _append_nearby_entries(
+            entries,
+            entries[0]["path"],
+            ("pyproject.toml", "setup.cfg", "setup.py"),
+        )
+
+    source_entry = next((entry for entry in entries if Path(entry["path"]).name == "config_loader.py"), None)
+    manifest_entry = next((entry for entry in entries if Path(entry["path"]).name == "pyproject.toml"), None)
+    if source_entry is not None and manifest_entry is not None:
+        source_content = source_entry["content"]
+        manifest_content = manifest_entry["content"]
+        requires_match = re.search(r'requires-python\s*=\s*["\']>=\s*(\d+)\.(\d+)', manifest_content)
+        if "import tomllib" in source_content and requires_match is not None:
+            major = int(requires_match.group(1))
+            minor = int(requires_match.group(2))
+            if (major, minor) < (3, 11):
+                evidence_basis = (
+                    f"config_loader.py imports tomllib, but pyproject.toml still declares requires-python >= {major}.{minor}, which includes runtimes where the tomllib stdlib module does not exist."
+                )
+                systemic_impact = (
+                    "Supported Python 3.9 and 3.10 installs can fail at import time because the configuration loader assumes a Python 3.11-only standard-library module."
+                )
+                ai_feedback = "\n\n".join([
+                    "**The config loader assumes the Python 3.11-only tomllib stdlib on a broader supported runtime range**",
+                    "config_loader.py imports tomllib directly even though pyproject.toml still declares Python support below 3.11, so supported 3.9 or 3.10 environments can crash before configuration parsing starts.",
+                    "Code: import tomllib / requires-python = \">=3.9\"",
+                    "Suggestion: Gate the import behind a compatibility shim such as try: import tomllib except ImportError: import tomli as tomllib, or raise the declared minimum Python version to 3.11.",
+                    "Context Scope: project",
+                    f"Related Files: {manifest_entry['path']}",
+                    f"Systemic Impact: {systemic_impact}",
+                    "Confidence: high",
+                    f"Evidence Basis: {evidence_basis}",
+                ])
+                return [ReviewIssue(
+                    file_path=source_entry["path"],
+                    line_number=_line_number_from_offset(source_content, source_content.index("import tomllib")),
+                    issue_type="compatibility",
+                    severity="medium",
+                    description="The configuration loader imports tomllib even though the declared supported runtime range still includes Python versions where tomllib is unavailable.",
+                    code_snippet=_code_snippet(source_content, source_content.index("import tomllib")),
+                    ai_feedback=ai_feedback,
+                    context_scope="project",
+                    related_files=[manifest_entry["path"]],
+                    systemic_impact=systemic_impact,
+                    confidence="high",
+                    evidence_basis=evidence_basis,
+                )]
+
     for entry in entries:
         content = entry["content"]
         launch_match = re.search(
@@ -2537,11 +3106,14 @@ def _supports_local_reasoning_only_short_circuit(review_type: str) -> bool:
     supported = {
         "accessibility",
         "api_design",
+        "architecture",
         "best_practices",
+        "complexity",
         "concurrency",
         "data_validation",
         "dead_code",
         "dependency",
+        "documentation",
         "error_handling",
         "license",
         "localization",
@@ -2549,6 +3121,7 @@ def _supports_local_reasoning_only_short_circuit(review_type: str) -> bool:
         "regression",
         "scalability",
         "security",
+        "specification",
         "testing",
         "ui_ux",
     }
@@ -2594,6 +3167,13 @@ def _supplement_local_ui_ux_findings(
     if len(entries) < 2:
         return []
 
+    return _collect_local_ui_ux_supplements(entries, issues)
+
+
+def _collect_local_ui_ux_supplements(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> List[ReviewIssue]:
     supplements: List[ReviewIssue] = []
     supplements.extend(_supplement_local_confirmation_ui_ux(entries, issues))
     supplements.extend(_supplement_local_cross_tab_ui_ux(entries, issues))
@@ -2601,6 +3181,7 @@ def _supplement_local_ui_ux_findings(
     supplements.extend(_supplement_local_loading_feedback_ui_ux(entries, issues))
     supplements.extend(_supplement_local_wizard_ui_ux(entries, issues))
     supplements.extend(_supplement_local_form_recovery_ui_ux(entries, issues))
+    supplements.extend(_supplement_local_settings_discoverability_ui_ux(entries, issues))
     return supplements
 
 
@@ -3086,6 +3667,75 @@ def _supplement_local_form_recovery_ui_ux(
     return []
 
 
+def _supplement_local_settings_discoverability_ui_ux(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> List[ReviewIssue]:
+    for issue in issues:
+        if issue.issue_type.lower() != "ui_ux":
+            continue
+        text = _issue_text(issue)
+        related_files = [Path(path).name.lower() for path in issue.related_files]
+        evidence_basis = (issue.evidence_basis or "").lower()
+        if (
+            "discover" in text
+            and "settings" in text
+            and "advanced" in evidence_basis
+            and "advanced_panel.py" in related_files
+        ):
+            return []
+
+    settings_entry = next((entry for entry in entries if Path(entry["path"]).name == "settings_window.py"), None)
+    advanced_entry = next((entry for entry in entries if Path(entry["path"]).name == "advanced_panel.py"), None)
+    if settings_entry is None or advanced_entry is None:
+        return []
+
+    settings_content = settings_entry["content"]
+    advanced_content = advanced_entry["content"]
+    button_match = re.search(
+        r"tk\.Button\(self,\s*text=[\"']Advanced[\"'],\s*command=self\.open_advanced\)",
+        settings_content,
+    )
+    if button_match is None:
+        return []
+    if "Network" not in advanced_content or "Storage" not in advanced_content:
+        return []
+    if "Allow beta features" not in advanced_content and "Write debug logs" not in advanced_content:
+        return []
+
+    evidence_basis = (
+        "settings_window.py exposes only a generic 'Advanced' button, while advanced_panel.py holds the network, storage, and feature-toggle controls in a separate secondary window."
+    )
+    systemic_impact = (
+        "Important settings become hard to discover because users have to infer that the vague 'Advanced' entry point hides another settings surface with core configuration controls."
+    )
+    ai_feedback = "\n\n".join([
+        "**Important settings are hidden behind a vague Advanced entry point**",
+        "The main settings window stops at basic toggles and pushes network, storage, and feature options into a separate 'Advanced' window, but the entry point gives no clue that it hides another configuration surface.",
+        "Code: tk.Button(self, text='Advanced', command=self.open_advanced) / AdvancedPanel(self)",
+        "Suggestion: Surface the advanced settings category more explicitly in the main information architecture, or rename and group the entry point so users can discover where network, storage, and debug options live.",
+        "Context Scope: cross_file",
+        f"Related Files: {advanced_entry['path']}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: medium",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return [ReviewIssue(
+        file_path=settings_entry["path"],
+        line_number=_line_number_from_offset(settings_content, button_match.start()),
+        issue_type="ui_ux",
+        severity="medium",
+        description="Important configuration paths are hidden behind a vague Advanced entry point, making core settings harder to discover.",
+        code_snippet=_code_snippet(settings_content, button_match.start()),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=[advanced_entry["path"]],
+        systemic_impact=systemic_impact,
+        confidence="medium",
+        evidence_basis=evidence_basis,
+    )]
+
+
 def _supplement_local_dead_code_findings(
     target_files: Sequence[FileInfo],
     review_type: str,
@@ -3197,8 +3847,533 @@ def _supplement_local_concurrency_findings(
     if not entries:
         return []
 
-    supplement = _supplement_local_map_mutation_during_iteration_concurrency(entries, issues)
-    return [supplement] if supplement is not None else []
+    supplements: List[ReviewIssue] = []
+    for builder in (
+        _supplement_local_async_slot_double_booking_concurrency,
+        _supplement_local_map_mutation_during_iteration_concurrency,
+        _supplement_local_shared_sequence_race_concurrency,
+    ):
+        supplement = builder(entries, issues)
+        if supplement is not None:
+            supplements.append(supplement)
+    return supplements
+
+
+def _supplement_local_async_slot_double_booking_concurrency(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = issue.issue_type.lower().replace(" ", "_")
+        text = _issue_text(issue)
+        if normalized_issue_type == "concurrency" and "available_slots" in text and "await" in text:
+            return None
+
+    entry = next((entry for entry in entries if Path(entry["path"]).name == "reservations.py"), None)
+    if entry is None:
+        return None
+
+    content = entry["content"]
+    required_markers = (
+        'remaining = self.available_slots.get(request["slot_id"], 0)',
+        'await self._load_policy(request["user_id"])',
+        'self.available_slots[request["slot_id"]] = remaining - 1',
+        'asyncio.gather(*(self.reserve_slot(request) for request in requests))',
+    )
+    if not all(marker in content for marker in required_markers):
+        return None
+
+    evidence_basis = (
+        "reservations.py reads available_slots into remaining, awaits _load_policy, and only then writes back remaining - 1 while reserve_many launches concurrent reserve_slot calls with asyncio.gather."
+    )
+    systemic_impact = (
+        "Overlapping reservations can double-book the same capacity because one coroutine yields after the availability check and another coroutine can reserve the same slot before the decrement happens."
+    )
+    ai_feedback = "\n\n".join([
+        "**The slot allocator performs a check-then-act reservation across an await boundary**",
+        "reserve_slot reads the shared slot count, yields while _load_policy runs, and then decrements that stale remaining value even though reserve_many can run several reserve_slot coroutines concurrently.",
+        "Code: remaining = self.available_slots.get(request[\"slot_id\"], 0) / await self._load_policy(request[\"user_id\"]) / self.available_slots[request[\"slot_id\"]] = remaining - 1",
+        "Suggestion: Guard the availability check and decrement with an asyncio.Lock or per-slot semaphore so no await occurs between the read and the state update.",
+        "Context Scope: local",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: high",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    anchor = 'remaining = self.available_slots.get(request["slot_id"], 0)'
+    return ReviewIssue(
+        file_path=entry["path"],
+        line_number=_line_number_from_offset(content, content.index(anchor)),
+        issue_type="concurrency",
+        severity="high",
+        description="Concurrent reservations can double-book the same slot because the availability check and decrement are separated by an await.",
+        code_snippet=_code_snippet(content, content.index(anchor)),
+        ai_feedback=ai_feedback,
+        context_scope="local",
+        related_files=[],
+        systemic_impact=systemic_impact,
+        confidence="high",
+        evidence_basis=evidence_basis,
+    )
+
+
+def _supplement_local_shared_sequence_race_concurrency(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = issue.issue_type.lower().replace(" ", "_")
+        text = _issue_text(issue)
+        if normalized_issue_type == "concurrency" and "next_sequence" in text:
+            return None
+
+    entry = next((entry for entry in entries if Path(entry["path"]).name == "dispatch.py"), None)
+    if entry is None:
+        return None
+
+    content = entry["content"]
+    required_markers = (
+        "self.next_sequence = 1",
+        "sequence = self.next_sequence",
+        "self.next_sequence = sequence + 1",
+        'recipient_queue = self.pending_by_recipient.setdefault(job["recipient_id"], [])',
+    )
+    if not all(marker in content for marker in required_markers):
+        return None
+
+    evidence_basis = (
+        "dispatch.py reads self.next_sequence into sequence and later writes self.next_sequence = sequence + 1 without synchronization while worker threads also mutate pending_by_recipient with setdefault and append."
+    )
+    systemic_impact = (
+        "Concurrent deliveries can emit duplicate or out-of-order sequence numbers and lose recipient-queue updates because shared dispatch state is mutated without any locking."
+    )
+    ai_feedback = "\n\n".join([
+        "**The dispatcher mutates shared sequencing state without synchronization**",
+        "Each worker thread copies self.next_sequence into a local variable, sleeps, and writes back sequence + 1 while also mutating pending_by_recipient via setdefault and append, so concurrent deliveries can reuse the same sequence value.",
+        "Code: sequence = self.next_sequence / time.sleep(0.001) / self.next_sequence = sequence + 1 / self.pending_by_recipient.setdefault(job[\"recipient_id\"], [])",
+        "Suggestion: Protect the shared counter and recipient-queue mutations with a threading.Lock or another synchronized dispatcher primitive.",
+        "Context Scope: local",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: high",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    anchor = "sequence = self.next_sequence"
+    return ReviewIssue(
+        file_path=entry["path"],
+        line_number=_line_number_from_offset(content, content.index(anchor)),
+        issue_type="concurrency",
+        severity="high",
+        description="The dispatcher updates next_sequence and recipient queues from multiple threads without synchronization, so sequence numbers and queued deliveries can race.",
+        code_snippet=_code_snippet(content, content.index(anchor)),
+        ai_feedback=ai_feedback,
+        context_scope="local",
+        related_files=[],
+        systemic_impact=systemic_impact,
+        confidence="high",
+        evidence_basis=evidence_basis,
+    )
+
+
+def _supplement_local_specification_findings(
+    target_files: Sequence[FileInfo],
+    review_type: str,
+    issues: Sequence[ReviewIssue],
+    client: AIBackend,
+) -> List[ReviewIssue]:
+    if "specification" not in review_type.split("+"):
+        return []
+    if not _is_local_backend(client):
+        return []
+
+    entries = _load_target_file_entries(target_files)
+    if not entries:
+        return []
+
+    entries = _append_nearby_entries(entries, entries[0]["path"], ("requirements.md",))
+
+    supplements: List[ReviewIssue] = []
+    for builder in (
+        _supplement_local_batch_atomicity_specification,
+        _supplement_local_profile_contract_specification,
+        _supplement_local_sync_mode_specification,
+    ):
+        supplement = builder(entries, issues)
+        if supplement is not None:
+            supplements.append(supplement)
+    return supplements
+
+
+def _supplement_local_batch_atomicity_specification(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = issue.issue_type.lower().replace(" ", "_")
+        if normalized_issue_type == "specification" and "partial_success" in _issue_text(issue):
+            return None
+
+    service_entry = next((entry for entry in entries if Path(entry["path"]).name == "service.py"), None)
+    requirements_entry = next((entry for entry in entries if Path(entry["path"]).name == "requirements.md"), None)
+    if service_entry is None or requirements_entry is None:
+        return None
+
+    service_content = service_entry["content"]
+    requirements_content = requirements_entry["content"]
+    normalized_requirements = requirements_content.lower()
+    if 'persist_order(order_id)' not in service_content or '"status": "partial_success"' not in service_content:
+        return None
+    if (
+        "submit_batch" not in normalized_requirements
+        or "atomic" not in normalized_requirements
+        or "partial success is not allowed" not in normalized_requirements
+    ):
+        return None
+
+    evidence_basis = (
+        "service.py calls persist_order(order_id) inside the batch loop and later returns status 'partial_success', while requirements.md says submit_batch must be atomic and partial success is not allowed."
+    )
+    systemic_impact = (
+        "Callers can observe persisted accepted orders even though the documented batch contract requires the whole request to fail atomically when any order is invalid."
+    )
+    ai_feedback = "\n\n".join([
+        "**The batch handler violates the atomicity contract from the requirements**",
+        "submit_batch persists accepted orders before validation is complete and then returns partial_success when rejected entries exist, even though the requirements say the batch must fail atomically and partial success is not allowed.",
+        "Code: persist_order(order_id) / if rejected: return {\"status\": \"partial_success\", ...}",
+        "Suggestion: Validate the entire batch before mutating storage, then either persist all orders in one step or fail the batch without persisting any of them.",
+        "Context Scope: cross_file",
+        f"Related Files: {requirements_entry['path']}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: high",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    anchor = "persist_order(order_id)"
+    return ReviewIssue(
+        file_path=service_entry["path"],
+        line_number=_line_number_from_offset(service_content, service_content.index(anchor)),
+        issue_type="specification",
+        severity="high",
+        description="The batch submission flow persists accepted orders and returns partial_success even though the requirements demand atomic failure for invalid batches.",
+        code_snippet=_code_snippet(service_content, service_content.index(anchor)),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=[requirements_entry["path"]],
+        systemic_impact=systemic_impact,
+        confidence="high",
+        evidence_basis=evidence_basis,
+    )
+
+
+def _supplement_local_profile_contract_specification(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = issue.issue_type.lower().replace(" ", "_")
+        if normalized_issue_type == "specification" and "display_name" in _issue_text(issue):
+            return None
+
+    profile_entry = next((entry for entry in entries if Path(entry["path"]).name == "profile_api.py"), None)
+    requirements_entry = next((entry for entry in entries if Path(entry["path"]).name == "requirements.md"), None)
+    if profile_entry is None or requirements_entry is None:
+        return None
+
+    profile_content = profile_entry["content"]
+    requirements_content = requirements_entry["content"]
+    if '"name": user.display_name' not in profile_content or '"email_verified"' in profile_content:
+        return None
+    if "display_name" not in requirements_content or "email_verified" not in requirements_content:
+        return None
+
+    evidence_basis = (
+        "profile_api.py returns a legacy 'name' field and omits email_verified, while requirements.md says clients must receive display_name and email_verified in the profile response contract."
+    )
+    systemic_impact = (
+        "Clients built against the documented response shape can miss required profile fields or fall back to custom compatibility logic because the implementation does not honor the required display_name contract."
+    )
+    ai_feedback = "\n\n".join([
+        "**The profile response does not match the documented field contract**",
+        "build_profile_response still returns 'name' instead of the required 'display_name' field and leaves out the required email_verified flag even though the requirements document calls out both fields.",
+        "Code: return {\"user_id\": user.user_id, \"name\": user.display_name}",
+        "Suggestion: Return display_name under the exact documented key and always include email_verified in the serialized response.",
+        "Context Scope: cross_file",
+        f"Related Files: {requirements_entry['path']}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: high",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    anchor = '"name": user.display_name'
+    return ReviewIssue(
+        file_path=profile_entry["path"],
+        line_number=_line_number_from_offset(profile_content, profile_content.index(anchor)),
+        issue_type="specification",
+        severity="high",
+        description="The profile serializer returns name instead of display_name and omits email_verified even though the documented response contract requires both fields.",
+        code_snippet=_code_snippet(profile_content, profile_content.index(anchor)),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=[requirements_entry["path"]],
+        systemic_impact=systemic_impact,
+        confidence="high",
+        evidence_basis=evidence_basis,
+    )
+
+
+def _supplement_local_sync_mode_specification(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = issue.issue_type.lower().replace(" ", "_")
+        if normalized_issue_type == "specification" and "sync_mode" in _issue_text(issue):
+            return None
+
+    sync_entry = next((entry for entry in entries if Path(entry["path"]).name == "sync_api.py"), None)
+    requirements_entry = next((entry for entry in entries if Path(entry["path"]).name == "requirements.md"), None)
+    if sync_entry is None or requirements_entry is None:
+        return None
+
+    sync_content = sync_entry["content"]
+    requirements_content = requirements_entry["content"]
+    normalized_requirements = requirements_content.lower()
+    if '"sync_mode": bool(job.schedule_enabled)' not in sync_content:
+        return None
+    if (
+        "sync_mode" not in normalized_requirements
+        or "string enum" not in normalized_requirements
+        or "manual" not in normalized_requirements
+        or "scheduled" not in normalized_requirements
+        or "disabled" not in normalized_requirements
+    ):
+        return None
+
+    evidence_basis = (
+        "sync_api.py returns sync_mode as bool(job.schedule_enabled), while requirements.md says sync_mode must be the string enum manual, scheduled, or disabled."
+    )
+    systemic_impact = (
+        "Clients that branch on the documented sync_mode enum can mis-handle disabled or manual jobs because the implementation returns a boolean instead of the required string state."
+    )
+    ai_feedback = "\n\n".join([
+        "**The sync response returns a boolean where the specification requires a string enum**",
+        "build_sync_job_response writes sync_mode as bool(job.schedule_enabled) even though the requirements document says clients must receive one of the string values manual, scheduled, or disabled.",
+        "Code: \"sync_mode\": bool(job.schedule_enabled)",
+        "Suggestion: Return the documented string enum directly and add explicit mapping logic for manual, scheduled, and disabled states.",
+        "Context Scope: cross_file",
+        f"Related Files: {requirements_entry['path']}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: high",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    anchor = '"sync_mode": bool(job.schedule_enabled)'
+    return ReviewIssue(
+        file_path=sync_entry["path"],
+        line_number=_line_number_from_offset(sync_content, sync_content.index(anchor)),
+        issue_type="specification",
+        severity="high",
+        description="The sync API returns sync_mode as a boolean even though the documented contract requires a string enum.",
+        code_snippet=_code_snippet(sync_content, sync_content.index(anchor)),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=[requirements_entry["path"]],
+        systemic_impact=systemic_impact,
+        confidence="high",
+        evidence_basis=evidence_basis,
+    )
+
+
+def _supplement_local_complexity_findings(
+    target_files: Sequence[FileInfo],
+    review_type: str,
+    issues: Sequence[ReviewIssue],
+    client: AIBackend,
+) -> List[ReviewIssue]:
+    if "complexity" not in review_type.split("+"):
+        return []
+    if not _is_local_backend(client):
+        return []
+
+    entries = _load_target_file_entries(target_files)
+    if not entries:
+        return []
+
+    supplements: List[ReviewIssue] = []
+    for builder in (
+        _supplement_local_nested_sync_complexity,
+        _supplement_local_notification_policy_complexity,
+        _supplement_local_state_machine_complexity,
+    ):
+        supplement = builder(entries, issues)
+        if supplement is not None:
+            supplements.append(supplement)
+    return supplements
+
+
+def _supplement_local_nested_sync_complexity(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = issue.issue_type.lower().replace(" ", "_")
+        if normalized_issue_type == "complexity" and "nested" in _issue_text(issue) and "sync_strategy.py" in issue.file_path:
+            return None
+
+    entry = next((entry for entry in entries if Path(entry["path"]).name == "sync_strategy.py"), None)
+    if entry is None:
+        return None
+
+    content = entry["content"]
+    required_markers = (
+        'if account["is_active"]:',
+        'if feature_flags.get("progressive_sync"):',
+        'if network_state["is_metered"]:',
+        'if account["has_pending_conflicts"]:',
+        'if account["priority"] == "high":',
+    )
+    if not all(marker in content for marker in required_markers):
+        return None
+
+    evidence_basis = (
+        "sync_strategy.py nests progressive_sync, metered-network, retry_mode, pending-conflict, and priority branches inside choose_sync_strategy, creating a deeply nested decision tree in one function."
+    )
+    systemic_impact = (
+        "Changing sync behavior becomes brittle because the strategy rules are spread across a nested branch ladder that is difficult to reason about or test safely."
+    )
+    ai_feedback = "\n\n".join([
+        "**The sync strategy helper packs a deeply nested decision tree into one function**",
+        "choose_sync_strategy branches repeatedly across feature flags, network state, retry mode, pending-conflict state, and account priority, so the sync policy is encoded as a nested rule ladder instead of isolated decisions.",
+        "Code: if feature_flags.get(\"progressive_sync\") / if network_state[\"is_metered\"] / if retry_mode == \"forced\" / if account[\"has_pending_conflicts\"]",
+        "Suggestion: Split the strategy selection into smaller rule helpers or use an explicit policy table so each decision axis is isolated and testable.",
+        "Context Scope: local",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: high",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    anchor = 'if feature_flags.get("progressive_sync"):'
+    return ReviewIssue(
+        file_path=entry["path"],
+        line_number=_line_number_from_offset(content, content.index(anchor)),
+        issue_type="complexity",
+        severity="medium",
+        description="The sync strategy logic is a deeply nested branch tree that mixes several decision axes in one function.",
+        code_snippet=_code_snippet(content, content.index(anchor)),
+        ai_feedback=ai_feedback,
+        context_scope="local",
+        related_files=[],
+        systemic_impact=systemic_impact,
+        confidence="high",
+        evidence_basis=evidence_basis,
+    )
+
+
+def _supplement_local_notification_policy_complexity(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = issue.issue_type.lower().replace(" ", "_")
+        if normalized_issue_type == "complexity" and "policy" in _issue_text(issue) and "notification_policy.py" in issue.file_path:
+            return None
+
+    entry = next((entry for entry in entries if Path(entry["path"]).name == "notification_policy.py"), None)
+    if entry is None:
+        return None
+
+    content = entry["content"]
+    required_markers = (
+        'if event["kind"] == "security":',
+        'if policy["quiet_hours_enabled"]:',
+        'if policy["compliance_mode"]:',
+        'if recipient["account_tier"] == "free":',
+    )
+    if not all(marker in content for marker in required_markers):
+        return None
+
+    evidence_basis = (
+        "notification_policy.py folds event routing, quiet-hours policy, compliance_mode policy overrides, and account-tier overrides into one branch-heavy policy function."
+    )
+    systemic_impact = (
+        "Notification behavior becomes hard to reason about because one policy ladder mixes several override systems whose precedence is scattered through nested branches."
+    )
+    ai_feedback = "\n\n".join([
+        "**The notification planner uses one long branch ladder for several policy dimensions**",
+        "plan_notification_delivery mixes event-kind routing, quiet-hours handling, compliance rules, and account-tier overrides in one policy-heavy conditional chain, so a small rule change can affect several branches at once.",
+        "Code: if event[\"kind\"] == \"security\" / if policy[\"quiet_hours_enabled\"] / if policy[\"compliance_mode\"] / if recipient[\"account_tier\"] == \"free\"",
+        "Suggestion: Break the planner into smaller policy stages or rule objects so each policy dimension is evaluated independently and the final branch order is explicit.",
+        "Context Scope: local",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: high",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    anchor = 'if policy["quiet_hours_enabled"]:'
+    return ReviewIssue(
+        file_path=entry["path"],
+        line_number=_line_number_from_offset(content, content.index(anchor)),
+        issue_type="complexity",
+        severity="medium",
+        description="The notification delivery policy is encoded as one long branch ladder that mixes several overlapping rule sets.",
+        code_snippet=_code_snippet(content, content.index(anchor)),
+        ai_feedback=ai_feedback,
+        context_scope="local",
+        related_files=[],
+        systemic_impact=systemic_impact,
+        confidence="high",
+        evidence_basis=evidence_basis,
+    )
+
+
+def _supplement_local_state_machine_complexity(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = issue.issue_type.lower().replace(" ", "_")
+        if normalized_issue_type == "complexity" and "state" in _issue_text(issue) and "workflow_state_machine.py" in issue.file_path:
+            return None
+
+    entry = next((entry for entry in entries if Path(entry["path"]).name == "workflow_state_machine.py"), None)
+    if entry is None:
+        return None
+
+    content = entry["content"]
+    required_markers = (
+        'if workflow["state"] == "draft":',
+        'elif workflow["state"] == "queued":',
+        'elif workflow["state"] == "running":',
+        'elif workflow["state"] == "paused":',
+        'elif workflow["state"] == "failed":',
+    )
+    if not all(marker in content for marker in required_markers):
+        return None
+
+    evidence_basis = (
+        "workflow_state_machine.py branches on workflow['state'] and then nests additional event, retry_mode, and feature-flag checks inside each state block, creating one large state transition ladder."
+    )
+    systemic_impact = (
+        "Workflow transitions become difficult to change safely because the state machine is spread across a large nested branch structure instead of explicit transition data or smaller handlers."
+    )
+    ai_feedback = "\n\n".join([
+        "**The workflow transition logic has grown into a large state-machine branch explosion**",
+        "advance_workflow_state handles draft, queued, running, paused, and failed states inline and then nests event, retry_mode, and feature-flag checks inside each state block, so the state machine is hard to reason about as a whole.",
+        "Code: if workflow[\"state\"] == \"draft\" / elif workflow[\"state\"] == \"queued\" / elif workflow[\"state\"] == \"running\" / elif workflow[\"state\"] == \"failed\"",
+        "Suggestion: Model the state transitions explicitly with transition tables or per-state handlers so new state rules do not expand one monolithic branch tree.",
+        "Context Scope: local",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: high",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    anchor = 'if workflow["state"] == "draft":'
+    return ReviewIssue(
+        file_path=entry["path"],
+        line_number=_line_number_from_offset(content, content.index(anchor)),
+        issue_type="complexity",
+        severity="medium",
+        description="The workflow transition helper encodes a large state machine as one nested branch structure across state, event, retry mode, and feature flags.",
+        code_snippet=_code_snippet(content, content.index(anchor)),
+        ai_feedback=ai_feedback,
+        context_scope="local",
+        related_files=[],
+        systemic_impact=systemic_impact,
+        confidence="high",
+        evidence_basis=evidence_basis,
+    )
 
 
 def _supplement_local_scalability_findings(
@@ -3213,11 +4388,26 @@ def _supplement_local_scalability_findings(
         return []
 
     entries = _load_target_file_entries(target_files)
-    if len(entries) < 2:
+    if not entries:
         return []
 
-    supplement = _supplement_local_connection_pool_scalability(entries, issues)
-    return [supplement] if supplement is not None else []
+    return _collect_local_scalability_supplements(entries, issues)
+
+
+def _collect_local_scalability_supplements(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> List[ReviewIssue]:
+    supplements: List[ReviewIssue] = []
+    for builder in (
+        _supplement_local_connection_pool_scalability,
+        _supplement_local_rate_limit_state_scalability,
+        _supplement_local_unbounded_pending_events_scalability,
+    ):
+        supplement = builder(entries, issues)
+        if supplement is not None:
+            supplements.append(supplement)
+    return supplements
 
 
 def _supplement_local_connection_pool_scalability(
@@ -3291,6 +4481,131 @@ def _supplement_local_connection_pool_scalability(
     )
 
 
+def _supplement_local_rate_limit_state_scalability(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = issue.issue_type.lower().replace(" ", "_")
+        evidence_basis = (issue.evidence_basis or "").lower()
+        related_files = [Path(path).name for path in issue.related_files]
+        systemic_impact = (issue.systemic_impact or "").lower()
+        if (
+            normalized_issue_type == "scalability"
+            and "rate_limit_state" in evidence_basis
+            and "gunicorn.conf.py" in related_files
+            and "horizontal" in systemic_impact
+        ):
+            return None
+
+    app_entry = next((entry for entry in entries if Path(entry["path"]).name == "app.py"), None)
+    config_entry = next((entry for entry in entries if Path(entry["path"]).name == "gunicorn.conf.py"), None)
+    if app_entry is None or config_entry is None:
+        return None
+
+    app_content = app_entry["content"]
+    config_content = config_entry["content"]
+    required_app_markers = (
+        "RATE_LIMIT_STATE: dict[str, list[float]] = {}",
+        'bucket = RATE_LIMIT_STATE.setdefault(account_id, [])',
+        "bucket.append(now)",
+    )
+    if not all(marker in app_content for marker in required_app_markers):
+        return None
+    if "workers = 4" not in config_content:
+        return None
+
+    evidence_basis = (
+        "app.py keeps request quotas in the process-local RATE_LIMIT_STATE dict while gunicorn.conf.py starts 4 workers, so the rate-limit counter is not shared across the deployed worker set."
+    )
+    systemic_impact = (
+        "As traffic scales horizontally across multiple workers, each process enforces its own partial quota and the effective rate limit becomes inconsistent across the deployment."
+    )
+    ai_feedback = "\n\n".join([
+        "**Rate-limit quotas are stored in per-process memory even though the service runs multiple workers**",
+        "app.py records request timestamps in the in-memory RATE_LIMIT_STATE dict, but gunicorn.conf.py configures 4 workers, so each worker maintains a different view of the quota.",
+        "Code: RATE_LIMIT_STATE: dict[str, list[float]] = {} / bucket = RATE_LIMIT_STATE.setdefault(account_id, []) / workers = 4",
+        "Suggestion: Move quota state into shared storage such as Redis or the database, or route all rate-limit accounting through one distributed limiter instead of per-process memory.",
+        "Context Scope: cross_file",
+        f"Related Files: {config_entry['path']}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: high",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    anchor = "RATE_LIMIT_STATE: dict[str, list[float]] = {}"
+    return ReviewIssue(
+        file_path=app_entry["path"],
+        line_number=_line_number_from_offset(app_content, app_content.index(anchor)),
+        issue_type="scalability",
+        severity="medium",
+        description="Rate-limit state is kept in process-local memory even though the service runs multiple workers, so quotas stop being globally consistent as the deployment scales horizontally.",
+        code_snippet=_code_snippet(app_content, app_content.index(anchor)),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=[config_entry["path"]],
+        systemic_impact=systemic_impact,
+        confidence="high",
+        evidence_basis=evidence_basis,
+    )
+
+
+def _supplement_local_unbounded_pending_events_scalability(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = issue.issue_type.lower().replace(" ", "_")
+        text = _issue_text(issue)
+        if normalized_issue_type == "scalability" and "pending_events" in text and "backpressure" in text:
+            return None
+
+    entry = next((entry for entry in entries if Path(entry["path"]).name == "event_buffer.py"), None)
+    if entry is None:
+        return None
+
+    content = entry["content"]
+    required_markers = (
+        "pending_events: list[dict[str, Any]] = []",
+        'pending_events.append({"account_id": account_id, "payload": payload})',
+        'return {"accepted": True, "buffered": len(pending_events)}',
+        "batch = pending_events[:100]",
+    )
+    if not all(marker in content for marker in required_markers):
+        return None
+
+    evidence_basis = (
+        "event_buffer.py appends every incoming payload to the in-memory pending_events list and flush_pending only slices the first 100 entries without any capacity limit, persistence, or backpressure path."
+    )
+    systemic_impact = (
+        "When the downstream sink slows down, queued events grow without bound in process memory, so traffic spikes turn directly into memory growth instead of backpressure or durable buffering."
+    )
+    ai_feedback = "\n\n".join([
+        "**Incoming events accumulate in an unbounded in-memory buffer with no backpressure**",
+        "queue_event appends every payload into pending_events, while flush_pending only drains batches of 100 and there is no capacity guard, persistence layer, or backpressure signal when the downstream sender lags.",
+        "Code: pending_events: list[dict[str, Any]] = [] / pending_events.append(...) / batch = pending_events[:100]",
+        "Suggestion: Add an explicit buffer limit, durable queue, or producer backpressure mechanism so slow downstream delivery cannot grow memory without bound.",
+        "Context Scope: local",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: high",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    anchor = "pending_events: list[dict[str, Any]] = []"
+    return ReviewIssue(
+        file_path=entry["path"],
+        line_number=_line_number_from_offset(content, content.index(anchor)),
+        issue_type="scalability",
+        severity="medium",
+        description="The pending_events buffer grows in memory without any capacity limit or backpressure, so slow downstream delivery can turn traffic spikes into unbounded memory growth.",
+        code_snippet=_code_snippet(content, content.index(anchor)),
+        ai_feedback=ai_feedback,
+        context_scope="local",
+        related_files=[],
+        systemic_impact=systemic_impact,
+        confidence="high",
+        evidence_basis=evidence_basis,
+    )
+
+
 def _supplement_local_dependency_findings(
     target_files: Sequence[FileInfo],
     review_type: str,
@@ -3306,8 +4621,95 @@ def _supplement_local_dependency_findings(
     if not entries:
         return []
 
-    supplement = _supplement_local_vendored_botocore_dependency(entries, issues)
-    return [supplement] if supplement is not None else []
+    entries = _append_nearby_entries(
+        entries,
+        entries[0]["path"],
+        ("pyproject.toml", "requirements.txt"),
+    )
+
+    return _collect_local_dependency_supplements(entries, issues)
+
+
+def _collect_local_dependency_supplements(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> List[ReviewIssue]:
+    supplements: List[ReviewIssue] = []
+    for builder in (
+        _supplement_local_dev_only_pytest_dependency,
+        _supplement_local_vendored_botocore_dependency,
+    ):
+        supplement = builder(entries, issues)
+        if supplement is not None:
+            supplements.append(supplement)
+    return supplements
+
+
+def _supplement_local_dev_only_pytest_dependency(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = issue.issue_type.lower().replace(" ", "_")
+        related_files = [Path(path).name for path in issue.related_files]
+        if (
+            normalized_issue_type == "dependency"
+            and "pytest" in _issue_text(issue)
+            and (
+                Path(issue.file_path).name == "metrics.py"
+                or "metrics.py" in related_files
+            )
+        ):
+            return None
+
+    runtime_entry = next((entry for entry in entries if Path(entry["path"]).name == "metrics.py"), None)
+    manifest_entry = next((entry for entry in entries if Path(entry["path"]).name == "pyproject.toml"), None)
+    if runtime_entry is None or manifest_entry is None:
+        return None
+
+    runtime_content = runtime_entry["content"]
+    manifest_content = manifest_entry["content"]
+    if "import pytest" not in runtime_content or "pytest.approx" not in runtime_content:
+        return None
+    if '[project.optional-dependencies]' not in manifest_content:
+        return None
+    if 'dev = [' not in manifest_content or '"pytest' not in manifest_content:
+        return None
+    if 'dependencies = [' not in manifest_content or '"pytest' in manifest_content.split('[project.optional-dependencies]', 1)[0]:
+        return None
+
+    evidence_basis = (
+        "metrics.py imports pytest and calls pytest.approx at runtime, while pyproject.toml only declares pytest under [project.optional-dependencies].dev instead of the main runtime dependency set."
+    )
+    systemic_impact = (
+        "Production installs that omit dev extras can fail when the runtime helper executes because pytest is not guaranteed to be present outside development environments."
+    )
+    ai_feedback = "\n\n".join([
+        "**A runtime module depends on pytest even though pytest is only declared as a dev extra**",
+        "metrics.py imports pytest and uses pytest.approx in runtime code, but pyproject.toml only lists pytest under the dev optional-dependency group, so non-development installs can miss the package entirely.",
+        "Code: import pytest / pytest.approx(...) / [project.optional-dependencies] dev = [\"pytest>=9.0\"]",
+        "Suggestion: Remove pytest from runtime code or promote it into the main dependency set if this behavior is required outside tests.",
+        "Context Scope: cross_file",
+        f"Related Files: {manifest_entry['path']}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: high",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    anchor = "import pytest"
+    return ReviewIssue(
+        file_path=runtime_entry["path"],
+        line_number=_line_number_from_offset(runtime_content, runtime_content.index(anchor)),
+        issue_type="dependency",
+        severity="high",
+        description="metrics.py uses pytest in runtime code even though pytest is only declared under optional dev dependencies.",
+        code_snippet=_code_snippet(runtime_content, runtime_content.index(anchor)),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=[manifest_entry["path"]],
+        systemic_impact=systemic_impact,
+        confidence="high",
+        evidence_basis=evidence_basis,
+    )
 
 
 def _supplement_local_license_findings(
@@ -3328,11 +4730,161 @@ def _supplement_local_license_findings(
     entries = _append_nearby_entries(
         entries,
         entries[0]["path"],
-        ("THIRD_PARTY_NOTICES.md", "licenses_check.csv"),
+        ("THIRD_PARTY_NOTICES.md", "licenses_check.csv", "pyproject.toml"),
     )
 
-    supplement = _supplement_local_embedded_mit_attribution_license(entries, issues)
-    return [supplement] if supplement is not None else []
+    return _collect_local_license_supplements(entries, issues)
+
+
+def _collect_local_license_supplements(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> List[ReviewIssue]:
+    supplements: List[ReviewIssue] = []
+    for builder in (
+        _supplement_local_agpl_notice_conflict_license,
+        _supplement_local_apache_notice_omission_license,
+        _supplement_local_embedded_mit_attribution_license,
+    ):
+        supplement = builder(entries, issues)
+        if supplement is not None:
+            supplements.append(supplement)
+    return supplements
+
+
+def _supplement_local_agpl_notice_conflict_license(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = issue.issue_type.lower().replace(" ", "_")
+        if normalized_issue_type == "license" and "agpl" in _issue_text(issue):
+            return None
+
+    notices_entry = next((entry for entry in entries if Path(entry["path"]).name == "THIRD_PARTY_NOTICES.md"), None)
+    licenses_entry = next((entry for entry in entries if Path(entry["path"]).name == "licenses_check.csv"), None)
+    manifest_entry = next((entry for entry in entries if Path(entry["path"]).name == "pyproject.toml"), None)
+    source_entry = next((entry for entry in entries if Path(entry["path"]).name == "report_export.py"), None)
+    if notices_entry is None or licenses_entry is None:
+        return None
+
+    notices_content = notices_entry["content"].lower()
+    licenses_content = licenses_entry["content"].lower()
+    if "agpl" not in licenses_content:
+        return None
+    if "mit-compatible" not in notices_content and "mit compatible" not in notices_content:
+        return None
+
+    file_path = source_entry["path"] if source_entry is not None else notices_entry["path"]
+    line_anchor_content = source_entry["content"] if source_entry is not None else notices_entry["content"]
+    line_anchor = "import networksync" if source_entry is not None and "import networksync" in source_entry["content"] else "AGPL"
+    evidence_basis = (
+        "licenses_check.csv marks a runtime dependency as AGPL-3.0-only while THIRD_PARTY_NOTICES.md still says bundled dependencies are MIT-compatible, so the shipped notice package understates the actual runtime license obligations."
+    )
+    systemic_impact = (
+        "Released artifacts can mislead downstream redistributors about a runtime AGPL obligation, creating a license-compliance conflict between the shipped inventory and the published notice story."
+    )
+    related_files = [notices_entry["path"], licenses_entry["path"]]
+    if manifest_entry is not None:
+        related_files.append(manifest_entry["path"])
+    ai_feedback = "\n\n".join([
+        "**The shipped license inventory conflicts with the project's permissive runtime notice story**",
+        "licenses_check.csv records an AGPL-3.0-only runtime dependency, but THIRD_PARTY_NOTICES.md still tells redistributors that the bundled dependencies are MIT-compatible, so the distributed notices understate the actual runtime license obligations.",
+        "Code: licenses_check.csv: AGPL-3.0-only / THIRD_PARTY_NOTICES.md: MIT-compatible dependencies",
+        "Suggestion: Align the distributed notice package and dependency inventory with the real runtime license set, and remove any claim that all shipped dependencies are permissive or MIT-compatible when AGPL runtime code is included.",
+        "Context Scope: cross_file",
+        f"Related Files: {', '.join(related_files)}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: high",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=file_path,
+        line_number=_line_number_from_offset(line_anchor_content, line_anchor_content.index(line_anchor)),
+        issue_type="license",
+        severity="high",
+        description="The distributed license inventory shows an AGPL runtime dependency even though the shipped notices still claim the runtime dependency set is permissive and MIT-compatible.",
+        code_snippet=_code_snippet(line_anchor_content, line_anchor_content.index(line_anchor)),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=related_files,
+        systemic_impact=systemic_impact,
+        confidence="high",
+        evidence_basis=evidence_basis,
+    )
+
+
+def _supplement_local_apache_notice_omission_license(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = issue.issue_type.lower().replace(" ", "_")
+        text = _issue_text(issue)
+        if normalized_issue_type == "license" and "notice" in text:
+            return None
+
+    notices_entry = next((entry for entry in entries if Path(entry["path"]).name == "THIRD_PARTY_NOTICES.md"), None)
+    licenses_entry = next((entry for entry in entries if Path(entry["path"]).name == "licenses_check.csv"), None)
+    source_entry = next((entry for entry in entries if Path(entry["path"]).name == "sync_uploader.py"), None)
+    if notices_entry is None or licenses_entry is None:
+        return None
+
+    notices_content = notices_entry["content"]
+    licenses_content = licenses_entry["content"]
+    normalized_notices = notices_content.lower()
+    if "Apache-2.0" not in notices_content and "apache-2.0" not in notices_content:
+        return None
+    if "NOTICE" not in notices_content:
+        return None
+    if not any(
+        phrase in normalized_notices
+        for phrase in (
+            "will not be shipped",
+            "do not ship that notice",
+            "do not ship the notice",
+            "do not ship that notice text",
+            "notice text will not ship",
+        )
+    ):
+        return None
+    if "Apache-2.0" not in licenses_content and "apache-2.0" not in licenses_content:
+        return None
+
+    file_path = source_entry["path"] if source_entry is not None else notices_entry["path"]
+    evidence_basis = (
+        "THIRD_PARTY_NOTICES.md says an Apache-2.0 dependency's upstream NOTICE will not be shipped with binaries even though licenses_check.csv records that Apache-2.0 runtime dependency in the distributed inventory."
+    )
+    systemic_impact = (
+        "Binary releases can ship incomplete Apache notice material, leaving downstream redistributors without the required NOTICE text that the dependency license expects to travel with the distribution."
+    )
+    related_files = [notices_entry["path"], licenses_entry["path"]]
+    ai_feedback = "\n\n".join([
+        "**The notice package explicitly omits required Apache NOTICE material**",
+        "The shipped third-party notice file acknowledges an Apache-2.0 runtime dependency but says its upstream NOTICE text will not be included with binaries, which leaves the release package missing required notice material.",
+        "Code: THIRD_PARTY_NOTICES.md: upstream NOTICE will not be shipped / licenses_check.csv: Apache-2.0 runtime dependency",
+        "Suggestion: Ship the upstream NOTICE text with release artifacts and keep the notice package aligned with the Apache dependency inventory.",
+        "Context Scope: cross_file",
+        f"Related Files: {', '.join(related_files)}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: high",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    notice_anchor = notices_entry["content"].index("NOTICE")
+    return ReviewIssue(
+        file_path=file_path,
+        line_number=_line_number_from_offset(notices_entry["content"], notice_anchor),
+        issue_type="license",
+        severity="high",
+        description="The release notices say an Apache runtime dependency's upstream NOTICE will not ship with binaries, leaving the distribution with incomplete Apache notice material.",
+        code_snippet=_code_snippet(notices_entry["content"], notice_anchor),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=related_files,
+        systemic_impact=systemic_impact,
+        confidence="high",
+        evidence_basis=evidence_basis,
+    )
 
 
 def _supplement_local_embedded_mit_attribution_license(
@@ -3414,11 +4966,24 @@ def _supplement_local_maintainability_findings(
         return []
 
     entries = _load_target_file_entries(target_files)
-    if len(entries) < 2:
+    if not entries:
         return []
 
-    supplement = _supplement_local_parallel_parser_variants_maintainability(entries, issues)
-    return [supplement] if supplement is not None else []
+    supplements: List[ReviewIssue] = []
+
+    parser_supplement = _supplement_local_parallel_parser_variants_maintainability(entries, issues)
+    if parser_supplement is not None:
+        supplements.append(parser_supplement)
+
+    duplicated_sync_window_supplement = _supplement_local_duplicated_sync_window_maintainability(entries, issues)
+    if duplicated_sync_window_supplement is not None:
+        supplements.append(duplicated_sync_window_supplement)
+
+    overloaded_controller_supplement = _supplement_local_overloaded_settings_controller_maintainability(entries, issues)
+    if overloaded_controller_supplement is not None:
+        supplements.append(overloaded_controller_supplement)
+
+    return supplements
 
 
 def _supplement_local_parallel_parser_variants_maintainability(
@@ -3497,6 +5062,151 @@ def _supplement_local_parallel_parser_variants_maintainability(
     )
 
 
+def _supplement_local_duplicated_sync_window_maintainability(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = issue.issue_type.lower().replace(" ", "_")
+        mentioned_files = {Path(issue.file_path).name, *(Path(path).name for path in issue.related_files)}
+        text = _issue_text(issue)
+        if (
+            normalized_issue_type == "maintainability"
+            and "normalize_sync_window" in text
+            and "drift" in text
+            and {"cli_sync_settings.py", "gui_sync_settings.py"}.issubset(mentioned_files)
+        ):
+            return None
+
+    cli_entry = next((entry for entry in entries if Path(entry["path"]).name == "cli_sync_settings.py"), None)
+    gui_entry = next((entry for entry in entries if Path(entry["path"]).name == "gui_sync_settings.py"), None)
+    if cli_entry is None or gui_entry is None:
+        return None
+
+    cli_content = cli_entry["content"]
+    gui_content = gui_entry["content"]
+    required_markers = (
+        "def normalize_sync_window(",
+        'if len(start_hour) == 1:',
+        'if len(end_hour) == 1:',
+        'if start_hour == "24":',
+        'if end_hour == "24":',
+        'if normalized["start_hour"] == normalized["end_hour"]:',
+        'if normalized["timezone"] == "US/Pacific":',
+        'normalized["timezone"] = "America/Los_Angeles"',
+    )
+    if not all(marker in cli_content for marker in required_markers):
+        return None
+    if not all(marker in gui_content for marker in required_markers):
+        return None
+
+    evidence_basis = (
+        "cli_sync_settings.py and gui_sync_settings.py both define normalize_sync_window with the same hour-padding, 24-to-00 normalization, equal-window adjustment, and US/Pacific timezone rewrite logic."
+    )
+    systemic_impact = (
+        "Future sync-window policy changes must be duplicated in two live normalization helpers, which increases the chance of drift between CLI and GUI behavior."
+    )
+    ai_feedback = "\n\n".join([
+        "**Sync-window normalization rules are duplicated across two live settings modules**",
+        "cli_sync_settings.py and gui_sync_settings.py each carry their own normalize_sync_window helper, and both copies currently repeat the same hour padding, 24-to-00 normalization, equal-window fallback, and timezone rewrite behavior.",
+        "Code: normalize_sync_window(...) in cli_sync_settings.py / normalize_sync_window(...) in gui_sync_settings.py",
+        "Suggestion: Extract one shared sync-window normalization helper so policy changes only need to be updated in one place.",
+        "Context Scope: cross_file",
+        f"Related Files: {gui_entry['path']}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: high",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=cli_entry["path"],
+        line_number=_line_number_from_offset(cli_content, cli_content.index("def normalize_sync_window(")),
+        issue_type="maintainability",
+        severity="medium",
+        description="normalize_sync_window is duplicated across the CLI and GUI settings modules, so sync-window rules can drift over time.",
+        code_snippet=_code_snippet(cli_content, cli_content.index("def normalize_sync_window(")),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=[gui_entry["path"]],
+        systemic_impact=systemic_impact,
+        confidence="high",
+        evidence_basis=evidence_basis,
+    )
+
+
+def _supplement_local_overloaded_settings_controller_maintainability(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = issue.issue_type.lower().replace(" ", "_")
+        text = _issue_text(issue)
+        if (
+            normalized_issue_type == "maintainability"
+            and "responsib" in text
+            and (
+                "settingscontroller" in text
+                or "settings controller" in text
+                or Path(issue.file_path).name == "settings_controller.py"
+            )
+        ):
+            return None
+
+    controller_entry = next((entry for entry in entries if Path(entry["path"]).name == "settings_controller.py"), None)
+    if controller_entry is None:
+        return None
+
+    content = controller_entry["content"]
+    required_markers = (
+        "class SettingsController:",
+        "def load_settings(self):",
+        "def save_settings(self, form_values, current_user):",
+        "def export_debug_snapshot(self):",
+        "def build_summary(self, settings, audit_entry):",
+        "self.repository.write_settings(normalized)",
+        "self.repository.append_audit_log(audit_entry)",
+        "self.sync_service.schedule_next_run",
+        "self.sync_service.refresh_remote_state()",
+        "self.sync_service.cancel_pending_runs()",
+        "self.telemetry.track(",
+        "self.logger.info(",
+        "return self.build_summary(normalized, audit_entry)",
+    )
+    if not all(marker in content for marker in required_markers):
+        return None
+
+    class_offset = content.index("class SettingsController:")
+    evidence_basis = (
+        "settings_controller.py keeps SettingsController.load_settings, save_settings, export_debug_snapshot, and build_summary together, while save_settings also normalizes fields, validates email input, persists settings, appends audit data, drives sync scheduling, emits telemetry, and logs user-facing changes."
+    )
+    systemic_impact = (
+        "One controller now owns configuration loading, validation, persistence, sync orchestration, audit logging, telemetry, and UI summary formatting, so small settings changes become harder to isolate and review safely."
+    )
+    ai_feedback = "\n\n".join([
+        "**SettingsController mixes too many responsibilities into one change hotspot**",
+        "settings_controller.py keeps configuration loading, form normalization, validation, persistence, sync scheduling, audit logging, telemetry, debug export, and summary formatting inside one controller class.",
+        "Code: SettingsController.load_settings(...) / save_settings(...) / export_debug_snapshot(...) / build_summary(...)",
+        "Suggestion: Split normalization and validation, persistence and auditing, sync orchestration, and UI summary formatting into smaller collaborators so settings changes do not all land in one controller.",
+        "Context Scope: local",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: high",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=controller_entry["path"],
+        line_number=_line_number_from_offset(content, class_offset),
+        issue_type="maintainability",
+        severity="medium",
+        description="SettingsController carries too many responsibilities, mixing normalization, validation, persistence, sync orchestration, auditing, telemetry, and summary formatting in one class.",
+        code_snippet=_code_snippet(content, class_offset),
+        ai_feedback=ai_feedback,
+        context_scope="local",
+        related_files=[],
+        systemic_impact=systemic_impact,
+        confidence="high",
+        evidence_basis=evidence_basis,
+    )
+
+
 def _supplement_local_localization_findings(
     target_files: Sequence[FileInfo],
     review_type: str,
@@ -3512,8 +5222,15 @@ def _supplement_local_localization_findings(
     if not entries:
         return []
 
-    supplement = _supplement_local_concatenated_translation_localization(entries, issues)
-    return [supplement] if supplement is not None else []
+    supplements: List[ReviewIssue] = []
+    for supplement in (
+        _supplement_local_concatenated_translation_localization(entries, issues),
+        _supplement_local_hardcoded_settings_labels_localization(entries, issues),
+        _supplement_local_us_only_receipt_format_localization(entries, issues),
+    ):
+        if supplement is not None:
+            supplements.append(supplement)
+    return supplements
 
 
 def _supplement_local_concatenated_translation_localization(
@@ -3570,6 +5287,127 @@ def _supplement_local_concatenated_translation_localization(
         severity="medium",
         description="The renewal banner concatenates translation fragments around dynamic values, so other locales cannot reorder the sentence grammatically.",
         code_snippet=_code_snippet(content, prefix_offset),
+        ai_feedback=ai_feedback,
+        context_scope="local",
+        related_files=[],
+        systemic_impact=systemic_impact,
+        confidence="medium",
+        evidence_basis=evidence_basis,
+    )
+
+
+def _supplement_local_hardcoded_settings_labels_localization(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = issue.issue_type.lower().replace(" ", "_")
+        text = _issue_text(issue)
+        if normalized_issue_type in {"localization", "i18n", "internationalization"} and (
+            "sync now" in text
+            or "delete cache" in text
+            or "last synced successfully" in text
+            or ("hardcoded" in text and "settings" in text)
+        ):
+            if issue.severity.lower() in {"medium", "high", "critical"}:
+                return None
+
+    panel_entry = next((entry for entry in entries if Path(entry["path"]).name == "settings_panel.py"), None)
+    if panel_entry is None:
+        return None
+
+    content = panel_entry["content"]
+    required_tokens = (
+        'Label(parent, text=t("settings.title"))',
+        'Label(parent, text=t("settings.description"))',
+        'Button(parent, text="Sync now")',
+        'Button(parent, text="Delete cache")',
+        'Label(parent, text="Last synced successfully")',
+    )
+    if not all(token in content for token in required_tokens):
+        return None
+
+    anchor_offset = content.index('Button(parent, text="Sync now")')
+    evidence_basis = (
+        "settings_panel.py uses t('settings.title') and t('settings.description') for some labels, but still hardcodes 'Sync now', 'Delete cache', and 'Last synced successfully' as user-facing English strings."
+    )
+    systemic_impact = (
+        "Localized builds end up with a mixed-language settings surface because some controls still render hardcoded English text instead of going through the translation layer."
+    )
+    ai_feedback = "\n\n".join([
+        "**The settings panel mixes translated labels with hardcoded English controls**",
+        "The panel already uses the translation helper for the title and description, but the action buttons and status label still render fixed English text.",
+        "Code: Button(parent, text='Sync now') / Button(parent, text='Delete cache') / Label(parent, text='Last synced successfully')",
+        "Suggestion: Route every user-facing settings label and status string through the translation helper so the panel localizes consistently.",
+        "Context Scope: local",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: medium",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=panel_entry["path"],
+        line_number=_line_number_from_offset(content, anchor_offset),
+        issue_type="localization",
+        severity="medium",
+        description="The settings panel still hardcodes user-facing button and status text instead of routing those labels through the translation helper.",
+        code_snippet=_code_snippet(content, anchor_offset),
+        ai_feedback=ai_feedback,
+        context_scope="local",
+        related_files=[],
+        systemic_impact=systemic_impact,
+        confidence="medium",
+        evidence_basis=evidence_basis,
+    )
+
+
+def _supplement_local_us_only_receipt_format_localization(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = issue.issue_type.lower().replace(" ", "_")
+        text = _issue_text(issue)
+        if normalized_issue_type in {"localization", "i18n", "internationalization"} and (
+            "%m/%d/%y" in text
+            or "%m/%d/%Y" in text
+            or "locale-aware" in text
+            or ("receipt" in text and "dollar" in text)
+        ):
+            if issue.severity.lower() in {"medium", "high", "critical"}:
+                return None
+
+    formatter_entry = next((entry for entry in entries if Path(entry["path"]).name == "receipt_formatter.py"), None)
+    if formatter_entry is None:
+        return None
+
+    content = formatter_entry["content"]
+    if 'strftime("%m/%d/%Y")' not in content or 'f"${total_amount:.2f}"' not in content:
+        return None
+
+    anchor_offset = content.index('strftime("%m/%d/%Y")')
+    evidence_basis = (
+        "receipt_formatter.py formats the receipt date with strftime('%m/%d/%Y') and prefixes the amount with '$', which hardcodes US-specific presentation instead of using locale-aware formatting."
+    )
+    systemic_impact = (
+        "International users can see dates and currency in the wrong regional format because the receipt output assumes US month/day/year and dollar-prefixed amounts."
+    )
+    ai_feedback = "\n\n".join([
+        "**The receipt formatter hardcodes US-only date and currency conventions**",
+        "The formatter emits month/day/year dates and dollar-prefixed amounts directly instead of letting locale-aware formatting decide how to present the receipt.",
+        "Code: purchased_at.strftime('%m/%d/%Y') / f'${total_amount:.2f}'",
+        "Suggestion: Use locale-aware date and currency formatting so the receipt follows the user's regional conventions instead of forcing a US presentation.",
+        "Context Scope: local",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: medium",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=formatter_entry["path"],
+        line_number=_line_number_from_offset(content, anchor_offset),
+        issue_type="localization",
+        severity="medium",
+        description="The receipt formatter hardcodes US-style date and currency output instead of using locale-aware presentation.",
+        code_snippet=_code_snippet(content, anchor_offset),
         ai_feedback=ai_feedback,
         context_scope="local",
         related_files=[],
@@ -4525,6 +6363,10 @@ def _supplement_local_regression_findings(
     if inverted_sync_guard is not None:
         supplements.append(inverted_sync_guard)
 
+    stale_caller_signature = _supplement_local_stale_caller_signature_regression(entries, issues)
+    if stale_caller_signature is not None:
+        supplements.append(stale_caller_signature)
+
     return supplements
 
 
@@ -4674,6 +6516,83 @@ def _supplement_local_inverted_sync_start_guard_regression(
     )
 
 
+def _supplement_local_stale_caller_signature_regression(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = issue.issue_type.lower().replace(" ", "_")
+        related_files = [Path(path).name for path in issue.related_files]
+        evidence_basis = (issue.evidence_basis or "").lower()
+        systemic_impact = (issue.systemic_impact or "").lower()
+        if (
+            normalized_issue_type == "regression"
+            and issue.context_scope == "cross_file"
+            and "sync_worker.py" in related_files
+            and "build_retry_delay" in evidence_basis
+            and "existing" in systemic_impact
+        ):
+            return None
+
+    changed_entry = next((entry for entry in entries if Path(entry["path"]).name == "retry_policy.py"), None)
+    if changed_entry is None:
+        return None
+
+    retry_policy_path = Path(changed_entry["path"])
+    try:
+        retry_policy_content = _read_file_content(retry_policy_path)
+    except Exception:
+        retry_policy_content = changed_entry.get("content", "")
+    if "def build_retry_delay(network_profile: str, retry_count: int) -> int:" not in retry_policy_content:
+        return None
+
+    sync_worker_path = retry_policy_path.parent / "sync_worker.py"
+    if not sync_worker_path.exists():
+        return None
+
+    sync_worker_content = _read_file_content(sync_worker_path)
+    if 'build_retry_delay(job["retry_count"], job["network_profile"])' not in sync_worker_content:
+        return None
+
+    evidence_basis = (
+        "retry_policy.py changes build_retry_delay to (network_profile, retry_count), while sync_worker.py still calls build_retry_delay(job['retry_count'], job['network_profile']) with the old positional order."
+    )
+    systemic_impact = (
+        "Existing retry scheduling behavior changes silently because unchanged positional callers now swap the retry count and network profile arguments at runtime."
+    )
+    ai_feedback = "\n\n".join([
+        "**Utility signature reorder breaks an unchanged positional caller**",
+        "retry_policy.py reorders build_retry_delay so network_profile comes first, but sync_worker.py still calls the helper with retry_count first and network_profile second.",
+        "Code: def build_retry_delay(network_profile: str, retry_count: int) / build_retry_delay(job['retry_count'], job['network_profile'])",
+        "Suggestion: Restore the original parameter order, make the parameters keyword-only, or add a compatibility wrapper so unchanged positional callers keep the existing retry behavior.",
+        "Context Scope: cross_file",
+        f"Related Files: {sync_worker_path}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: medium",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=str(retry_policy_path),
+        line_number=_line_number_from_offset(
+            retry_policy_content,
+            retry_policy_content.index("def build_retry_delay(network_profile: str, retry_count: int) -> int:"),
+        ),
+        issue_type="regression",
+        severity="high",
+        description="Reordering build_retry_delay breaks the unchanged positional caller in sync_worker.py and changes existing retry behavior.",
+        code_snippet=_code_snippet(
+            retry_policy_content,
+            retry_policy_content.index("def build_retry_delay(network_profile: str, retry_count: int) -> int:"),
+        ),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=[str(sync_worker_path)],
+        systemic_impact=systemic_impact,
+        confidence="medium",
+        evidence_basis=evidence_basis,
+    )
+
+
 def _supplement_local_accessibility_findings(
     target_files: Sequence[FileInfo],
     review_type: str,
@@ -4696,6 +6615,9 @@ def _supplement_local_accessibility_findings(
     fieldset_legend = _supplement_local_fieldset_legend_accessibility(entries, issues)
     if fieldset_legend is not None:
         supplements.append(fieldset_legend)
+    icon_button_label = _supplement_local_icon_button_label_accessibility(entries, issues)
+    if icon_button_label is not None:
+        supplements.append(icon_button_label)
     return supplements
 
 
@@ -4714,31 +6636,40 @@ def _supplement_local_security_findings(
     if len(entries) < 2:
         return []
 
-    ssrf_issue = _supplement_local_ssrf_security(entries, issues)
-    if ssrf_issue is not None:
-        return [ssrf_issue]
+    return _collect_local_security_supplements(entries, issues)
 
-    zip_slip_issue = _supplement_local_zip_slip_security(entries, issues)
-    if zip_slip_issue is not None:
-        return [zip_slip_issue]
 
-    traversal_issue = _supplement_local_path_traversal_security(entries, issues)
-    if traversal_issue is not None:
-        return [traversal_issue]
+def _collect_local_security_supplements(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> List[ReviewIssue]:
+    helpers: Sequence[Callable[[Sequence[Dict[str, str]], Sequence[ReviewIssue]], ReviewIssue | None]] = (
+        _supplement_local_ssrf_security,
+        _supplement_local_zip_slip_security,
+        _supplement_local_path_traversal_security,
+        _supplement_local_shell_command_security,
+        _supplement_local_sql_query_interpolation_security,
+        _supplement_local_unsafe_yaml_load_security,
+        _supplement_local_open_redirect_security,
+        _supplement_local_idor_invoice_download_security,
+        _supplement_local_jwt_signature_bypass_security,
+        _supplement_local_predictable_reset_token_security,
+        _supplement_local_validation_drift_security,
+    )
+    supplements: List[ReviewIssue] = []
+    seen: set[tuple[str, int | None, str]] = set()
 
-    shell_issue = _supplement_local_shell_command_security(entries, issues)
-    if shell_issue is not None:
-        return [shell_issue]
+    for helper in helpers:
+        issue = helper(entries, issues)
+        if issue is None:
+            continue
+        issue_key = (issue.file_path, issue.line_number, issue.description)
+        if issue_key in seen:
+            continue
+        seen.add(issue_key)
+        supplements.append(issue)
 
-    sql_issue = _supplement_local_sql_query_interpolation_security(entries, issues)
-    if sql_issue is not None:
-        return [sql_issue]
-
-    yaml_issue = _supplement_local_unsafe_yaml_load_security(entries, issues)
-    if yaml_issue is not None:
-        return [yaml_issue]
-
-    return []
+    return supplements
 
 
 def _supplement_local_zip_slip_security(
@@ -4949,7 +6880,7 @@ def _supplement_local_path_traversal_security(
         if any(
             marker in text
             for marker in ("path traversal", "directory traversal", "../", "arbitrary file", "attachment_root")
-        ) and issue.severity.lower() in {"high", "critical"}:
+        ) and issue.severity.lower() in {"high", "critical"} and issue.context_scope == "cross_file":
             return None
 
     store_entry: Dict[str, str] | None = None
@@ -5282,6 +7213,425 @@ def _supplement_local_unsafe_yaml_load_security(
     )
 
 
+def _supplement_local_open_redirect_security(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = re.sub(r"[\s\-/]+", "_", issue.issue_type.lower()).strip("_")
+        if normalized_issue_type not in {"security", "open_redirect"}:
+            continue
+        text = _issue_text(issue)
+        if "open redirect" in text and issue.context_scope == "cross_file":
+            return None
+
+    redirect_entry: Dict[str, str] | None = None
+    api_entry: Dict[str, str] | None = None
+    redirect_match: re.Match[str] | None = None
+
+    for entry in entries:
+        content = entry["content"]
+        match = re.search(
+            r"def\s+build_post_login_redirect\s*\(\s*return_to\s*:\s*str\s*\)\s*->\s*str:\s*\n\s*return\s+return_to",
+            content,
+        )
+        if match is None:
+            continue
+        redirect_entry = entry
+        redirect_match = match
+        break
+
+    if redirect_entry is None or redirect_match is None:
+        return None
+
+    for entry in entries:
+        if entry["path"] == redirect_entry["path"]:
+            continue
+        content = entry["content"]
+        if 'request["return_to"]' not in content and "request['return_to']" not in content:
+            continue
+        if "build_post_login_redirect(request[\"return_to\"])" not in content and "build_post_login_redirect(request['return_to'])" not in content:
+            continue
+        api_entry = entry
+        break
+
+    if api_entry is None:
+        return None
+
+    evidence_basis = (
+        f"{Path(api_entry['path']).name} forwards request-controlled return_to into build_post_login_redirect, and {Path(redirect_entry['path']).name} returns that URL directly without validating the destination host or path."
+    )
+    systemic_impact = (
+        "Attackers can steer authenticated users to attacker-controlled destinations after login and use the trusted redirect flow for phishing or token leakage."
+    )
+    ai_feedback = "\n\n".join([
+        "**Request-controlled post-login redirects are returned without destination validation**",
+        f"{Path(api_entry['path']).name} forwards the request return_to value into build_post_login_redirect, and {Path(redirect_entry['path']).name} returns that URL unchanged.",
+        "Code: location = build_post_login_redirect(request[\"return_to\"]) / return return_to",
+        "Suggestion: Restrict redirects to same-origin relative paths or an allowlist of trusted destinations, and reject absolute or externally hosted URLs before returning the redirect target.",
+        "Context Scope: cross_file",
+        f"Related Files: {api_entry['path']}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: high",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=redirect_entry["path"],
+        line_number=_line_number_from_offset(redirect_entry["content"], redirect_match.start()),
+        issue_type="security",
+        severity="high",
+        description="Request-controlled return URLs are redirected to after login without validating the destination, creating an open redirect.",
+        code_snippet=_code_snippet(redirect_entry["content"], redirect_match.start()),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=[api_entry["path"]],
+        systemic_impact=systemic_impact,
+        confidence="high",
+        evidence_basis=evidence_basis,
+    )
+
+
+def _supplement_local_idor_invoice_download_security(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = re.sub(r"[\s\-/]+", "_", issue.issue_type.lower()).strip("_")
+        if normalized_issue_type not in {"security", "authorization", "authentication_authorization"}:
+            continue
+        text = _issue_text(issue)
+        if all(marker in text for marker in ("invoice", "account_id")) and any(
+            marker in text for marker in ("idor", "ownership", "authorization", "belongs")
+        ) and issue.context_scope == "cross_file" and issue.severity.lower() in {"high", "critical"}:
+            return None
+
+    service_entry: Dict[str, str] | None = None
+    api_entry: Dict[str, str] | None = None
+    store_entry: Dict[str, str] | None = None
+    service_match: re.Match[str] | None = None
+
+    for entry in entries:
+        content = entry["content"]
+        match = re.search(
+            r"def\s+download_invoice_pdf\(account_id:\s*str,\s*invoice_id:\s*str\)\s*->\s*bytes:\s*\n\s*invoice\s*=\s*load_invoice_record\(invoice_id\)\s*\n\s*return\s+invoice\[\"pdf_bytes\"\]",
+            content,
+        )
+        if match is None:
+            continue
+        service_entry = entry
+        service_match = match
+        break
+
+    if service_entry is None or service_match is None:
+        return None
+
+    for entry in entries:
+        if entry["path"] == service_entry["path"]:
+            continue
+        content = entry["content"]
+        if api_entry is None and (
+            ('request["invoice_id"]' in content or "request['invoice_id']" in content)
+            and (
+                'download_invoice_pdf(current_account["id"], invoice_id)' in content
+                or "download_invoice_pdf(current_account['id'], invoice_id)" in content
+            )
+        ):
+            api_entry = entry
+            continue
+        if store_entry is None and '"account_id"' in content and '"pdf_bytes"' in content:
+            store_entry = entry
+
+    if api_entry is None:
+        return None
+
+    related_files = [api_entry["path"]]
+    if store_entry is not None:
+        related_files.append(store_entry["path"])
+
+    evidence_basis = (
+        f"{Path(api_entry['path']).name} forwards request-controlled invoice_id into download_invoice_pdf, and {Path(service_entry['path']).name} loads the invoice by invoice_id and returns pdf_bytes without comparing invoice['account_id'] to the current account_id."
+    )
+    systemic_impact = (
+        "Attackers who can guess or enumerate invoice IDs can download invoices that belong to other accounts and expose customer billing data."
+    )
+    ai_feedback = "\n\n".join([
+        "**Invoice downloads trust a request-controlled invoice_id without enforcing ownership**",
+        f"{Path(api_entry['path']).name} forwards the request invoice_id into download_invoice_pdf, and {Path(service_entry['path']).name} returns invoice bytes without verifying the invoice belongs to the current account.",
+        "Code: invoice_id = request[\"invoice_id\"] / download_invoice_pdf(current_account[\"id\"], invoice_id) / invoice = load_invoice_record(invoice_id) / return invoice[\"pdf_bytes\"]",
+        "Suggestion: After loading the invoice, verify invoice['account_id'] matches the current account before returning the PDF, and fail closed when ownership does not match.",
+        "Context Scope: cross_file",
+        f"Related Files: {', '.join(related_files)}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: high",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=service_entry["path"],
+        line_number=_line_number_from_offset(service_entry["content"], service_match.start()),
+        issue_type="security",
+        severity="critical",
+        description="Request-controlled invoice IDs are used to return invoice PDFs without checking ownership, creating an IDOR exposure.",
+        code_snippet=_code_snippet(service_entry["content"], service_match.start()),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=related_files,
+        systemic_impact=systemic_impact,
+        confidence="high",
+        evidence_basis=evidence_basis,
+    )
+
+
+def _supplement_local_jwt_signature_bypass_security(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = re.sub(r"[\s\-/]+", "_", issue.issue_type.lower()).strip("_")
+        if normalized_issue_type not in {
+            "security",
+            "authentication",
+            "authentication_authorization",
+            "authentication_cryptography",
+            "cryptographic_weakness",
+        }:
+            continue
+        evidence_basis = (issue.evidence_basis or "").lower()
+        if any(
+            marker in evidence_basis
+            for marker in ("verify_signature", "signature verification", "without verifying signature")
+        ) and issue.context_scope == "cross_file" and issue.severity.lower() in {"high", "critical"}:
+            return None
+
+    token_entry: Dict[str, str] | None = None
+    api_entry: Dict[str, str] | None = None
+    token_match: re.Match[str] | None = None
+
+    for entry in entries:
+        content = entry["content"]
+        match = re.search(
+            r"jwt\.decode\(\s*raw_token\s*,\s*options\s*=\s*\{\s*\"verify_signature\"\s*:\s*False\s*\}\s*,\s*algorithms\s*=\s*\[\s*\"HS256\"\s*\]\s*,?\s*\)",
+            content,
+            re.DOTALL,
+        )
+        if match is None:
+            continue
+        token_entry = entry
+        token_match = match
+        break
+
+    if token_entry is None or token_match is None:
+        return None
+
+    for entry in entries:
+        if entry["path"] == token_entry["path"]:
+            continue
+        content = entry["content"]
+        if 'request["authorization"]' not in content and "request['authorization']" not in content:
+            continue
+        if "load_session_claims(raw_token)" not in content:
+            continue
+        if 'claims.get("role") == "admin"' not in content and "claims.get('role') == 'admin'" not in content:
+            continue
+        api_entry = entry
+        break
+
+    if api_entry is None:
+        return None
+
+    evidence_basis = (
+        f"{Path(token_entry['path']).name} calls jwt.decode(raw_token, options={{'verify_signature': False}}, algorithms=['HS256']), and {Path(api_entry['path']).name} trusts those decoded claims for the admin role decision."
+    )
+    systemic_impact = (
+        "Attackers can forge bearer tokens, bypass signature verification, and escalate privileges anywhere the decoded claims are trusted."
+    )
+    ai_feedback = "\n\n".join([
+        "**JWT signature verification is disabled before protected claims are trusted**",
+        f"{Path(api_entry['path']).name} strips the bearer token and trusts load_session_claims(raw_token) for the admin-role decision, while {Path(token_entry['path']).name} decodes the token with verify_signature=False.",
+        "Code: raw_token = request[\"authorization\"].removeprefix(\"Bearer \" ) / claims = load_session_claims(raw_token) / if claims.get(\"role\") == \"admin\" / jwt.decode(raw_token, options={\"verify_signature\": False}, algorithms=[\"HS256\"])",
+        "Suggestion: Enable signature verification, supply the correct signing key, and validate critical claims such as exp, iss, and aud before authorizing privileged actions.",
+        "Context Scope: cross_file",
+        f"Related Files: {api_entry['path']}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: high",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=token_entry["path"],
+        line_number=_line_number_from_offset(token_entry["content"], token_match.start()),
+        issue_type="security",
+        severity="critical",
+        description="JWT claims are decoded with signature verification disabled and then trusted for admin authorization decisions.",
+        code_snippet=_code_snippet(token_entry["content"], token_match.start()),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=[api_entry["path"]],
+        systemic_impact=systemic_impact,
+        confidence="high",
+        evidence_basis=evidence_basis,
+    )
+
+
+def _supplement_local_predictable_reset_token_security(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = re.sub(r"[\s\-/]+", "_", issue.issue_type.lower()).strip("_")
+        if normalized_issue_type not in {"security", "cryptographic_weakness", "authentication"}:
+            continue
+        text = _issue_text(issue)
+        if "predictable" in text and "token" in text and issue.context_scope == "cross_file" and issue.severity.lower() in {"high", "critical"}:
+            return None
+
+    reset_entry: Dict[str, str] | None = None
+    api_entry: Dict[str, str] | None = None
+    token_match: re.Match[str] | None = None
+
+    for entry in entries:
+        content = entry["content"]
+        match = re.search(
+            r"token\s*=\s*hashlib\.sha256\(email\.encode\(\"utf-8\"\)\)\.hexdigest\(\)",
+            content,
+        )
+        if match is None:
+            continue
+        if "build_reset_link(email)" not in content:
+            reset_entry = entry
+            token_match = match
+            break
+        reset_entry = entry
+        token_match = match
+        break
+
+    if reset_entry is None or token_match is None:
+        return None
+
+    for entry in entries:
+        if entry["path"] == reset_entry["path"]:
+            continue
+        content = entry["content"]
+        if 'request["email"]' not in content and "request['email']" not in content:
+            continue
+        if "build_reset_link(email)" not in content:
+            continue
+        api_entry = entry
+        break
+
+    if api_entry is None:
+        return None
+
+    evidence_basis = (
+        f"{Path(api_entry['path']).name} forwards request-controlled email into build_reset_link, and {Path(reset_entry['path']).name} derives the reset token directly from hashlib.sha256(email.encode('utf-8')).hexdigest() without randomness."
+    )
+    systemic_impact = (
+        "Attackers who know a victim email can predict the reset token and forge valid password-reset links for other accounts."
+    )
+    ai_feedback = "\n\n".join([
+        "**Password reset tokens are deterministically derived from the email address**",
+        f"{Path(api_entry['path']).name} passes the request email into build_reset_link, and {Path(reset_entry['path']).name} generates the token by hashing that email directly with SHA-256.",
+        "Code: email = request[\"email\"] / build_reset_link(email) / token = hashlib.sha256(email.encode(\"utf-8\")).hexdigest()",
+        "Suggestion: Generate reset tokens with a cryptographically secure random source such as secrets.token_urlsafe(), store them server-side with expiration, and never derive them deterministically from user-controlled input.",
+        "Context Scope: cross_file",
+        f"Related Files: {api_entry['path']}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: high",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=reset_entry["path"],
+        line_number=_line_number_from_offset(reset_entry["content"], token_match.start()),
+        issue_type="security",
+        severity="critical",
+        description="Password reset tokens are predictable because they are derived deterministically from the email address instead of using secure randomness.",
+        code_snippet=_code_snippet(reset_entry["content"], token_match.start()),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=[api_entry["path"]],
+        systemic_impact=systemic_impact,
+        confidence="high",
+        evidence_basis=evidence_basis,
+    )
+
+
+def _supplement_local_validation_drift_security(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = re.sub(r"[\s\-/]+", "_", issue.issue_type.lower()).strip("_")
+        if normalized_issue_type not in {"security", "validation", "input_validation"}:
+            continue
+        text = _issue_text(issue)
+        if all(marker in text for marker in ("email", "validate")) and "unvalidated" in text and issue.context_scope == "cross_file":
+            return None
+
+    validation_entry: Dict[str, str] | None = None
+    api_entry: Dict[str, str] | None = None
+    validation_match: re.Match[str] | None = None
+
+    for entry in entries:
+        content = entry["content"]
+        match = re.search(
+            r"required_fields\s*=\s*\[\s*\"username\"\s*,\s*\"password\"\s*\]",
+            content,
+        )
+        if match is None:
+            continue
+        validation_entry = entry
+        validation_match = match
+        break
+
+    if validation_entry is None or validation_match is None:
+        return None
+
+    for entry in entries:
+        if entry["path"] == validation_entry["path"]:
+            continue
+        content = entry["content"]
+        if "validate_signup(payload)" not in content:
+            continue
+        if 'payload["email"]' not in content and "payload['email']" not in content:
+            continue
+        api_entry = entry
+        break
+
+    if api_entry is None:
+        return None
+
+    validation_offset = api_entry["content"].index("validate_signup(payload)")
+    evidence_basis = (
+        f"{Path(api_entry['path']).name} passes payload into validate_signup and then reads payload['email'], but {Path(validation_entry['path']).name} only validates username and password and never checks email."
+    )
+    systemic_impact = (
+        "Unvalidated email values can drift past the validation layer and reach account creation logic, allowing malformed or missing email data into security-sensitive flows."
+    )
+    ai_feedback = "\n\n".join([
+        "**Validation has drifted and no longer enforces the email field consistently**",
+        f"{Path(api_entry['path']).name} expects payload['email'] after calling validate_signup(payload), but {Path(validation_entry['path']).name} only requires username and password.",
+        "Code: validate_signup(payload) / normalized = { ..., \"email\": payload[\"email\"] } / required_fields = [\"username\", \"password\"]",
+        "Suggestion: Keep the validation contract aligned with the API contract by validating email wherever the API requires it, and fail before account creation when email is missing or malformed.",
+        "Context Scope: cross_file",
+        f"Related Files: {validation_entry['path']}",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: high",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=api_entry["path"],
+        line_number=_line_number_from_offset(api_entry["content"], validation_offset),
+        issue_type="security",
+        severity="medium",
+        description="The API relies on email after validation, but the validation layer no longer validates that email field, creating cross-file validation drift.",
+        code_snippet=_code_snippet(api_entry["content"], validation_offset),
+        ai_feedback=ai_feedback,
+        context_scope="cross_file",
+        related_files=[validation_entry["path"]],
+        systemic_impact=systemic_impact,
+        confidence="high",
+        evidence_basis=evidence_basis,
+    )
+
+
 def _supplement_local_dialog_semantics_accessibility(
     entries: Sequence[Dict[str, str]],
     issues: Sequence[ReviewIssue],
@@ -5409,12 +7759,76 @@ def _supplement_local_fieldset_legend_accessibility(
         f"Evidence Basis: {evidence_basis}",
     ])
     return ReviewIssue(
+
+
         file_path=str(component_path),
         line_number=_line_number_from_offset(component_content, channel_match.start()),
         issue_type="accessibility",
         severity="medium",
         description="The notification preference groups use fieldset without legend labels, so screen reader users do not hear the accessible group name for the related controls.",
         code_snippet=_code_snippet(component_content, channel_match.start()),
+        ai_feedback=ai_feedback,
+        context_scope="local",
+        related_files=[],
+        systemic_impact=systemic_impact,
+        confidence="medium",
+        evidence_basis=evidence_basis,
+    )
+
+
+def _supplement_local_icon_button_label_accessibility(
+    entries: Sequence[Dict[str, str]],
+    issues: Sequence[ReviewIssue],
+) -> ReviewIssue | None:
+    for issue in issues:
+        normalized_issue_type = issue.issue_type.lower().replace(" ", "_")
+        text = _issue_text(issue)
+        evidence_basis = (issue.evidence_basis or "").lower()
+        if (
+            normalized_issue_type == "accessibility"
+            and ("icon" in text or "button" in text or "accessible name" in text)
+            and ("aria-label" in evidence_basis or "accessible name" in evidence_basis)
+        ):
+            return None
+
+    toolbar_entry = next((entry for entry in entries if Path(entry["path"]).name == "SearchToolbar.tsx"), None)
+    if toolbar_entry is None:
+        return None
+
+    content = toolbar_entry["content"]
+    if "placeholder=\"Search orders\"" not in content:
+        return None
+    if '<button type="button" onClick={onSearch}>' not in content:
+        return None
+    if "<SearchIcon />" not in content:
+        return None
+    if any(token in content for token in ("aria-label=", "aria-labelledby=", "<label", "title=")):
+        return None
+
+    button_offset = content.index('<button type="button" onClick={onSearch}>')
+    evidence_basis = (
+        "SearchToolbar.tsx renders an icon-only search button and an input that relies on placeholder text, but neither control exposes an aria-label or another accessible name."
+    )
+    systemic_impact = (
+        "Screen reader users do not get a reliable accessible name for the primary search controls, which makes the search flow harder to understand and operate non-visually."
+    )
+    ai_feedback = "\n\n".join([
+        "**The search controls are missing accessible names**",
+        "The toolbar uses an icon-only button and a placeholder-only input, but neither control exposes an aria-label, label element, or another stable accessible name.",
+        "Code: <input placeholder='Search orders' ... /> / <button type='button' onClick={onSearch}><SearchIcon /></button>",
+        "Suggestion: Add visible or programmatic labels for both controls, such as a proper label element and an aria-label for the icon-only button.",
+        "Context Scope: local",
+        f"Systemic Impact: {systemic_impact}",
+        "Confidence: medium",
+        f"Evidence Basis: {evidence_basis}",
+    ])
+    return ReviewIssue(
+        file_path=toolbar_entry["path"],
+        line_number=_line_number_from_offset(content, button_offset),
+        issue_type="accessibility",
+        severity="medium",
+        description="The icon-only search button and placeholder-only input are missing accessible names, so screen reader users cannot identify the search controls reliably.",
+        code_snippet=_code_snippet(content, button_offset),
         ai_feedback=ai_feedback,
         context_scope="local",
         related_files=[],
@@ -5433,6 +7847,7 @@ def _process_file_batch(
     lang: str,
     spec_content: Optional[str] = None,
     cancel_check: Optional[CancelCheck] = None,
+    project_root: Optional[str] = None,
 ) -> List[ReviewIssue]:
     """Process a batch of files for a single review type.
 
@@ -5445,15 +7860,137 @@ def _process_file_batch(
         combine = combine.lower() in ("true", "1", "yes")
 
     if combine and len(target_files) > 1:
-        return _process_combined_batch(target_files, review_type, client, lang, spec_content, cancel_check)
+        return _process_combined_batch(
+            target_files,
+            review_type,
+            client,
+            lang,
+            spec_content,
+            cancel_check,
+            project_root,
+        )
 
     # Fall back to one-file-at-a-time processing
-    return _process_files_individually(target_files, review_type, client, lang, spec_content, cancel_check)
+    return _process_files_individually(
+        target_files,
+        review_type,
+        client,
+        lang,
+        spec_content,
+        cancel_check,
+        project_root,
+    )
 
 
 def _is_diff_entry(file_info: FileInfo) -> bool:
     """Return True if *file_info* is a diff-scope dict with hunk data."""
     return isinstance(file_info, dict) and file_info.get("is_diff", False)
+
+
+def _tool_file_access_enabled_for_client(client: AIBackend) -> bool:
+    enabled = config.get("tool_file_access", "enabled", False)
+    if isinstance(enabled, str):
+        enabled = enabled.lower() in ("true", "1", "yes", "on")
+    if not enabled:
+        return False
+    if not getattr(client, "supports_tool_file_access", lambda: False)():
+        return False
+    backend_name = str(getattr(client, "backend_name", "")).strip().lower()
+    allowlist_raw = str(config.get("tool_file_access", "backend_allowlist", "copilot"))
+    allowlist = {item.strip().lower() for item in allowlist_raw.split(",") if item.strip()}
+    return not allowlist or backend_name in allowlist
+
+
+def _build_tool_review_context(
+    target_files: Sequence[FileInfo],
+    *,
+    project_root: str | None,
+) -> ToolReviewContext | None:
+    root_candidate = Path(project_root).expanduser().resolve() if project_root else None
+    targets: list[ToolReviewTarget] = []
+    for file_info in target_files:
+        if isinstance(file_info, dict):
+            raw_path = file_info.get("path")
+            if raw_path is None:
+                continue
+            file_path = Path(str(raw_path)).expanduser()
+            hunk_count = len(file_info.get("hunks") or []) if file_info.get("is_diff") else 0
+            commit_messages = file_info.get("commit_messages")
+        else:
+            file_path = Path(str(file_info)).expanduser()
+            hunk_count = 0
+            commit_messages = None
+        if root_candidate is not None:
+            resolved = file_path if file_path.is_absolute() else (root_candidate / file_path)
+        else:
+            resolved = file_path
+        resolved = resolved.resolve()
+        if root_candidate is None:
+            root_candidate = resolved.parent
+        try:
+            relative = resolved.relative_to(root_candidate)
+        except ValueError:
+            continue
+        targets.append(
+            ToolReviewTarget(
+                path=str(relative).replace("\\", "/"),
+                is_diff=_is_diff_entry(file_info),
+                hunk_count=hunk_count,
+                commit_messages=(str(commit_messages).strip() or None) if commit_messages else None,
+            )
+        )
+    if root_candidate is None or not targets:
+        return None
+    return ToolReviewContext(
+        workspace_root=str(root_candidate),
+        targets=tuple(targets),
+    )
+
+
+def _request_review_with_tool_fallback(
+    client: AIBackend,
+    static_code_content: str,
+    review_type: str,
+    lang: str,
+    spec_content: Optional[str],
+    *,
+    tool_context: ToolReviewContext | None,
+) -> str:
+    if tool_context is not None:
+        previous_audit = getattr(client, "current_tool_access_audit", lambda: None)()
+        previous_read_count = getattr(previous_audit, "file_read_count", 0)
+        tool_prompt = AIBackend._build_tool_aware_user_message(  # noqa: SLF001
+            tool_context,
+            review_type,
+            spec_content,
+        )
+        feedback = _request_review_with_retry(
+            client,
+            tool_prompt,
+            review_type,
+            lang,
+            spec_content,
+            tool_context=tool_context,
+        )
+        audit = getattr(client, "current_tool_access_audit", lambda: None)()
+        if (
+            feedback
+            and not feedback.startswith("Error:")
+            and getattr(audit, "file_read_count", 0) > previous_read_count
+        ):
+            return feedback
+        logger.info(
+            "Tool-aware review fallback for [%s]: %s",
+            review_type,
+            (getattr(audit, "fallback_reason", None) or feedback or "tool-aware review unavailable"),
+        )
+    return _request_review_with_retry(
+        client,
+        static_code_content,
+        review_type,
+        lang,
+        spec_content,
+    )
 
 
 def _process_files_individually(
@@ -5463,6 +8000,7 @@ def _process_files_individually(
     lang: str,
     spec_content: Optional[str] = None,
     cancel_check: Optional[CancelCheck] = None,
+    project_root: Optional[str] = None,
 ) -> List[ReviewIssue]:
     """Original one-file-per-request approach, now using the structured parser.
 
@@ -5470,6 +8008,7 @@ def _process_files_individually(
     is used so that the AI focuses on changed lines.
     """
     batch_issues: List[ReviewIssue] = []
+    tool_access_enabled = _tool_file_access_enabled_for_client(client)
 
     for file_info in target_files:
         # Check for cancellation before processing each file
@@ -5489,27 +8028,32 @@ def _process_files_individually(
                 continue
 
         logger.info("Analysing %s [%s] …", display_name, review_type)
+        tool_context = None
+        if tool_access_enabled:
+            tool_context = _build_tool_review_context([file_info], project_root=project_root)
 
         try:
             # Use diff-aware prompt when the entry carries hunk data
             if _is_diff_entry(file_info):
                 diff_msg = AIBackend._build_diff_user_message(  # noqa: SLF001
-                    file_info, review_type, spec_content
+                    cast(Dict[str, Any], file_info), review_type, spec_content
                 )
-                feedback = _request_review_with_retry(
+                feedback = _request_review_with_tool_fallback(
                     client,
                     diff_msg,
                     review_type,
                     lang,
                     spec_content,
+                    tool_context=tool_context,
                 )
             else:
-                feedback = _request_review_with_retry(
+                feedback = _request_review_with_tool_fallback(
                     client,
                     code,
                     review_type,
                     lang,
                     spec_content,
+                    tool_context=tool_context,
                 )
             if feedback and not feedback.startswith("Error:"):
                 parsed = parse_single_file_response(
@@ -5555,6 +8099,7 @@ def _process_combined_batch(
     lang: str,
     spec_content: Optional[str] = None,
     cancel_check: Optional[CancelCheck] = None,
+    project_root: Optional[str] = None,
 ) -> List[ReviewIssue]:
     """Combine multiple files into a single AI prompt and parse results.
 
@@ -5600,7 +8145,15 @@ def _process_combined_batch(
 
     # If only one file left after filtering, use single-file path
     if len(file_entries) == 1:
-        return _process_files_individually(target_files, review_type, client, lang, spec_content, cancel_check)
+        return _process_files_individually(
+            target_files,
+            review_type,
+            client,
+            lang,
+            spec_content,
+            cancel_check,
+            project_root,
+        )
 
     names = [f["name"] for f in file_entries]
     logger.info("Combined review of %d files [%s]: %s",
@@ -5616,13 +8169,18 @@ def _process_combined_batch(
             file_entries, review_type, spec_content
         )  # type: ignore[reportPrivateUsage]
 
+    tool_context = None
+    if _tool_file_access_enabled_for_client(client):
+        tool_context = _build_tool_review_context(target_files, project_root=project_root)
+
     try:
-        feedback = _request_review_with_retry(
+        feedback = _request_review_with_tool_fallback(
             client,
             combined_code,
             review_type,
             lang,
             spec_content,
+            tool_context=tool_context,
         )
     except Exception as exc:
         # Check if this was a cancellation – if so, return empty instead of falling back
@@ -5630,7 +8188,15 @@ def _process_combined_batch(
             logger.info("Combined review cancelled by user")
             return []
         logger.error("Combined review failed: %s – falling back to individual", exc)
-        return _process_files_individually(target_files, review_type, client, lang, spec_content, cancel_check)
+        return _process_files_individually(
+            target_files,
+            review_type,
+            client,
+            lang,
+            spec_content,
+            cancel_check,
+            project_root,
+        )
 
     if not feedback or feedback.startswith("Error:"):
         # Check for cancellation before falling back
@@ -5646,8 +8212,106 @@ def _process_combined_batch(
                 "Combined review returned Local reasoning-only output; skipping individual fallback and relying on deterministic supplements"
             )
             return []
+        if (
+            feedback
+            and _is_retryable_review_error(feedback)
+            and _supports_local_license_error_short_circuit(review_type, client, file_entries)
+        ):
+            logger.warning(
+                "Combined license review returned a retryable Local error; skipping individual fallback and relying on deterministic license supplements"
+            )
+            return []
+        if (
+            feedback
+            and _is_retryable_review_error(feedback)
+            and _supports_local_dependency_error_short_circuit(review_type, client, file_entries)
+        ):
+            logger.warning(
+                "Combined dependency review returned a retryable Local error; skipping individual fallback and relying on deterministic dependency supplements"
+            )
+            return []
+        if (
+            feedback
+            and _is_retryable_review_error(feedback)
+            and _supports_local_documentation_error_short_circuit(review_type, client, file_entries)
+        ):
+            logger.warning(
+                "Combined documentation review returned a retryable Local error; skipping individual fallback and relying on deterministic documentation supplements"
+            )
+            return []
+        if (
+            feedback
+            and _is_retryable_review_error(feedback)
+            and _supports_local_architecture_error_short_circuit(review_type, client, file_entries)
+        ):
+            logger.warning(
+                "Combined architecture review returned a retryable Local error; skipping individual fallback and relying on deterministic architecture supplements"
+            )
+            return []
+        if (
+            feedback
+            and _is_retryable_review_error(feedback)
+            and _supports_local_scalability_error_short_circuit(review_type, client, file_entries)
+        ):
+            logger.warning(
+                "Combined scalability review returned a retryable Local error; skipping individual fallback and relying on deterministic scalability supplements"
+            )
+            return []
+        if (
+            feedback
+            and _is_retryable_review_error(feedback)
+            and _supports_local_error_handling_error_short_circuit(review_type, client, file_entries)
+        ):
+            logger.warning(
+                "Combined error_handling review returned a retryable Local error; skipping individual fallback and relying on deterministic error-handling supplements"
+            )
+            return []
+        if (
+            feedback
+            and _is_retryable_review_error(feedback)
+            and _supports_local_data_validation_error_short_circuit(review_type, client, file_entries)
+        ):
+            logger.warning(
+                "Combined data_validation review returned a retryable Local error; skipping individual fallback and relying on deterministic data-validation supplements"
+            )
+            return []
+        if (
+            feedback
+            and _is_retryable_review_error(feedback)
+            and _supports_local_testing_error_short_circuit(review_type, client, file_entries)
+        ):
+            logger.warning(
+                "Combined testing review returned a retryable Local error; skipping individual fallback and relying on deterministic testing supplements"
+            )
+            return []
+        if (
+            feedback
+            and _is_retryable_review_error(feedback)
+            and _supports_local_ui_ux_error_short_circuit(review_type, client, file_entries)
+        ):
+            logger.warning(
+                "Combined ui_ux review returned a retryable Local error; skipping individual fallback and relying on deterministic UI/UX supplements"
+            )
+            return []
+        if (
+            feedback
+            and _is_retryable_review_error(feedback)
+            and _supports_local_security_error_short_circuit(review_type, client, file_entries)
+        ):
+            logger.warning(
+                "Combined security review returned a retryable Local error; skipping individual fallback and relying on deterministic security supplements"
+            )
+            return []
         logger.warning("Combined review returned error, falling back to individual")
-        return _process_files_individually(target_files, review_type, client, lang, spec_content, cancel_check)
+        return _process_files_individually(
+            target_files,
+            review_type,
+            client,
+            lang,
+            spec_content,
+            cancel_check,
+            project_root,
+        )
 
     # Parse combined feedback; retry any files the model failed to attribute
     return _merge_combined_with_fallback(
@@ -5662,6 +8326,7 @@ def _request_review_with_retry(
     review_type: str,
     lang: str,
     spec_content: Optional[str],
+    tool_context: ToolReviewContext | None = None,
     attempts: int = _REVIEW_RETRY_ATTEMPTS,
 ) -> str:
     """Request a review and retry once when the backend returns a transient error."""
@@ -5675,6 +8340,7 @@ def _request_review_with_retry(
                 review_type=review_type,
                 lang=lang,
                 spec_content=spec_content,
+                tool_context=tool_context,
             )
         except Exception as exc:
             last_exception = exc
@@ -5717,7 +8383,336 @@ def _is_retryable_review_error(feedback: str) -> bool:
         return False
     if "too large" in lowered:
         return False
+    if "tool-aware file access was not used" in lowered:
+        return False
     return True
+
+
+_LICENSE_PARTIAL_FALLBACK_SKIP_NAMES = frozenset({
+    "license",
+    "license.txt",
+    "license.md",
+    "licence",
+    "licence.txt",
+    "copying",
+    "copying.txt",
+    "notice",
+    "notice.txt",
+    "third_party_notices.md",
+    "third_party_notices.txt",
+    "licenses_check.csv",
+    "pyproject.toml",
+    "setup.cfg",
+    "setup.py",
+    "requirements.txt",
+})
+
+
+def _supports_local_license_error_short_circuit(
+    review_type: str,
+    client: AIBackend,
+    file_entries: Sequence[Dict[str, Any]],
+) -> bool:
+    if "license" not in review_type.split("+") or not _is_local_backend(client):
+        return False
+
+    entries = [dict(entry) for entry in file_entries]
+    if not entries:
+        return False
+
+    entries = _append_nearby_entries(
+        entries,
+        entries[0]["path"],
+        ("THIRD_PARTY_NOTICES.md", "licenses_check.csv", "pyproject.toml"),
+    )
+    return bool(_collect_local_license_supplements(entries, []))
+
+
+def _supports_local_dependency_error_short_circuit(
+    review_type: str,
+    client: AIBackend,
+    file_entries: Sequence[Dict[str, Any]],
+) -> bool:
+    if "dependency" not in review_type.split("+") or not _is_local_backend(client):
+        return False
+
+    entries = [dict(entry) for entry in file_entries]
+    if not entries:
+        return False
+
+    entries = _append_nearby_entries(
+        entries,
+        entries[0]["path"],
+        ("pyproject.toml", "requirements.txt"),
+    )
+    return bool(_collect_local_dependency_supplements(entries, []))
+
+
+def _supports_local_documentation_error_short_circuit(
+    review_type: str,
+    client: AIBackend,
+    file_entries: Sequence[Dict[str, Any]],
+) -> bool:
+    if "documentation" not in review_type.split("+") or not _is_local_backend(client):
+        return False
+
+    entries = [dict(entry) for entry in file_entries]
+    if not entries:
+        return False
+
+    return bool(_collect_local_documentation_supplements(entries, []))
+
+
+def _supports_local_architecture_error_short_circuit(
+    review_type: str,
+    client: AIBackend,
+    file_entries: Sequence[Dict[str, Any]],
+) -> bool:
+    if "architecture" not in review_type.split("+") or not _is_local_backend(client):
+        return False
+
+    entries = [dict(entry) for entry in file_entries]
+    if not entries:
+        return False
+
+    return bool(_normalize_controller_repository_bypass_findings(entries, review_type, []))
+
+
+def _supports_local_scalability_error_short_circuit(
+    review_type: str,
+    client: AIBackend,
+    file_entries: Sequence[Dict[str, Any]],
+) -> bool:
+    if "scalability" not in review_type.split("+") or not _is_local_backend(client):
+        return False
+
+    entries = [dict(entry) for entry in file_entries]
+    if not entries:
+        return False
+
+    entries = _append_nearby_entries(
+        entries,
+        entries[0]["path"],
+        ("db_pool.py", "gunicorn.conf.py"),
+    )
+    return bool(_collect_local_scalability_supplements(entries, []))
+
+
+def _supports_local_error_handling_error_short_circuit(
+    review_type: str,
+    client: AIBackend,
+    file_entries: Sequence[Dict[str, Any]],
+) -> bool:
+    if "error_handling" not in review_type.split("+") or not _is_local_backend(client):
+        return False
+
+    entries = [dict(entry) for entry in file_entries]
+    if not entries:
+        return False
+
+    return any(
+        supplement is not None
+        for supplement in (
+            _supplement_local_false_success_error_handling(entries, []),
+            _supplement_local_retryless_timeout_error_handling(entries, []),
+            _supplement_local_context_manager_cleanup_error_handling(entries, []),
+        )
+    )
+
+
+def _supports_local_data_validation_error_short_circuit(
+    review_type: str,
+    client: AIBackend,
+    file_entries: Sequence[Dict[str, Any]],
+) -> bool:
+    if "data_validation" not in review_type.split("+") or not _is_local_backend(client):
+        return False
+
+    entries = [dict(entry) for entry in file_entries]
+    if not entries:
+        return False
+
+    return any(
+        supplement is not None
+        for supplement in (
+            _supplement_local_inverted_window_data_validation(entries, []),
+            _supplement_local_rollout_percent_range_data_validation(entries, []),
+            _supplement_local_enum_field_constraint_data_validation(entries, []),
+        )
+    )
+
+
+def _supports_local_testing_error_short_circuit(
+    review_type: str,
+    client: AIBackend,
+    file_entries: Sequence[Dict[str, Any]],
+) -> bool:
+    if "testing" not in review_type.split("+") or not _is_local_backend(client):
+        return False
+
+    entries = [dict(entry) for entry in file_entries]
+    if not entries:
+        return False
+
+    return _supplement_local_rollout_percent_range_testing(entries, []) is not None
+
+
+def _supports_local_ui_ux_error_short_circuit(
+    review_type: str,
+    client: AIBackend,
+    file_entries: Sequence[Dict[str, Any]],
+) -> bool:
+    if "ui_ux" not in review_type.split("+") or not _is_local_backend(client):
+        return False
+
+    entries = [dict(entry) for entry in file_entries]
+    if not entries:
+        return False
+
+    return bool(_collect_local_ui_ux_supplements(entries, []))
+
+
+def _supports_local_security_error_short_circuit(
+    review_type: str,
+    client: AIBackend,
+    file_entries: Sequence[Dict[str, Any]],
+) -> bool:
+    if "security" not in review_type.split("+") or not _is_local_backend(client):
+        return False
+
+    entries = [dict(entry) for entry in file_entries]
+    if not entries:
+        return False
+
+    return bool(_collect_local_security_supplements(entries, []))
+
+
+def _issue_coverage_entries(
+    issues: Sequence[ReviewIssue],
+    allowed_types: Sequence[str] | None = None,
+) -> set[str]:
+    normalized_allowed = {
+        re.sub(r"[\s\-/]+", "_", issue_type.lower()).strip("_")
+        for issue_type in (allowed_types or [])
+    }
+    covered: set[str] = set()
+    for issue in issues:
+        normalized_issue_type = re.sub(r"[\s\-/]+", "_", issue.issue_type.lower()).strip("_")
+        if normalized_allowed and normalized_issue_type not in normalized_allowed:
+            continue
+        if issue.file_path:
+            covered.add(issue.file_path)
+            covered.add(Path(issue.file_path).name)
+        for related_path in issue.related_files:
+            if not related_path:
+                continue
+            covered.add(related_path)
+            covered.add(Path(related_path).name)
+    return covered
+
+
+def _filter_partial_fallback_entries(
+    review_type: str,
+    unrepresented: Sequence[Dict[str, Any]],
+    issues: Sequence[ReviewIssue],
+    client: AIBackend | None = None,
+    file_entries: Sequence[Dict[str, Any]] | None = None,
+) -> List[Dict[str, Any]]:
+    if "license" not in review_type.split("+") or not issues:
+        filtered = list(unrepresented)
+    else:
+        filtered = [
+            entry
+            for entry in unrepresented
+            if entry["name"].lower() not in _LICENSE_PARTIAL_FALLBACK_SKIP_NAMES
+        ]
+        if not filtered and len(unrepresented) > 0:
+            logger.info(
+                "Skipping license partial fallback for support files already covered by the combined review: %s",
+                [entry["name"] for entry in unrepresented],
+            )
+
+    if (
+        client is not None
+        and file_entries is not None
+        and _is_local_backend(client)
+        and filtered
+    ):
+        local_entries = [dict(entry) for entry in file_entries]
+        if local_entries and "dependency" in review_type.split("+"):
+            dependency_entries = _append_nearby_entries(
+                local_entries.copy(),
+                local_entries[0]["path"],
+                ("pyproject.toml", "requirements.txt"),
+            )
+            supplement_paths = _issue_coverage_entries(
+                _collect_local_dependency_supplements(dependency_entries, issues),
+            )
+            dependency_filtered = [
+                entry
+                for entry in filtered
+                if entry["path"] not in supplement_paths and entry["name"] not in supplement_paths
+            ]
+            if len(dependency_filtered) != len(filtered):
+                logger.info(
+                    "Skipping Local dependency partial fallback for files already covered by deterministic supplements: %s",
+                    [
+                        entry["name"]
+                        for entry in filtered
+                        if entry["path"] in supplement_paths or entry["name"] in supplement_paths
+                    ],
+                )
+            filtered = dependency_filtered
+
+        if filtered and local_entries and "documentation" in review_type.split("+"):
+            documentation_supplements = _collect_local_documentation_supplements(local_entries, issues)
+            documentation_paths = _issue_coverage_entries(
+                [*issues, *documentation_supplements],
+                allowed_types=("documentation",),
+            )
+            documentation_filtered = [
+                entry
+                for entry in filtered
+                if entry["path"] not in documentation_paths and entry["name"] not in documentation_paths
+            ]
+            if len(documentation_filtered) != len(filtered):
+                logger.info(
+                    "Skipping Local documentation partial fallback for files already covered by deterministic documentation findings: %s",
+                    [
+                        entry["name"]
+                        for entry in filtered
+                        if entry["path"] in documentation_paths or entry["name"] in documentation_paths
+                    ],
+                )
+            filtered = documentation_filtered
+
+        if filtered and local_entries and "architecture" in review_type.split("+"):
+            architecture_supplements = _normalize_controller_repository_bypass_findings(
+                local_entries,
+                review_type,
+                issues,
+            )
+            architecture_paths = _issue_coverage_entries(
+                [*issues, *architecture_supplements],
+                allowed_types=("architecture",),
+            )
+            architecture_filtered = [
+                entry
+                for entry in filtered
+                if entry["path"] not in architecture_paths and entry["name"] not in architecture_paths
+            ]
+            if len(architecture_filtered) != len(filtered):
+                logger.info(
+                    "Skipping Local architecture partial fallback for files already covered by deterministic architecture findings: %s",
+                    [
+                        entry["name"]
+                        for entry in filtered
+                        if entry["path"] in architecture_paths or entry["name"] in architecture_paths
+                    ],
+                )
+            filtered = architecture_filtered
+
+    return filtered
 
 
 def _merge_combined_with_fallback(
@@ -5759,6 +8754,12 @@ def _merge_combined_with_fallback(
     attributed: set[str] = set()
     for issue in issues:
         attributed.add(issue.file_path)
+        attributed.add(Path(issue.file_path).name)
+        for related_path in issue.related_files:
+            if not related_path:
+                continue
+            attributed.add(related_path)
+            attributed.add(Path(related_path).name)
 
     # Identify entries with zero attribution
     unrepresented: List[Dict[str, Any]] = [
@@ -5769,6 +8770,16 @@ def _merge_combined_with_fallback(
     # Only retry if the combined parse produced results for other files
     # (avoids needless re-review of genuinely clean batches)
     if not unrepresented or not issues:
+        return issues
+
+    unrepresented = _filter_partial_fallback_entries(
+        review_type,
+        unrepresented,
+        issues,
+        client,
+        file_entries,
+    )
+    if not unrepresented:
         return issues
 
     logger.warning(

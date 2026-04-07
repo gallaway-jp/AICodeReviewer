@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import threading
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Callable, Iterable
 from urllib.parse import parse_qs, quote, unquote
 from wsgiref.simple_server import WSGIServer, make_server
 
+from .diagnostics import serialize_failure_diagnostic
 from .backends import create_backend
 from .execution import (
     JobFailed,
@@ -31,6 +34,10 @@ from .review_presets import get_review_preset_group_label, get_review_preset_lab
 
 JsonDict = dict[str, Any]
 BackendFactory = Callable[[str], Any]
+
+
+logger = logging.getLogger(__name__)
+audit_logger = logging.getLogger("aicodereviewer.audit")
 
 
 def _isoformat(value: datetime | None) -> str | None:
@@ -317,6 +324,7 @@ class LocalReviewHttpService:
                 {
                     "error_message": event.error_message,
                     "exception_type": event.exception_type,
+                    "error_diagnostic": serialize_failure_diagnostic(event.error_diagnostic),
                 }
             )
         return payload
@@ -357,6 +365,7 @@ class LocalReviewHttpService:
             "started_at": _isoformat(job.started_at),
             "completed_at": _isoformat(job.completed_at),
             "error_message": job.error_message,
+            "error_diagnostic": serialize_failure_diagnostic(job.error_diagnostic),
             "request": _serialize_request(job.request),
             "result": self._serialize_result(job.result),
         }
@@ -382,6 +391,7 @@ class LocalHttpApiApplication:
         path = self._normalize_path(str(environ.get("PATH_INFO", "/")))
         query = self._parse_query_params(str(environ.get("QUERY_STRING", "")))
         segments = self._path_segments(path)
+        remote_addr = self._remote_addr(environ)
         try:
             if method == "GET" and path == "/api/backends":
                 return self._json_response(start_response, 200, {"items": self.service.list_backends()})
@@ -400,8 +410,20 @@ class LocalHttpApiApplication:
                 payload = self._read_json_body(environ)
                 request = self._parse_review_request(payload)
                 output_file = _coerce_optional_string(payload.get("output_file"))
+                if output_file is not None:
+                    output_file = self._validate_output_file(output_file, request)
                 auto_finalize = _coerce_bool(payload.get("auto_finalize"), default=True)
                 job = self.service.submit_job(request, output_file=output_file, auto_finalize=auto_finalize)
+                self._audit_log(
+                    "job_submit",
+                    remote_addr=remote_addr,
+                    job_id=str(job["job_id"]),
+                    review_path=request.path or "",
+                    backend=request.backend_name,
+                    dry_run=request.dry_run,
+                    auto_finalize=auto_finalize,
+                    output_file=output_file or "",
+                )
                 return self._json_response(start_response, 201, job)
             if len(segments) >= 3 and segments[:2] == ["api", "jobs"]:
                 job_id = unquote(segments[2])
@@ -410,16 +432,33 @@ class LocalHttpApiApplication:
                 if len(segments) == 4 and method == "POST" and segments[3] == "cancel":
                     if not self.service.cancel_job(job_id):
                         return self._json_response(start_response, 404, {"error": f"Unknown or non-cancellable job '{job_id}'"})
+                    self._audit_log("job_cancel", remote_addr=remote_addr, job_id=job_id)
                     return self._json_response(start_response, 202, self.service.get_job(job_id))
                 if len(segments) == 4 and method == "GET" and segments[3] == "report":
+                    self._audit_log("report_fetch", remote_addr=remote_addr, job_id=job_id)
                     return self._json_response(start_response, 200, self.service.get_job_report(job_id))
                 if len(segments) == 4 and method == "GET" and segments[3] == "artifacts":
+                    self._audit_log("artifact_list", remote_addr=remote_addr, job_id=job_id)
                     return self._json_response(start_response, 200, self.service.list_job_artifacts(job_id))
                 if len(segments) == 5 and method == "GET" and segments[3] == "artifacts":
                     artifact_key = unquote(segments[4])
+                    self._audit_log(
+                        "artifact_fetch",
+                        remote_addr=remote_addr,
+                        job_id=job_id,
+                        artifact_key=artifact_key,
+                        raw=False,
+                    )
                     return self._json_response(start_response, 200, self.service.get_job_artifact(job_id, artifact_key))
                 if len(segments) == 6 and method == "GET" and segments[3] == "artifacts" and segments[5] == "raw":
                     artifact_key = unquote(segments[4])
+                    self._audit_log(
+                        "artifact_fetch",
+                        remote_addr=remote_addr,
+                        job_id=job_id,
+                        artifact_key=artifact_key,
+                        raw=True,
+                    )
                     metadata, content = self.service.get_job_artifact_raw(job_id, artifact_key)
                     filename = metadata["path"].replace("\\", "/").rsplit("/", 1)[-1]
                     return self._binary_response(
@@ -437,8 +476,35 @@ class LocalHttpApiApplication:
         except KeyError as exc:
             return self._json_response(start_response, 404, {"error": f"Unknown resource '{exc.args[0]}'"})
         except ValueError as exc:
+            audit_logger.warning(
+                "Local HTTP request rejected: remote_addr=%s method=%s path=%s error=%s",
+                remote_addr,
+                method,
+                path,
+                str(exc),
+            )
+            logger.warning(
+                "Local HTTP request rejected: remote_addr=%s method=%s path=%s error=%s",
+                remote_addr,
+                method,
+                path,
+                str(exc),
+            )
             return self._json_response(start_response, 400, {"error": str(exc)})
         except Exception as exc:
+            audit_logger.error(
+                "Local HTTP request failed: remote_addr=%s method=%s path=%s error=%s",
+                remote_addr,
+                method,
+                path,
+                str(exc),
+            )
+            logger.exception(
+                "Local HTTP request failed: remote_addr=%s method=%s path=%s",
+                remote_addr,
+                method,
+                path,
+            )
             return self._json_response(start_response, 500, {"error": str(exc)})
 
     @staticmethod
@@ -491,6 +557,50 @@ class LocalHttpApiApplication:
             reviewers=_coerce_string_list(payload.get("reviewers"), field_name="reviewers"),
             dry_run=_coerce_bool(payload.get("dry_run"), default=False),
         )
+
+    @staticmethod
+    def _validate_output_file(output_file: str, request: ReviewRequest) -> str:
+        candidate = Path(output_file).expanduser()
+        if not candidate.is_absolute():
+            candidate = Path.cwd() / candidate
+        resolved_candidate = candidate.resolve(strict=False)
+
+        allowed_roots = [Path.cwd().resolve()]
+        request_path = str(request.path or "").strip()
+        if request_path:
+            request_root = Path(request_path).expanduser()
+            if not request_root.is_absolute():
+                request_root = Path.cwd() / request_root
+            resolved_request_root = request_root.resolve(strict=False)
+            allowed_roots.append(
+                resolved_request_root if resolved_request_root.suffix == "" else resolved_request_root.parent
+            )
+
+        if any(
+            resolved_candidate == root or resolved_candidate.is_relative_to(root)
+            for root in allowed_roots
+        ):
+            return str(resolved_candidate)
+        raise ValueError(
+            "Field 'output_file' must stay within the review path or current workspace"
+        )
+
+    @staticmethod
+    def _remote_addr(environ: JsonDict) -> str:
+        return str(environ.get("REMOTE_ADDR") or "local")
+
+    @staticmethod
+    def _sanitize_audit_value(value: Any) -> str:
+        text = str(value)
+        return " ".join(text.split())
+
+    def _audit_log(self, action: str, **fields: Any) -> None:
+        details = " ".join(
+            f"{key}={self._sanitize_audit_value(value)}"
+            for key, value in fields.items()
+            if value not in (None, "")
+        )
+        audit_logger.info("Local HTTP audit: action=%s%s", action, f" {details}" if details else "")
 
     @staticmethod
     def _json_response(

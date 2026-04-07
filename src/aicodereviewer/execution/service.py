@@ -6,6 +6,7 @@ from typing import Any, Callable, Optional
 from uuid import uuid4
 
 from ..backends.base import AIBackend
+from ..diagnostics import diagnostic_from_exception
 from ..interactive import interactive_review_confirmation
 from ..models import ReviewIssue, ReviewReport
 from ..registries import get_backend_registry, get_review_registry
@@ -170,10 +171,16 @@ class ReviewExecutionService:
             return result
 
         if client is None:
-            self._fail_job(job, sink, RuntimeError("AI backend client is required for non-dry-run review"))
-            raise RuntimeError("AI backend client is required for non-dry-run review")
+            error = RuntimeError("AI backend client is required for non-dry-run review")
+            self._fail_job(job, sink, error)
+            raise error
 
         self._set_job_state(job, sink, "reviewing")
+        if hasattr(client, "reset_tool_access_audit"):
+            try:
+                client.reset_tool_access_audit()
+            except Exception:
+                pass
 
         def _progress(current: int, total: int, message: str) -> None:
             sink.emit(
@@ -197,16 +204,24 @@ class ReviewExecutionService:
                 request.spec_content,
                 progress_callback=_progress,
                 cancel_check=cancel_check,
+                project_root=request.path,
             )
         except Exception as exc:
             self._fail_job(job, sink, exc)
             raise
+        tool_access_audit = None
+        if hasattr(client, "consume_tool_access_audit"):
+            try:
+                tool_access_audit = client.consume_tool_access_audit()
+            except Exception:
+                tool_access_audit = None
         if not issues:
             result = ReviewExecutionResult(
                 status="no_issues",
                 request=request,
                 files_scanned=len(target_files),
                 target_paths=target_paths,
+                tool_access_audit=tool_access_audit,
             )
             self._complete_job(job, sink, result)
             return result
@@ -219,6 +234,7 @@ class ReviewExecutionService:
             target_paths=target_paths,
             issues=issues,
             report_context=report_context,
+            tool_access_audit=tool_access_audit,
         )
         previous_state = job.set_pending_result(result)
         sink.emit(
@@ -353,7 +369,8 @@ class ReviewExecutionService:
         exc: Exception,
     ) -> None:
         error_message = str(exc)
-        previous_state = job.fail_with_error(error_message)
+        error_diagnostic = diagnostic_from_exception(exc, origin="review")
+        previous_state = job.fail_with_error(error_message, diagnostic=error_diagnostic)
         sink.emit(
             JobStateChanged(
                 job_id=job.job_id,
@@ -369,5 +386,6 @@ class ReviewExecutionService:
                 kind="job.failed",
                 error_message=error_message,
                 exception_type=type(exc).__name__,
+                error_diagnostic=error_diagnostic,
             )
         )

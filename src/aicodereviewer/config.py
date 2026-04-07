@@ -43,6 +43,7 @@ _CONVERTERS: list[tuple[str, str, Any]] = [
     ("local_http",  "enabled",           _to_bool),
     ("local_http",  "enable_*",          _to_bool),
     ("local_http",  "port",              int),
+    ("tool_file_access", "enabled",      _to_bool),
     # Logging section
     ("logging",     "enable_*",          _to_bool),
 ]
@@ -131,6 +132,10 @@ class Config:
         self._add("logging", "enable_performance_logging", "true")
         self._add("logging", "enable_file_logging", "false")
         self._add("logging", "log_file", "aicodereviewer.log")
+        self._add("logging", "enable_api_audit_file_logging", "true")
+        self._add("logging", "api_audit_log_file", "aicodereviewer-audit.log")
+        self._add("logging", "api_audit_log_max_bytes", "1048576")
+        self._add("logging", "api_audit_log_backup_count", "5")
 
         # ── model (Bedrock) ────────────────────────────────────────────────
         self._add("model", "model_id", "anthropic.claude-3-5-sonnet-20240620-v1:0")
@@ -157,6 +162,16 @@ class Config:
         self._add("copilot", "timeout", "300")
         self._add("copilot", "model", "auto")
 
+        # ── tool-aware file access ───────────────────────────────────────
+        self._add("tool_file_access", "enabled", "false")
+        self._add("tool_file_access", "backend_allowlist", "copilot")
+        self._add(
+            "tool_file_access",
+            "sensitive_path_globs",
+            ".env,.env.*,*.pem,*.key,*.p12,*.pfx,*.crt,id_rsa,id_dsa,credentials.*,secrets.*",
+        )
+        self._add("tool_file_access", "sensitive_path_policy", "deny")
+
         # ── local_llm ─────────────────────────────────────────────────────
         self._add("local_llm", "api_url", "http://localhost:1234")
         self._add("local_llm", "api_type", "lmstudio")
@@ -172,6 +187,10 @@ class Config:
         self._add("gui", "review_language", "system")
         self._add("gui", "pinned_review_types", "")
         self._add("gui", "pinned_review_preset", "")
+        self._add("gui", "detached_pages", "")
+        self._add("gui", "detached_log_geometry", "")
+        self._add("gui", "detached_settings_geometry", "")
+        self._add("gui", "detached_benchmark_geometry", "")
 
         # ── local http ─────────────────────────────────────────────────────
         self._add("local_http", "enabled", "false")

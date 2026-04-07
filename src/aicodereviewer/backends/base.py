@@ -10,10 +10,14 @@ from typing import Any, Callable, Dict, Optional, List
 
 from aicodereviewer.registries import get_review_registry
 from aicodereviewer import review_definitions as _review_definitions
+from aicodereviewer.tool_access import ToolAccessAudit, ToolReviewContext
 
 REVIEW_PROMPTS = _review_definitions.REVIEW_PROMPTS
 REVIEW_TYPE_KEYS = _review_definitions.REVIEW_TYPE_KEYS
 REVIEW_TYPE_META = _review_definitions.REVIEW_TYPE_META
+
+
+ConnectionDiagnostic = Dict[str, str | bool]
 
 # ── JSON output schema (injected into system prompt) ───────────────────────
 
@@ -470,6 +474,21 @@ class AIBackend(ABC):
         or event loops should override this method.
         """
 
+    def supports_tool_file_access(self) -> bool:
+        """Return True when this backend can expose workspace file reads to the model."""
+        return False
+
+    def reset_tool_access_audit(self) -> None:
+        """Reset any per-review tool-access audit state."""
+
+    def current_tool_access_audit(self) -> ToolAccessAudit | None:
+        """Return the current per-review tool-access audit snapshot, if any."""
+        return None
+
+    def consume_tool_access_audit(self) -> ToolAccessAudit | None:
+        """Return and clear the current per-review tool-access audit snapshot."""
+        return self.current_tool_access_audit()
+
     # ── public API ─────────────────────────────────────────────────────────
 
     @abstractmethod
@@ -479,6 +498,7 @@ class AIBackend(ABC):
         review_type: str = "best_practices",
         lang: str = "en",
         spec_content: Optional[str] = None,
+        tool_context: ToolReviewContext | None = None,
     ) -> str:
         """
         Run an AI code review and return the feedback as plain text.
@@ -489,6 +509,7 @@ class AIBackend(ABC):
             lang: ``'en'`` or ``'ja'``.
             spec_content: Specification document (required when
                           *review_type* is ``'specification'``).
+            tool_context: Optional workspace tool-access context for eligible backends.
 
         Returns:
             AI feedback text, or a string starting with ``"Error:"`` on failure.
@@ -534,6 +555,21 @@ class AIBackend(ABC):
             True if a trivial request succeeds.
         """
         ...
+
+    def validate_connection_diagnostic(self) -> ConnectionDiagnostic:
+        """Return a categorized diagnostic for backend connectivity.
+
+        Subclasses can override this to provide richer error categories while
+        keeping ``validate_connection()`` available for older call sites.
+        """
+        ok = self.validate_connection()
+        return {
+            "ok": ok,
+            "category": "none" if ok else "unknown",
+            "detail": "",
+            "fix_hint": "",
+            "origin": "connection_test",
+        }
 
     # ── helpers available to all subclasses ─────────────────────────────────
 
@@ -1140,6 +1176,37 @@ class AIBackend(ABC):
             "Respond with the JSON format described in your instructions."
         )
         return "\n".join(parts)
+
+    @staticmethod
+    def _build_tool_aware_user_message(
+        context: ToolReviewContext,
+        review_type: str,
+        spec_content: Optional[str] = None,
+    ) -> str:
+        """Build a compact user message that expects workspace file reads via tools."""
+        review_type_scope = AIBackend._review_type_scope(review_type)
+        scope_hint = ""
+        if "ui_ux" in review_type_scope:
+            scope_hint = (
+                " Prioritize user-visible navigation, state-feedback, compare-flow, and recovery issues after you inspect the files."
+            )
+        spec_block = ""
+        if review_type == "specification" and spec_content:
+            spec_block = f"SPECIFICATION DOCUMENT:\n{spec_content}\n\n---\n\n"
+        return (
+            f"{spec_block}Review this repository using workspace file-read tools instead of assuming the file contents are already embedded in the prompt. "
+            "Read at least one listed file before returning any finding. Prefer the listed files first, then read additional workspace files only when needed to confirm a cross-file issue. "
+            "Keep findings grounded in files you actually inspected through the available tools, and do not rely on unstated code."
+            f"{scope_hint}\n\n"
+            "CANDIDATE FILES:\n"
+            f"{context.prompt_block()}\n\n"
+            "WORKSPACE RULES:\n"
+            "- Use workspace file-read tools for inspection instead of shell or write tools.\n"
+            "- Treat the listed files as the primary scope for this review batch.\n"
+            "- Only inspect additional workspace files when you need concrete supporting evidence for a cross-file finding.\n"
+            "- If tool-mediated file access is blocked, unavailable, or denied, do not guess: return an explicit error message that starts with 'Error:'.\n\n"
+            "Respond with the JSON format described in your instructions."
+        )
 
     @staticmethod
     def _build_multi_file_diff_user_message(

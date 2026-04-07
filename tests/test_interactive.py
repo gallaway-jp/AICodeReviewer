@@ -8,6 +8,9 @@ verification, and refactored helper functions.
 import pytest
 from unittest.mock import MagicMock, patch
 from datetime import datetime
+from aicodereviewer.diagnostics import FailureDiagnostic
+from aicodereviewer.fixer import FixGenerationResult
+from aicodereviewer.i18n import t
 from aicodereviewer.interactive import get_valid_choice, interactive_review_confirmation
 from aicodereviewer.models import ReviewIssue
 
@@ -100,14 +103,14 @@ class TestInteractiveReviewConfirmation:
 
     @patch('builtins.input')
     @patch('aicodereviewer.interactive.get_valid_choice')
-    @patch('aicodereviewer.interactive.apply_ai_fix')
+    @patch('aicodereviewer.interactive.generate_ai_fix_result')
     @patch('builtins.open', new_callable=MagicMock)
     @patch('shutil.copy2')
-    def test_interactive_ai_fix_accepted(self, mock_copy, mock_open, mock_fix, mock_choice, mock_input):
+    def test_interactive_ai_fix_accepted(self, mock_copy, mock_open, mock_fix_result, mock_choice, mock_input):
         """Test accepting an AI fix"""
         mock_choice.side_effect = ["3", "y"]
         mock_input.return_value = "dummy"
-        mock_fix.return_value = "fixed_code()"
+        mock_fix_result.return_value = FixGenerationResult(content="fixed_code()")
         mock_open.return_value.__enter__.return_value.read.return_value = "original_code()"
 
         mock_client = MagicMock()
@@ -121,12 +124,12 @@ class TestInteractiveReviewConfirmation:
 
     @patch('builtins.input')
     @patch('aicodereviewer.interactive.get_valid_choice')
-    @patch('aicodereviewer.interactive.apply_ai_fix')
-    def test_interactive_ai_fix_rejected(self, mock_fix, mock_choice, mock_input):
+    @patch('aicodereviewer.interactive.generate_ai_fix_result')
+    def test_interactive_ai_fix_rejected(self, mock_fix_result, mock_choice, mock_input):
         """Test rejecting an AI fix"""
         mock_choice.side_effect = ["3", "n", "cancel"]  # AI FIX, reject, then cancel
         mock_input.return_value = "dummy"
-        mock_fix.return_value = "fixed_code()"
+        mock_fix_result.return_value = FixGenerationResult(content="fixed_code()")
 
         mock_client = MagicMock()
         issues = [self.create_test_issue()]
@@ -135,6 +138,62 @@ class TestInteractiveReviewConfirmation:
 
         assert len(result) == 1
         assert result[0].status == "pending"
+
+    @patch('aicodereviewer.interactive.get_valid_choice')
+    @patch('aicodereviewer.interactive.generate_ai_fix_result')
+    def test_interactive_ai_fix_failure_surfaces_diagnostic_detail(self, mock_fix_result, mock_choice, capsys):
+        """Test failed AI fix messaging includes diagnostic detail and hint."""
+        mock_choice.side_effect = ["3", "cancel"]
+        mock_fix_result.return_value = FixGenerationResult(
+            content=None,
+            diagnostic=FailureDiagnostic(
+                category="configuration",
+                origin="fix_generation",
+                detail="Fix generation disabled for this file.",
+                fix_hint="Check backend settings.",
+            ),
+        )
+
+        mock_client = MagicMock()
+        issues = [self.create_test_issue()]
+
+        result = interactive_review_confirmation(issues, mock_client, "security", "en")
+        output = capsys.readouterr().out
+
+        assert len(result) == 1
+        assert result[0].status == "pending"
+        assert t("interactive.fix_failed") in output
+        assert t(
+            "interactive.fix_failed_detail",
+            category=t("gui.results.diagnostic_category_configuration"),
+            detail="Fix generation disabled for this file.",
+        ) in output
+        assert t("interactive.fix_failed_hint", hint="Check backend settings.") in output
+
+    @patch('aicodereviewer.interactive.get_valid_choice')
+    @patch('aicodereviewer.interactive.generate_ai_fix_result')
+    def test_interactive_ai_fix_failure_surfaces_retry_guidance(self, mock_fix_result, mock_choice, capsys):
+        """Test failed AI fix messaging includes retry guidance for transient failures."""
+        mock_choice.side_effect = ["3", "cancel"]
+        mock_fix_result.return_value = FixGenerationResult(
+            content=None,
+            diagnostic=FailureDiagnostic(
+                category="timeout",
+                origin="fix_generation",
+                detail="request timeout",
+                fix_hint="Increase the timeout or verify the backend is responsive before retrying.",
+                retryable=True,
+                retry_delay_seconds=5,
+            ),
+        )
+
+        mock_client = MagicMock()
+        issues = [self.create_test_issue()]
+
+        interactive_review_confirmation(issues, mock_client, "security", "en")
+        output = capsys.readouterr().out
+
+        assert t("interactive.fix_failed_retry_after", seconds=5) in output
 
     @patch('aicodereviewer.interactive.get_valid_choice')
     @patch('builtins.open', new_callable=MagicMock)

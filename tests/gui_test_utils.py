@@ -199,7 +199,7 @@ class ResultsTabHarness:
 
     def show_batch_fix_popup(
         self,
-        results: dict[int, str | None],
+        results: dict[int, Any],
         *,
         selected_indexes: list[int] | None = None,
     ) -> None:

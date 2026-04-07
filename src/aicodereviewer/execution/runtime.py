@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import time
 from collections import deque
@@ -12,6 +13,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from ..backends import create_backend
+from ..diagnostics import diagnostic_from_exception
 from .events import CallbackEventSink, ExecutionEvent, JobFailed, JobStateChanged
 from .models import ReviewJob, ReviewRequest
 from .service import ReviewExecutionService
@@ -24,6 +26,9 @@ RuntimeJobFinishedCallback = Callable[[ReviewJob, Exception | None], None]
 
 _shared_runtime: "ReviewExecutionRuntime | None" = None
 _shared_runtime_lock = threading.Lock()
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -202,10 +207,19 @@ class ReviewExecutionRuntime:
 
         artifacts: list[ReviewArtifact] = []
         seen_paths: set[str] = set()
+        allowed_roots = self._artifact_allowed_roots(job)
         for key, candidate in self._report_artifact_candidates(result.report_path).items():
             if not candidate.exists() or not candidate.is_file():
                 continue
-            resolved = str(candidate.resolve())
+            resolved_path = candidate.resolve()
+            if not self._path_is_within_allowed_roots(resolved_path, allowed_roots):
+                logger.warning(
+                    "Skipping out-of-scope artifact for job %s: %s",
+                    job.job_id,
+                    resolved_path,
+                )
+                continue
+            resolved = str(resolved_path)
             if resolved in seen_paths:
                 continue
             seen_paths.add(resolved)
@@ -372,7 +386,8 @@ class ReviewExecutionRuntime:
 
     def _fail_job(self, job: ReviewJob, exc: Exception) -> None:
         error_message = str(exc)
-        previous_state = job.fail_with_error(error_message)
+        error_diagnostic = diagnostic_from_exception(exc, origin="runtime")
+        previous_state = job.fail_with_error(error_message, diagnostic=error_diagnostic)
         self._record_event(
             JobStateChanged(
                 job_id=job.job_id,
@@ -388,6 +403,7 @@ class ReviewExecutionRuntime:
                 kind="job.failed",
                 error_message=error_message,
                 exception_type=type(exc).__name__,
+                error_diagnostic=error_diagnostic,
             )
         )
 
@@ -432,6 +448,29 @@ class ReviewExecutionRuntime:
             "report_summary_txt": txt_summary,
             "report_md": primary.with_suffix(".md"),
         }
+
+    @staticmethod
+    def _path_is_within_allowed_roots(path: Path, allowed_roots: tuple[Path, ...]) -> bool:
+        return any(path == root or path.is_relative_to(root) for root in allowed_roots)
+
+    @staticmethod
+    def _artifact_allowed_roots(job: ReviewJob) -> tuple[Path, ...]:
+        roots: list[Path] = [Path.cwd().resolve()]
+        request_path = str(job.request.path or "").strip()
+        if request_path:
+            request_root = Path(request_path).expanduser()
+            if not request_root.is_absolute():
+                request_root = Path.cwd() / request_root
+            resolved_request_root = request_root.resolve(strict=False)
+            roots.append(
+                resolved_request_root if resolved_request_root.suffix == "" else resolved_request_root.parent
+            )
+
+        deduped: list[Path] = []
+        for root in roots:
+            if root not in deduped:
+                deduped.append(root)
+        return tuple(deduped)
 
 
 def get_shared_review_execution_runtime(

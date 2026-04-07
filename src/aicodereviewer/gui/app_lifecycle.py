@@ -10,6 +10,7 @@ class AppLifecycleHelper:
 
     def run_startup(self) -> None:
         self.host._build_ui()
+        self.host._restore_detached_windows()
         self.host._start_local_http_server_from_settings()
         self.host._poll_log_queue()
         if not self.host._testing_mode:
@@ -17,6 +18,8 @@ class AppLifecycleHelper:
             self.host._schedule_app_after(500, self.host._auto_health_check)
 
     def prepare_for_destroy(self) -> None:
+        self.host._app_destroying = True
+        self.host._app_helpers().surfaces().prepare_detached_windows_for_shutdown()
         self.host._log_polling = False
         self.host._cancel_widget_after_callbacks(self.host)
         self.host._stop_local_http_server()

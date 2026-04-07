@@ -113,6 +113,9 @@ def convert_svg_to_ico(svg_path, ico_path, size=256):
         return True
 
     except Exception as e:
+        if ico_path.exists():
+            print(f"Placeholder generation failed ({e}), reusing existing icon at {ico_path}")
+            return True
         print(f"Failed to create placeholder icon: {e}")
         return False
 
@@ -121,8 +124,8 @@ if __name__ == "__main__":
     # Input: SVG from assets folder
     svg_path = "src/aicodereviewer/assets/icon.svg"
 
-    # Output: ICO in build folder
-    ico_path = "build/icon.ico"
+    # Output: ICO in maintained asset folder
+    ico_path = "src/aicodereviewer/assets/icon.ico"
 
     success = convert_svg_to_ico(svg_path, ico_path)
     if not success:

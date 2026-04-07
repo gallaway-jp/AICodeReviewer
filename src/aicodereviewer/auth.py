@@ -12,6 +12,7 @@ Performance Note:
 import locale
 import logging
 import os
+from dataclasses import dataclass
 from typing import Optional, Tuple, TYPE_CHECKING
 
 import keyring
@@ -25,15 +26,108 @@ from .i18n import t
 
 __all__ = [
     "SERVICE_NAME",
+    "CredentialValue",
     "get_profile_name",
     "set_profile_name",
     "clear_profile",
+    "build_credential_reference",
+    "is_credential_reference",
+    "resolve_credential_value",
+    "get_config_credential",
+    "store_config_credential",
+    "clear_config_credential",
     "get_system_language",
     "create_aws_session",
 ]
 
 logger = logging.getLogger(__name__)
 SERVICE_NAME = "AICodeReviewer"
+_CREDENTIAL_REF_PREFIX = "keyring://"
+
+
+@dataclass(frozen=True)
+class CredentialValue:
+    """Resolved credential state for config-backed secrets."""
+
+    secret: str
+    source: str
+    reference: str = ""
+    missing_reference: bool = False
+
+
+def _credential_account(section: str, key: str) -> str:
+    return f"credential:{section}.{key}"
+
+
+def build_credential_reference(section: str, key: str) -> str:
+    """Return the stable config reference stored for a keyring-backed secret."""
+    return f"{_CREDENTIAL_REF_PREFIX}{section}/{key}"
+
+
+def is_credential_reference(value: str | None) -> bool:
+    return str(value or "").strip().startswith(_CREDENTIAL_REF_PREFIX)
+
+
+def _parse_credential_reference(value: str) -> tuple[str, str] | None:
+    raw = value.strip()
+    if not raw.startswith(_CREDENTIAL_REF_PREFIX):
+        return None
+    locator = raw[len(_CREDENTIAL_REF_PREFIX):]
+    section, separator, key = locator.partition("/")
+    if not separator or not section or not key:
+        return None
+    return section, key
+
+
+def resolve_credential_value(value: str | None) -> CredentialValue:
+    """Resolve a raw config credential value into plaintext plus source metadata."""
+    raw = str(value or "").strip()
+    if not raw:
+        return CredentialValue(secret="", source="none")
+
+    reference_target = _parse_credential_reference(raw)
+    if reference_target is None:
+        return CredentialValue(secret=raw, source="config")
+
+    section, key = reference_target
+    try:
+        secret = keyring.get_password(SERVICE_NAME, _credential_account(section, key))
+    except Exception as exc:
+        logger.warning(
+            "Failed to resolve credential reference %s: %s",
+            raw,
+            exc,
+        )
+        return CredentialValue(secret="", source="keyring", reference=raw, missing_reference=True)
+
+    if not secret:
+        return CredentialValue(secret="", source="keyring", reference=raw, missing_reference=True)
+    return CredentialValue(secret=secret, source="keyring", reference=raw)
+
+
+def get_config_credential(section: str, key: str, fallback: str = "") -> CredentialValue:
+    """Resolve a secret from config, transparently following keyring references."""
+    raw_value = str(config.get(section, key, fallback) or "")
+    return resolve_credential_value(raw_value)
+
+
+def store_config_credential(section: str, key: str, secret: str | None) -> str:
+    """Persist a secret to the keyring and return the config reference to store."""
+    secret_value = str(secret or "")
+    if not secret_value:
+        clear_config_credential(section, key)
+        return ""
+
+    keyring.set_password(SERVICE_NAME, _credential_account(section, key), secret_value)
+    return build_credential_reference(section, key)
+
+
+def clear_config_credential(section: str, key: str) -> None:
+    """Remove a config-backed secret from the keyring if it exists."""
+    try:
+        keyring.delete_password(SERVICE_NAME, _credential_account(section, key))
+    except Exception:
+        return
 
 
 # ── profile management ─────────────────────────────────────────────────────

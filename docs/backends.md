@@ -114,7 +114,7 @@ type = local
 api_url = http://localhost:1234
 api_type = openai
 model = default
-api_key =
+api_key = keyring://local_llm/api_key
 timeout = 300
 max_tokens = 4096
 enable_web_search = true
@@ -127,6 +127,9 @@ aicodereviewer --check-connection --backend local
 ```
 
 Operational notes:
+- The GUI stores `local_llm.api_key` in the system keyring and leaves only a `keyring://...` reference in `config.ini`; older plain-text values still load, but re-saving migrates them.
+- The Local LLM settings section now includes explicit `Rotate` and `Revoke` actions so users can clear the stored keyring secret without manually editing `config.ini`.
+- Local backend health checks now distinguish a missing keyring-backed credential from ordinary server reachability failures.
 - `enable_web_search` is on by default for the Local LLM backend.
 - When enabled, the backend appends small amounts of public, high-level review guidance to the prompt.
 - The search flow is privacy-constrained: it does not send source code or project-specific identifiers to the search provider.

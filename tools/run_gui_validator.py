@@ -298,7 +298,8 @@ def main() -> None:
     )
 
     runner = TestRunner(cfg)
-    output_path = Path(__file__).resolve().parent.parent / "gui_validation_report.json"
+    output_path = Path(__file__).resolve().parent.parent / "artifacts" / "gui_validation_report.json"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     print("=" * 60)
     print("  CustomTkinter Validator -- AICodeReviewer GUI")

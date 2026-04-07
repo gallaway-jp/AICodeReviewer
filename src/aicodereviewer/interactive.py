@@ -12,9 +12,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import List
 
+from .diagnostics import FailureDiagnostic
+from .fixer import generate_ai_fix_result
 from .models import ReviewIssue
 from .reviewer import verify_issue_resolved
-from .fixer import apply_ai_fix
 from .i18n import t
 from .backends.base import AIBackend
 
@@ -129,9 +130,9 @@ def _action_ignore(issue: ReviewIssue) -> None:
 def _action_ai_fix(
     issue: ReviewIssue, client: AIBackend, review_type: str, lang: str
 ) -> None:
-    fix_result = apply_ai_fix(issue, client, review_type, lang)
-    if not fix_result:
-        print(t("interactive.fix_failed"))
+    fix_result = generate_ai_fix_result(issue, client, review_type, lang)
+    if not fix_result.ok or not fix_result.content:
+        _print_fix_generation_failure(fix_result.diagnostic)
         return
 
     file_path = issue.file_path or ""
@@ -142,7 +143,7 @@ def _action_ai_fix(
         print(t("interactive.diff_read_error", error=exc))
         return
 
-    _show_diff(current, fix_result, file_path)
+    _show_diff(current, fix_result.content, file_path)
 
     confirm = get_valid_choice(t("interactive.apply_fix"), ["y", "n"])
     if confirm == "y":
@@ -151,13 +152,13 @@ def _action_ai_fix(
             shutil.copy2(issue.file_path, backup)
             print(t("interactive.backup_created", path=backup))
             with open(issue.file_path, "w", encoding="utf-8") as fh:
-                fh.write(fix_result)
+                fh.write(fix_result.content)
             issue.set_resolution(
                 status="ai_fixed",
                 provenance="ai_applied",
                 resolved_at=datetime.now(),
-                ai_fix_suggested=fix_result,
-                ai_fix_applied=fix_result,
+                ai_fix_suggested=fix_result.content,
+                ai_fix_applied=fix_result.content,
             )
             print(t("interactive.fix_applied"))
         except Exception as exc:
@@ -188,6 +189,29 @@ def _print_issue_header(idx: int, total: int, issue: ReviewIssue) -> None:
     snippet = issue.code_snippet or ""
     print(t("interactive.snippet", snippet=snippet[:120]))
     print(t("interactive.feedback", feedback=issue.ai_feedback))
+
+
+def _print_fix_generation_failure(diagnostic: FailureDiagnostic | None) -> None:
+    print(t("interactive.fix_failed"))
+    if diagnostic is None:
+        return
+    category = _diagnostic_category_label(diagnostic.category)
+    print(t("interactive.fix_failed_detail", category=category, detail=diagnostic.detail))
+    if diagnostic.fix_hint:
+        print(t("interactive.fix_failed_hint", hint=diagnostic.fix_hint))
+    if diagnostic.retryable:
+        if diagnostic.retry_delay_seconds is not None:
+            print(t("interactive.fix_failed_retry_after", seconds=diagnostic.retry_delay_seconds))
+        else:
+            print(t("interactive.fix_failed_retry"))
+
+
+def _diagnostic_category_label(category: str) -> str:
+    category_key = f"gui.results.diagnostic_category_{category}"
+    label = t(category_key)
+    if label == category_key:
+        return category.replace("_", " ").title()
+    return label
 
 
 def _show_diff(original: str, fixed: str, filepath: str):

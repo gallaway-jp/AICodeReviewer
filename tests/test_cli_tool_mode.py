@@ -8,6 +8,7 @@ import pytest
 
 import aicodereviewer.main as cli
 from aicodereviewer.backends.health import CheckResult, HealthReport
+from aicodereviewer.fixer import FixGenerationResult
 from aicodereviewer.models import ReviewIssue, ReviewReport
 from aicodereviewer.recommendations import ReviewRecommendationResult, ReviewTypeRecommendation
 
@@ -105,6 +106,53 @@ def test_tool_review_prefers_last_execution_over_summary_state(monkeypatch, caps
     assert payload["status"] == "dry_run"
     assert payload["files_scanned"] == 2
     assert payload["target_paths"] == ["./proj/a.py", "./proj/b.py"]
+
+
+def test_tool_review_includes_tool_access_audit_from_last_execution(monkeypatch, capsys):
+    class _Audit:
+        def to_dict(self):
+            return {
+                "backend_name": "copilot",
+                "model_name": "gpt-5.4",
+                "enabled": True,
+                "used_tool_access": True,
+                "file_read_count": 3,
+                "denied_request_count": 0,
+                "fallback_reason": None,
+                "entries": [],
+            }
+
+    class FakeRunner:
+        def __init__(self, client, *, scan_fn, backend_name):
+            self.client = client
+            self.scan_fn = scan_fn
+            self.backend_name = backend_name
+            self.last_execution = None
+
+        def run(self, **kwargs):
+            self.last_execution = SimpleNamespace(
+                status="dry_run",
+                files_scanned=2,
+                target_paths=["./proj/a.py", "./proj/b.py"],
+                tool_access_audit=_Audit(),
+            )
+            return None
+
+    monkeypatch.setattr(cli, "create_backend", lambda _name: (_ for _ in ()).throw(AssertionError("create_backend should not be called for dry-run")))
+    monkeypatch.setattr(cli, "AppRunner", FakeRunner)
+
+    exit_code = run_main_with_args([
+        "review",
+        "./proj",
+        "--type",
+        "security",
+        "--dry-run",
+    ])
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert exit_code == 0
+    assert payload["tool_access_audit"]["backend_name"] == "copilot"
+    assert payload["tool_access_audit"]["file_read_count"] == 3
 
 
 def test_tool_review_recommend_types_outputs_json(monkeypatch, capsys):
@@ -426,6 +474,8 @@ def test_tool_health_outputs_structured_report(monkeypatch, capsys):
                 passed=False,
                 detail="http://localhost:1234 is unreachable",
                 fix_hint="Start the local server.",
+                category="transport",
+                origin="prerequisite",
             )
         ],
         summary="Local backend is not ready.",
@@ -444,7 +494,10 @@ def test_tool_health_outputs_structured_report(monkeypatch, capsys):
     assert payload["command"] == "health"
     assert payload["backend"] == "local"
     assert payload["ready"] is False
+    assert payload["failure_categories"] == ["transport"]
     assert payload["checks"][0]["name"] == "Server Reachable"
+    assert payload["checks"][0]["category"] == "transport"
+    assert payload["checks"][0]["origin"] == "prerequisite"
 
 
 def test_tool_health_applies_runtime_overrides(monkeypatch, capsys):
@@ -596,6 +649,51 @@ def test_tool_review_accepts_backend_alias(monkeypatch, capsys):
     assert created == ["copilot"]
 
 
+def test_tool_review_error_payload_includes_structured_diagnostic(monkeypatch, capsys):
+    def _raise_backend(_name):
+        raise PermissionError("Access denied to backend")
+
+    monkeypatch.setattr(cli, "create_backend", _raise_backend)
+
+    exit_code = run_main_with_args([
+        "review",
+        "./proj",
+        "--backend",
+        "local",
+        "--type",
+        "security",
+        "--programmers",
+        "dev",
+        "--reviewers",
+        "rev",
+    ])
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert exit_code == 1
+    assert payload["status"] == "error"
+    assert payload["error"]["diagnostic"]["category"] == "permission"
+    assert payload["error"]["diagnostic"]["origin"] == "review"
+
+
+def test_tool_fix_plan_error_payload_includes_structured_diagnostic(monkeypatch, capsys):
+    def _raise_report(_path):
+        raise TimeoutError("request timeout")
+
+    monkeypatch.setattr(cli, "_load_report_from_artifact", _raise_report)
+
+    exit_code = run_main_with_args([
+        "fix-plan",
+        "--report-file",
+        "missing.json",
+    ])
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert exit_code == 1
+    assert payload["status"] == "error"
+    assert payload["error"]["diagnostic"]["category"] == "timeout"
+    assert payload["error"]["diagnostic"]["origin"] == "fix_plan"
+
+
 def test_tool_fix_plan_generates_fixes_from_report_artifact(monkeypatch, capsys, tmp_path):
     report_path = tmp_path / "report.json"
     report = ReviewReport(
@@ -622,7 +720,11 @@ def test_tool_fix_plan_generates_fixes_from_report_artifact(monkeypatch, capsys,
     report_path.write_text(json.dumps(report.to_dict()), encoding="utf-8")
 
     monkeypatch.setattr(cli, "create_backend", lambda _name: MagicMock())
-    monkeypatch.setattr(cli, "apply_ai_fix", lambda issue, client, review_type, lang: "fixed()\n")
+    monkeypatch.setattr(
+        cli,
+        "generate_ai_fix_result",
+        lambda issue, client, review_type, lang: FixGenerationResult(content="fixed()\n"),
+    )
 
     exit_code = run_main_with_args([
         "fix-plan",
@@ -669,7 +771,11 @@ def test_tool_fix_plan_reads_review_envelope_artifact(monkeypatch, capsys, tmp_p
     )
 
     monkeypatch.setattr(cli, "create_backend", lambda _name: MagicMock())
-    monkeypatch.setattr(cli, "apply_ai_fix", lambda issue, client, review_type, lang: "fixed()\n")
+    monkeypatch.setattr(
+        cli,
+        "generate_ai_fix_result",
+        lambda issue, client, review_type, lang: FixGenerationResult(content="fixed()\n"),
+    )
 
     exit_code = run_main_with_args([
         "fix-plan",
@@ -759,6 +865,120 @@ def test_tool_apply_fixes_reports_no_applicable_fixes(capsys, tmp_path):
     payload = json.loads(capsys.readouterr().out.strip())
     assert exit_code == 1
     assert payload["status"] == "no_applicable_fixes"
+
+
+def test_tool_apply_fixes_error_payload_includes_structured_diagnostic(capsys, tmp_path):
+    plan_path = tmp_path / "fix-plan.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "command": "fix-plan",
+                "fixes": {"issue_id": "issue-0001"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = run_main_with_args([
+        "apply-fixes",
+        "--plan-file",
+        str(plan_path),
+    ])
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert exit_code == 1
+    assert payload["status"] == "error"
+    assert payload["error"]["diagnostic"]["category"] == "configuration"
+    assert payload["error"]["diagnostic"]["origin"] == "apply_fixes"
+
+
+def test_tool_fix_plan_failed_item_includes_structured_diagnostic(monkeypatch, capsys, tmp_path):
+    report_path = tmp_path / "report.json"
+    source_path = tmp_path / "example.py"
+    source_path.write_text("bad()\n", encoding="utf-8")
+    report = ReviewReport(
+        project_path=str(tmp_path),
+        review_type="security",
+        scope="project",
+        total_files_scanned=1,
+        issues_found=[
+            ReviewIssue(
+                file_path=str(source_path),
+                issue_type="security",
+                severity="high",
+                description="Unsafe pattern",
+                code_snippet="bad()",
+                ai_feedback="Use safe().",
+                issue_id="issue-0007",
+            )
+        ],
+        generated_at=datetime(2026, 3, 20, 10, 0, 0),
+        language="en",
+        review_types=["security"],
+        backend="bedrock",
+    )
+    report_path.write_text(json.dumps(report.to_dict()), encoding="utf-8")
+
+    monkeypatch.setattr(cli, "create_backend", lambda _name: MagicMock())
+    monkeypatch.setattr(
+        cli,
+        "generate_ai_fix_result",
+        lambda issue, client, review_type, lang: FixGenerationResult(
+            content=None,
+            diagnostic=cli._configuration_diagnostic("Fix generation is disabled for this file", origin="fix_generation"),
+        ),
+    )
+
+    exit_code = run_main_with_args([
+        "fix-plan",
+        "--report-file",
+        str(report_path),
+        "--issue-id",
+        "issue-0007",
+    ])
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert exit_code == 1
+    assert payload["status"] == "partial"
+    assert payload["failed_count"] == 1
+    assert payload["fixes"][0]["status"] == "failed"
+    assert payload["fixes"][0]["diagnostic"]["category"] == "configuration"
+    assert payload["fixes"][0]["diagnostic"]["origin"] == "fix_generation"
+
+
+def test_tool_apply_fixes_failed_item_includes_structured_diagnostic(capsys, tmp_path):
+    plan_path = tmp_path / "fix-plan.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "command": "fix-plan",
+                "fixes": [
+                    {
+                        "issue_id": "issue-0001",
+                        "file_path": str(tmp_path / "missing.py"),
+                        "status": "generated",
+                        "proposed_content": "fixed\n",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = run_main_with_args([
+        "apply-fixes",
+        "--plan-file",
+        str(plan_path),
+    ])
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert exit_code == 1
+    assert payload["status"] == "partial"
+    assert payload["results"][0]["status"] == "failed"
+    assert payload["results"][0]["diagnostic"]["category"] == "configuration"
+    assert payload["results"][0]["diagnostic"]["origin"] == "apply_fix_item"
 
 
 def test_tool_resume_normalizes_review_artifact(capsys, tmp_path):
@@ -875,6 +1095,12 @@ def test_tool_resume_normalizes_fix_plan_artifact(capsys, tmp_path):
                         "file_path": "b.py",
                         "status": "failed",
                         "proposed_content": None,
+                        "diagnostic": {
+                            "category": "configuration",
+                            "origin": "fix_generation",
+                            "detail": "Fix generation disabled",
+                            "fix_hint": "Check backend settings.",
+                        },
                     },
                 ],
             }
@@ -895,6 +1121,18 @@ def test_tool_resume_normalizes_fix_plan_artifact(capsys, tmp_path):
     assert payload["next_command"] == "apply-fixes"
     assert payload["generated_issue_ids"] == ["issue-0001"]
     assert payload["failed_issue_ids"] == ["issue-0002"]
+    assert payload["failed_diagnostics"] == [
+        {
+            "issue_id": "issue-0002",
+            "file_path": "b.py",
+            "category": "configuration",
+            "origin": "fix_generation",
+            "detail": "Fix generation disabled",
+            "fix_hint": "Check backend settings.",
+        }
+    ]
+    assert payload["failed_diagnostic_categories"] == [{"category": "configuration", "count": 1}]
+    assert payload["fixes"][1]["diagnostic"]["origin"] == "fix_generation"
 
 
 def test_tool_resume_normalizes_apply_results_artifact(capsys, tmp_path):
@@ -917,6 +1155,14 @@ def test_tool_resume_normalizes_apply_results_artifact(capsys, tmp_path):
                         "file_path": "b.py",
                         "status": "failed",
                         "error": "boom",
+                        "diagnostic": {
+                            "category": "provider",
+                            "origin": "apply_fix_item",
+                            "detail": "boom",
+                            "fix_hint": "Retry later.",
+                            "retryable": True,
+                            "retry_delay_seconds": 10,
+                        },
                     },
                 ],
             }
@@ -939,7 +1185,21 @@ def test_tool_resume_normalizes_apply_results_artifact(capsys, tmp_path):
     assert payload["next_command"] is None
     assert payload["can_resume"] is False
     assert payload["failed_issue_ids"] == ["issue-0002"]
+    assert payload["failed_diagnostics"] == [
+        {
+            "issue_id": "issue-0002",
+            "file_path": "b.py",
+            "category": "provider",
+            "origin": "apply_fix_item",
+            "detail": "boom",
+            "fix_hint": "Retry later.",
+            "retryable": True,
+            "retry_delay_seconds": 10,
+        }
+    ]
+    assert payload["failed_diagnostic_categories"] == [{"category": "provider", "count": 1}]
     assert payload["result_count"] == 1
+    assert payload["results"][0]["diagnostic"]["origin"] == "apply_fix_item"
 
 
 def test_tool_resume_rejects_unknown_artifact(capsys, tmp_path):

@@ -10,13 +10,17 @@ from .shared_ui import add_section_header, build_autohide_scroller
 
 
 class BenchmarkTabBuilder:
-    def __init__(self, host: Any) -> None:
+    def __init__(self, host: Any, parent: Any | None = None, *, detached: bool = False) -> None:
         self.host = host
+        self.parent = parent
+        self.detached = detached
 
     def build(self) -> None:
-        root_tab = self.host.tabs.add(t("gui.tab.benchmarks"))
+        root_tab = self.parent if self.parent is not None else self.host.tabs.add(t("gui.tab.benchmarks"))
         root_tab.grid_columnconfigure(0, weight=1)
         root_tab.grid_rowconfigure(0, weight=1)
+        if not self.detached:
+            self.host.benchmark_root_tab = root_tab
 
         benchmark_scroll_frame, benchmark_content, benchmark_scroll_canvas, benchmark_scrollbar = build_autohide_scroller(
             self.host,
@@ -284,6 +288,31 @@ class BenchmarkTabBuilder:
         )
         self.host.benchmark_reload_btn.grid(row=0, column=3, padx=(0, 8), sticky="w")
 
+        if self.detached:
+            self.host.detach_benchmark_btn = None
+            self.host._detached_benchmark_redock_btn = ctk.CTkButton(
+                secondary_action_frame,
+                text=t("gui.benchmark.redock"),
+                width=140,
+                fg_color=("#dbe7f6", "#334155"),
+                hover_color=("#c8dbf1", "#3f4d61"),
+                text_color=("gray15", "gray92"),
+                command=self.host._redock_detached_benchmark_window,
+            )
+            self.host._detached_benchmark_redock_btn.grid(row=0, column=4, sticky="w")
+        else:
+            self.host._detached_benchmark_redock_btn = None
+            self.host.detach_benchmark_btn = ctk.CTkButton(
+                secondary_action_frame,
+                text=t("gui.benchmark.open_window"),
+                width=150,
+                fg_color=("#dbe7f6", "#334155"),
+                hover_color=("#c8dbf1", "#3f4d61"),
+                text_color=("gray15", "gray92"),
+                command=self.host._open_detached_benchmark_window,
+            )
+            self.host.detach_benchmark_btn.grid(row=0, column=4, sticky="w")
+
         self.host._benchmark_action_buttons = [
             self.host.benchmark_load_catalog_btn,
             self.host.benchmark_load_summary_btn,
@@ -297,7 +326,11 @@ class BenchmarkTabBuilder:
             self.host.benchmark_open_report_dir_btn,
             self.host.benchmark_reload_btn,
         ]
-        self.host._set_benchmark_advanced_sources_visible(False)
+        if self.detached and self.host._detached_benchmark_redock_btn is not None:
+            self.host._benchmark_secondary_action_buttons.append(self.host._detached_benchmark_redock_btn)
+        if not self.detached and self.host.detach_benchmark_btn is not None:
+            self.host._benchmark_secondary_action_buttons.append(self.host.detach_benchmark_btn)
+        self.host._benchmark_advanced_visible = False
 
         row += 1
         row = add_section_header(
@@ -586,6 +619,7 @@ class BenchmarkTabBuilder:
         self.host._set_textbox(self.host.benchmark_preview_compare_box, t("gui.benchmark.preview_compare_empty"))
         self.host._set_textbox(self.host.benchmark_preview_diff_box, t("gui.benchmark.preview_diff_empty"))
         self.host.benchmark_takeaways_label.configure(text=t("gui.benchmark.takeaways_empty"))
+        self.host._set_benchmark_advanced_sources_visible(False)
         self.host._restore_benchmark_browser_state()
         benchmark_scroll_canvas.bind("<Configure>", self.host._schedule_benchmark_layout_refresh, add="+")
         self.host._refresh_benchmark_tab_layout()

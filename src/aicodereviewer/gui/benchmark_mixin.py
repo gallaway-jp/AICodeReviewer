@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 import logging
 import os
@@ -94,6 +95,269 @@ class BenchmarkTabMixin:
         BenchmarkTabBuilder(self).build()
         self._refresh_benchmark_tab_layout()
 
+    def _clear_benchmark_container(self, container: Any) -> None:
+        if container is None:
+            return
+        for child in container.winfo_children():
+            child.destroy()
+
+    def _is_benchmark_detached(self) -> bool:
+        return bool(getattr(self, "_detached_benchmark_window", None)) and self._app_helpers().surfaces().is_page_detached("benchmark")
+
+    def _capture_textbox_value(self, textbox: Any) -> str:
+        if textbox is None:
+            return ""
+        return str(textbox.get("0.0", "end")).rstrip("\n")
+
+    def _snapshot_benchmark_surface_state(self) -> dict[str, Any]:
+        if getattr(self, "benchmark_source_value", None) is None:
+            return {}
+        summary_candidates = {
+            label: str(path)
+            for label, path in getattr(self, "_benchmark_summary_candidates", {}).items()
+            if isinstance(label, str) and isinstance(path, Path)
+        }
+        return {
+            "fixtures_root": self.benchmark_fixtures_root_entry.get().strip(),
+            "artifacts_root": self.benchmark_artifacts_root_entry.get().strip(),
+            "advanced_visible": bool(getattr(self, "_benchmark_advanced_visible", False)),
+            "entries": deepcopy(getattr(self, "_benchmark_entries", [])),
+            "source_text": str(self.benchmark_source_value.cget("text") or ""),
+            "selected_fixture": self.benchmark_fixture_var.get(),
+            "selected_summary": self.benchmark_summary_selector_var.get(),
+            "summary_candidates": summary_candidates,
+            "source_kind": getattr(self, "_benchmark_source_kind", None),
+            "source_path": getattr(self, "_benchmark_source_path", None),
+            "primary_summary_path": getattr(self, "_benchmark_primary_summary_path", None),
+            "primary_summary_payload": deepcopy(getattr(self, "_benchmark_primary_summary_payload", None)),
+            "compare_summary_path": getattr(self, "_benchmark_compare_summary_path", None),
+            "compare_summary_payload": deepcopy(getattr(self, "_benchmark_compare_summary_payload", None)),
+            "filter_label": self.benchmark_fixture_filter_var.get(),
+            "sort_label": self.benchmark_fixture_sort_var.get(),
+            "preview_primary_text": self._capture_textbox_value(getattr(self, "benchmark_preview_primary_box", None)),
+            "preview_compare_text": self._capture_textbox_value(getattr(self, "benchmark_preview_compare_box", None)),
+            "preview_diff_text": self._capture_textbox_value(getattr(self, "benchmark_preview_diff_box", None)),
+        }
+
+    def _restore_benchmark_surface_state(self, state: dict[str, Any] | None) -> None:
+        if not state:
+            return
+
+        self.benchmark_fixtures_root_entry.delete(0, "end")
+        self.benchmark_fixtures_root_entry.insert(0, str(state.get("fixtures_root") or ""))
+        self.benchmark_artifacts_root_entry.delete(0, "end")
+        self.benchmark_artifacts_root_entry.insert(0, str(state.get("artifacts_root") or ""))
+
+        self._set_benchmark_advanced_sources_visible(bool(state.get("advanced_visible", False)))
+
+        summary_candidates: dict[str, Path] = {}
+        raw_summary_candidates = state.get("summary_candidates")
+        if isinstance(raw_summary_candidates, dict):
+            for label, raw_path in raw_summary_candidates.items():
+                if isinstance(label, str) and isinstance(raw_path, str) and raw_path.strip():
+                    summary_candidates[label] = Path(raw_path)
+        self._benchmark_summary_candidates = summary_candidates
+        if summary_candidates:
+            labels = list(summary_candidates.keys())
+            self.benchmark_summary_selector_menu.configure(values=labels, state="normal")
+            selected_summary = str(state.get("selected_summary") or "")
+            self.benchmark_summary_selector_var.set(selected_summary if selected_summary in summary_candidates else labels[0])
+        else:
+            empty_value = t("gui.benchmark.no_summaries")
+            self.benchmark_summary_selector_menu.configure(values=[empty_value], state="disabled")
+            self.benchmark_summary_selector_var.set(empty_value)
+
+        self._benchmark_source_kind = state.get("source_kind")
+        self._benchmark_source_path = state.get("source_path")
+        self._benchmark_primary_summary_path = state.get("primary_summary_path") if isinstance(state.get("primary_summary_path"), str) else None
+        self._benchmark_primary_summary_payload = deepcopy(state.get("primary_summary_payload")) if isinstance(state.get("primary_summary_payload"), dict) else None
+        self._benchmark_compare_summary_path = state.get("compare_summary_path") if isinstance(state.get("compare_summary_path"), str) else None
+        self._benchmark_compare_summary_payload = deepcopy(state.get("compare_summary_payload")) if isinstance(state.get("compare_summary_payload"), dict) else None
+
+        entries = state.get("entries") if isinstance(state.get("entries"), list) else []
+        self._set_benchmark_browser_entries(entries, source_text=str(state.get("source_text") or t("gui.benchmark.source_none")))
+
+        if self._benchmark_primary_summary_payload is not None or self._benchmark_compare_summary_payload is not None:
+            self._render_summary_overviews()
+
+        filter_labels = {label for label, _filter_key, _allowed in self._benchmark_fixture_presence_filters}
+        sort_labels = {label for label, _sort_key in self._benchmark_fixture_sort_options}
+        filter_label = str(state.get("filter_label") or "")
+        sort_label = str(state.get("sort_label") or "")
+        if filter_label in filter_labels:
+            self.benchmark_fixture_filter_var.set(filter_label)
+        if sort_label in sort_labels:
+            self.benchmark_fixture_sort_var.set(sort_label)
+        if self._benchmark_primary_summary_payload is not None or self._benchmark_compare_summary_payload is not None:
+            self._render_fixture_diff_table(self._benchmark_fixture_diff_records)
+
+        selected_fixture = str(state.get("selected_fixture") or "")
+        if selected_fixture in getattr(self, "_benchmark_entry_by_label", {}):
+            self.benchmark_fixture_var.set(selected_fixture)
+            self._on_benchmark_fixture_selected(selected_fixture)
+
+        for attr_name, key in (
+            ("benchmark_preview_primary_box", "preview_primary_text"),
+            ("benchmark_preview_compare_box", "preview_compare_text"),
+            ("benchmark_preview_diff_box", "preview_diff_text"),
+        ):
+            textbox = getattr(self, attr_name, None)
+            if textbox is not None:
+                self._set_textbox(textbox, str(state.get(key) or textbox.get("0.0", "end").rstrip("\n")))
+
+    def _focus_detached_benchmark_window(self) -> None:
+        window = getattr(self, "_detached_benchmark_window", None)
+        if window is None or not window.winfo_exists():
+            return
+        window.deiconify()
+        window.lift()
+        window.focus_force()
+
+    def _render_detached_benchmark_placeholder(self) -> None:
+        root_tab = getattr(self, "benchmark_root_tab", None)
+        if root_tab is None:
+            return
+        self._clear_benchmark_container(root_tab)
+        root_tab.grid_columnconfigure(0, weight=1)
+        root_tab.grid_rowconfigure(0, weight=1)
+
+        frame = ctk.CTkFrame(
+            root_tab,
+            fg_color=self._SECTION_SURFACE,
+            border_width=1,
+            border_color=self._SECTION_BORDER,
+        )
+        frame.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
+        frame.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            frame,
+            text=t("gui.benchmark.detached_title"),
+            anchor="w",
+            font=ctk.CTkFont(size=22, weight="bold"),
+        ).grid(row=0, column=0, sticky="w", padx=16, pady=(16, 8))
+        self.benchmark_detached_notice_label = ctk.CTkLabel(
+            frame,
+            text=t("gui.benchmark.detached_notice"),
+            anchor="w",
+            justify="left",
+            text_color=self._MUTED_TEXT,
+            font=ctk.CTkFont(size=12),
+        )
+        self.benchmark_detached_notice_label.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 12))
+
+        actions = ctk.CTkFrame(frame, fg_color="transparent")
+        actions.grid(row=2, column=0, sticky="w", padx=16, pady=(0, 16))
+
+        ctk.CTkButton(
+            actions,
+            text=t("gui.benchmark.focus_window"),
+            width=160,
+            command=self._focus_detached_benchmark_window,
+        ).grid(row=0, column=0, padx=(0, 8))
+        ctk.CTkButton(
+            actions,
+            text=t("gui.benchmark.redock"),
+            width=140,
+            command=self._benchmark_redock_detached_window,
+        ).grid(row=0, column=1)
+        self._refresh_benchmark_tab_layout()
+
+    def _rebuild_main_benchmark_surface(self, state: dict[str, Any] | None = None) -> None:
+        root_tab = getattr(self, "benchmark_root_tab", None)
+        if root_tab is None:
+            return
+        self.benchmark_detached_notice_label = None
+        self._clear_benchmark_container(root_tab)
+        BenchmarkTabBuilder(self, parent=root_tab).build()
+        self._restore_benchmark_surface_state(state)
+        self._refresh_benchmark_tab_layout()
+
+    def _rebuild_detached_benchmark_surface(self, state: dict[str, Any] | None = None) -> None:
+        container = getattr(self, "_detached_benchmark_container", None)
+        if container is None:
+            return
+        self._clear_benchmark_container(container)
+        BenchmarkTabBuilder(self, parent=container, detached=True).build()
+        self._app_helpers().surfaces().bind_detached_redock_shortcuts(container, self._benchmark_redock_detached_window)
+        self._restore_benchmark_surface_state(state)
+        self._refresh_benchmark_tab_layout()
+
+    def _destroy_detached_benchmark_window(self, *, persist_geometry: bool = True) -> None:
+        window = getattr(self, "_detached_benchmark_window", None)
+        if window is not None and window.winfo_exists():
+            if persist_geometry:
+                self._app_helpers().surfaces().save_detached_page_geometry("benchmark", window.geometry())
+            window.destroy()
+        self._detached_benchmark_window = None
+        self._detached_benchmark_container = None
+        self._detached_benchmark_redock_btn = None
+
+    def _benchmark_open_detached_window(self, *, restoring: bool = False) -> None:
+        existing_window = getattr(self, "_detached_benchmark_window", None)
+        if existing_window is not None and existing_window.winfo_exists():
+            self._focus_detached_benchmark_window()
+            return
+
+        benchmark_root_tab = getattr(self, "benchmark_root_tab", None)
+        if benchmark_root_tab is None:
+            return
+
+        state = self._snapshot_benchmark_surface_state()
+        detached_window = ctk.CTkToplevel(self)
+        detached_window.title(t("gui.benchmark.detached_title"))
+        saved_geometry = str(config.get("gui", "detached_benchmark_geometry", "") or "").strip()
+        detached_window.geometry(saved_geometry or "1280x900")
+        detached_window.minsize(960, 680)
+        self._schedule_titlebar_fix(detached_window)
+
+        container = ctk.CTkFrame(detached_window, fg_color="transparent")
+        container.pack(fill="both", expand=True)
+        container.grid_columnconfigure(0, weight=1)
+        container.grid_rowconfigure(0, weight=1)
+
+        self._detached_benchmark_window = detached_window
+        self._detached_benchmark_container = container
+        self._app_helpers().surfaces().set_page_detached("benchmark", True)
+        self._rebuild_detached_benchmark_surface(state)
+        self._render_detached_benchmark_placeholder()
+
+        def _persist_geometry(_event: Any = None) -> None:
+            if not detached_window.winfo_exists() or getattr(self, "_app_destroying", False):
+                return
+            try:
+                self._app_helpers().surfaces().save_detached_page_geometry("benchmark", detached_window.geometry())
+            except Exception:
+                pass
+
+        def _on_close() -> None:
+            if getattr(self, "_app_destroying", False):
+                self._destroy_detached_benchmark_window(persist_geometry=False)
+                return
+            self._benchmark_redock_detached_window()
+
+        detached_window.protocol("WM_DELETE_WINDOW", _on_close)
+        detached_window.bind("<Configure>", _persist_geometry, add="+")
+
+        if restoring:
+            self.status_var.set(t("gui.benchmark.window_restored"))
+        self._focus_detached_benchmark_window()
+
+    def _benchmark_redock_detached_window(self) -> None:
+        window = getattr(self, "_detached_benchmark_window", None)
+        if window is None or not window.winfo_exists():
+            self._app_helpers().surfaces().set_page_detached("benchmark", False)
+            return
+
+        state = self._snapshot_benchmark_surface_state()
+        self._destroy_detached_benchmark_window()
+        self._app_helpers().surfaces().set_page_detached("benchmark", False)
+        self._rebuild_main_benchmark_surface(state)
+        try:
+            self.tabs.set(t("gui.tab.benchmarks"))
+        except Exception:
+            pass
+
     def _build_fixture_presence_filters(self) -> list[tuple[str, str, tuple[str, ...] | None]]:
         return [
             (t("gui.benchmark.fixture_filter_all"), "all", None),
@@ -141,22 +405,39 @@ class BenchmarkTabMixin:
     def _browse_benchmark_summary_artifact(self) -> None:
         if getattr(self, "_testing_mode", False):
             return
+        initial_dir = self._current_benchmark_artifacts_root()
         path_str = filedialog.askopenfilename(
+            initialdir=str(initial_dir) if initial_dir is not None else None,
             filetypes=[("JSON", "*.json"), (t("common.filetype_all"), "*.*")]
         )
         if not path_str:
             return
-        self._load_benchmark_summary_artifact(path_str)
+        try:
+            self._load_benchmark_summary_artifact(self._validate_benchmark_summary_path(path_str))
+        except Exception as exc:
+            message = t("gui.benchmark.summary_outside_root", error=exc)
+            self._show_toast(message, error=True)
+            self.status_var.set(message)
 
     def _browse_benchmark_compare_artifact(self) -> None:
         if getattr(self, "_testing_mode", False):
             return
+        initial_dir = self._current_benchmark_artifacts_root()
         path_str = filedialog.askopenfilename(
+            initialdir=str(initial_dir) if initial_dir is not None else None,
             filetypes=[("JSON", "*.json"), (t("common.filetype_all"), "*.*")]
         )
         if not path_str:
             return
-        self._load_benchmark_summary_artifact(path_str, compare=True)
+        try:
+            self._load_benchmark_summary_artifact(
+                self._validate_benchmark_summary_path(path_str),
+                compare=True,
+            )
+        except Exception as exc:
+            message = t("gui.benchmark.summary_outside_root", error=exc)
+            self._show_toast(message, error=True)
+            self.status_var.set(message)
 
     def _reload_benchmark_source(self) -> None:
         source_kind = getattr(self, "_benchmark_source_kind", None)
@@ -270,7 +551,7 @@ class BenchmarkTabMixin:
             self._show_toast(message, error=True)
             self.status_var.set(message)
             return
-        self._load_benchmark_summary_artifact(selected_path)
+        self._load_benchmark_summary_artifact(self._validate_benchmark_summary_path(selected_path))
 
     def _compare_selected_benchmark_summary(self) -> None:
         selected_path = self._selected_benchmark_summary_path()
@@ -279,7 +560,10 @@ class BenchmarkTabMixin:
             self._show_toast(message, error=True)
             self.status_var.set(message)
             return
-        self._load_benchmark_summary_artifact(selected_path, compare=True)
+        self._load_benchmark_summary_artifact(
+            self._validate_benchmark_summary_path(selected_path),
+            compare=True,
+        )
 
     def _refresh_benchmark_summary_selector(self, artifacts_root: str | Path | None = None) -> None:
         if artifacts_root is None:
@@ -323,6 +607,52 @@ class BenchmarkTabMixin:
 
     def _selected_benchmark_summary_path(self) -> Path | None:
         return self._benchmark_summary_candidates.get(self.benchmark_summary_selector_var.get())
+
+    def _current_benchmark_artifacts_root(self) -> Path | None:
+        entry = getattr(self, "benchmark_artifacts_root_entry", None)
+        if entry is None:
+            return None
+        raw_root = str(entry.get() or "").strip()
+        if not raw_root:
+            return None
+        return Path(raw_root).expanduser().resolve()
+
+    def _current_benchmark_fixtures_root(self) -> Path | None:
+        entry = getattr(self, "benchmark_fixtures_root_entry", None)
+        if entry is None:
+            return None
+        raw_root = str(entry.get() or "").strip()
+        if not raw_root:
+            return None
+        return Path(raw_root).expanduser().resolve()
+
+    def _resolve_benchmark_source_entry_path(self, raw_path: str) -> Path | None:
+        fixtures_root = self._current_benchmark_fixtures_root()
+        if fixtures_root is None:
+            return None
+        candidate = Path(raw_path).expanduser()
+        resolved = candidate.resolve() if candidate.is_absolute() else (fixtures_root / candidate).resolve()
+        if resolved == fixtures_root or resolved.is_relative_to(fixtures_root):
+            return resolved
+        logger.warning("Skipping out-of-scope benchmark source path: %s", raw_path)
+        return None
+
+    def _validate_benchmark_summary_path(self, path: str | Path) -> Path:
+        summary_path = Path(path).expanduser().resolve()
+        artifacts_root = self._current_benchmark_artifacts_root()
+        if artifacts_root is None:
+            return summary_path
+        if summary_path == artifacts_root or summary_path.is_relative_to(artifacts_root):
+            return summary_path
+        raise ValueError("Benchmark summary must stay within the configured saved runs folder")
+
+    def _allowed_benchmark_artifact_root(self, summary_path: Path) -> Path:
+        artifacts_root = self._current_benchmark_artifacts_root()
+        if artifacts_root is not None and (
+            summary_path == artifacts_root or summary_path.is_relative_to(artifacts_root)
+        ):
+            return artifacts_root
+        return summary_path.parent.resolve()
 
     def _discover_benchmark_summary_artifacts(self, artifacts_root: Path) -> list[Path]:
         candidates: list[Path] = []
@@ -502,7 +832,7 @@ class BenchmarkTabMixin:
             self.status_var.set(message)
             return
         try:
-            self._open_path(path)
+            self._open_path(self._validate_benchmark_summary_path(path))
         except Exception as exc:
             logger.exception("Failed to open benchmark summary JSON")
             message = t("gui.benchmark.open_summary_json_error", error=exc)
@@ -587,7 +917,9 @@ class BenchmarkTabMixin:
             for key in ("project_dir", "fixture_dir"):
                 raw_path = selected_entry.get(key)
                 if isinstance(raw_path, str) and raw_path.strip():
-                    return Path(raw_path)
+                    resolved = self._resolve_benchmark_source_entry_path(raw_path)
+                    if resolved is not None:
+                        return resolved
 
         source_kind = getattr(self, "_benchmark_source_kind", None)
         source_path = getattr(self, "_benchmark_source_path", None)
@@ -1087,7 +1419,14 @@ class BenchmarkTabMixin:
                         value = entry[source_key]
                         if target_key == "report_path" and isinstance(value, str) and value.strip():
                             base_dir = summary_path.parent if summary_path is not None else self._workspace_root()
-                            snapshots[fixture_id][target_key] = self._resolve_artifact_path(value, base_dir)
+                            try:
+                                snapshots[fixture_id][target_key] = self._resolve_artifact_path(value, base_dir)
+                            except ValueError:
+                                logger.warning(
+                                    "Skipping out-of-scope benchmark report path for fixture %s: %s",
+                                    fixture_id,
+                                    value,
+                                )
                         else:
                             snapshots[fixture_id][target_key] = value
                 if isinstance(entry.get("selected_review_types"), list):
@@ -1138,7 +1477,11 @@ class BenchmarkTabMixin:
             output_path = entry.get("output_path")
             if not isinstance(output_path, str) or not output_path.strip():
                 continue
-            resolved_path = self._resolve_artifact_path(output_path, summary_path.parent)
+            try:
+                resolved_path = self._resolve_artifact_path(output_path, summary_path.parent)
+            except ValueError:
+                logger.warning("Skipping out-of-scope benchmark generated report path: %s", output_path)
+                continue
             resolved_dirs.append(resolved_path.parent)
         if not resolved_dirs:
             return None
@@ -1150,12 +1493,11 @@ class BenchmarkTabMixin:
 
     def _resolve_artifact_path(self, raw_path: str, summary_parent: Path) -> Path:
         candidate = Path(raw_path)
-        if candidate.is_absolute():
-            return candidate.resolve()
-        local_candidate = (summary_parent / candidate).resolve()
-        if local_candidate.exists():
-            return local_candidate
-        return (self._workspace_root() / candidate).resolve()
+        resolved = candidate.resolve() if candidate.is_absolute() else (summary_parent / candidate).resolve()
+        allowed_root = self._allowed_benchmark_artifact_root(summary_parent)
+        if resolved == allowed_root or resolved.is_relative_to(allowed_root):
+            return resolved
+        raise ValueError(f"Benchmark artifact path escapes the allowed saved runs root: {raw_path}")
 
     def _format_report_preview(self, report_path: Any, *, empty_text: str) -> str:
         if not isinstance(report_path, Path):

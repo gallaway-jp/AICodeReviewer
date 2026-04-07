@@ -25,7 +25,13 @@ from aicodereviewer.auth import get_system_language, set_profile_name, clear_pro
 from aicodereviewer.backends import create_backend, get_backend_choices, resolve_backend_type
 from aicodereviewer.backends.health import check_backend, HealthReport
 from aicodereviewer.config import config
-from aicodereviewer.fixer import apply_ai_fix
+from aicodereviewer.diagnostics import (
+    FailureDiagnostic,
+    build_failure_diagnostic,
+    diagnostic_from_exception,
+    failure_fix_hint,
+)
+from aicodereviewer.fixer import generate_ai_fix_result
 from aicodereviewer.models import ReviewIssue, ReviewReport
 from aicodereviewer.scanner import scan_project_with_scope
 from aicodereviewer.orchestration import AppRunner
@@ -701,6 +707,7 @@ def _normalize_fix_plan_resume_state(
 
     generated_ids = [str(fix.get("issue_id", "")) for fix in fixes if fix.get("status") == "generated"]
     failed_ids = [str(fix.get("issue_id", "")) for fix in fixes if fix.get("status") == "failed"]
+    failed_diagnostics = _collect_failed_resume_diagnostics(fixes)
 
     return {
         "workflow_stage": "fix-planned",
@@ -713,6 +720,8 @@ def _normalize_fix_plan_resume_state(
         "fixes": fixes,
         "generated_issue_ids": generated_ids,
         "failed_issue_ids": failed_ids,
+        "failed_diagnostics": failed_diagnostics,
+        "failed_diagnostic_categories": _summarize_failed_resume_categories(failed_diagnostics),
         "selected_issue_ids": selected_ids,
     }
 
@@ -739,6 +748,7 @@ def _normalize_apply_results_resume_state(
 
     applied_ids = [str(result.get("issue_id", "")) for result in results if result.get("status") == "applied"]
     failed_ids = [str(result.get("issue_id", "")) for result in results if result.get("status") == "failed"]
+    failed_diagnostics = _collect_failed_resume_diagnostics(results)
 
     return {
         "workflow_stage": "fixes-applied",
@@ -749,8 +759,50 @@ def _normalize_apply_results_resume_state(
         "results": results,
         "applied_issue_ids": applied_ids,
         "failed_issue_ids": failed_ids,
+        "failed_diagnostics": failed_diagnostics,
+        "failed_diagnostic_categories": _summarize_failed_resume_categories(failed_diagnostics),
         "selected_issue_ids": selected_ids,
     }
+
+
+def _collect_failed_resume_diagnostics(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Extract compact failed-item diagnostics for resume output."""
+    diagnostics: list[dict[str, Any]] = []
+    for item in items:
+        if item.get("status") != "failed":
+            continue
+        raw_diagnostic = item.get("diagnostic")
+        if not isinstance(raw_diagnostic, dict):
+            continue
+        diagnostic = cast(dict[str, Any], raw_diagnostic)
+        payload: dict[str, Any] = {
+            "issue_id": item.get("issue_id"),
+            "file_path": item.get("file_path"),
+            "category": diagnostic.get("category"),
+            "origin": diagnostic.get("origin"),
+            "detail": diagnostic.get("detail"),
+            "fix_hint": diagnostic.get("fix_hint"),
+        }
+        if diagnostic.get("exception_type") is not None:
+            payload["exception_type"] = diagnostic.get("exception_type")
+        if diagnostic.get("retryable") is not None:
+            payload["retryable"] = bool(diagnostic.get("retryable"))
+        if diagnostic.get("retry_delay_seconds") is not None:
+            payload["retry_delay_seconds"] = diagnostic.get("retry_delay_seconds")
+        diagnostics.append(payload)
+    return diagnostics
+
+
+def _summarize_failed_resume_categories(diagnostics: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Summarize failed resume diagnostics by category for automation-friendly output."""
+    counts: dict[str, int] = {}
+    for diagnostic in diagnostics:
+        category = str(diagnostic.get("category") or "provider")
+        counts[category] = counts.get(category, 0) + 1
+    return [
+        {"category": category, "count": count}
+        for category, count in sorted(counts.items())
+    ]
 
 
 def _serialize_health_report(report: HealthReport) -> dict[str, Any]:
@@ -759,12 +811,15 @@ def _serialize_health_report(report: HealthReport) -> dict[str, Any]:
         "backend": report.backend,
         "ready": report.ready,
         "summary": report.summary,
+        "failure_categories": list(getattr(report, "failure_categories", []) or []),
         "checks": [
             {
                 "name": check.name,
                 "passed": check.passed,
                 "detail": check.detail,
                 "fix_hint": check.fix_hint,
+                "category": getattr(check, "category", "none"),
+                "origin": getattr(check, "origin", "prerequisite"),
             }
             for check in report.checks
         ],
@@ -778,6 +833,44 @@ def _write_json_result(payload: dict[str, Any], output_file: str | None = None) 
         with open(output_file, "w", encoding="utf-8") as fh:
             json.dump(payload, fh, indent=2, ensure_ascii=False)
     _print_console(rendered)
+
+
+def _error_payload(message: str, *, diagnostic: FailureDiagnostic | None = None) -> dict[str, Any]:
+    payload: dict[str, Any] = {"message": message}
+    if diagnostic is not None:
+        payload["diagnostic"] = diagnostic.to_dict()
+    return payload
+
+
+def _configuration_diagnostic(detail: str, *, origin: str) -> FailureDiagnostic:
+    message = detail.strip() or "Configuration error"
+    return FailureDiagnostic(
+        category="configuration",
+        origin=origin,
+        detail=message,
+        fix_hint=failure_fix_hint("configuration"),
+    )
+
+
+def _fix_item_payload(
+    issue: ReviewIssue,
+    *,
+    status: str,
+    proposed_content: str | None,
+    diagnostic: FailureDiagnostic | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "issue_id": issue.issue_id,
+        "file_path": issue.file_path,
+        "issue_type": issue.issue_type,
+        "severity": issue.severity,
+        "description": issue.description,
+        "status": status,
+        "proposed_content": proposed_content,
+    }
+    if diagnostic is not None:
+        payload["diagnostic"] = diagnostic.to_dict()
+    return payload
 
 
 def _apply_fix_to_file(file_path: str, fixed_content: str) -> str:
@@ -859,9 +952,13 @@ def _run_review_tool_mode(
 
         spec_content = _load_spec_content(args.spec_file, args.dry_run)
         if args.spec_file and not args.dry_run and spec_content is None:
+            message = f"Failed to read spec file: {args.spec_file}"
             payload.update({
                 "status": "error",
-                "error": {"message": f"Failed to read spec file: {args.spec_file}"},
+                "error": _error_payload(
+                    message,
+                    diagnostic=_configuration_diagnostic(message, origin="review"),
+                ),
             })
             _write_json_result(payload, args.json_out)
             return EXIT_FAILURE
@@ -903,6 +1000,12 @@ def _run_review_tool_mode(
                 "files_scanned": getattr(execution, "files_scanned", 0),
                 "target_paths": list(getattr(execution, "target_paths", []) or []),
                 "status": getattr(execution, "status", "completed"),
+                "tool_access_audit": (
+                    execution.tool_access_audit.to_dict()
+                    if getattr(execution, "tool_access_audit", None) is not None
+                    and hasattr(execution.tool_access_audit, "to_dict")
+                    else getattr(execution, "tool_access_audit", None)
+                ),
             }
         else:
             raw_run_state = getattr(runner, "execution_summary", None)
@@ -913,6 +1016,7 @@ def _run_review_tool_mode(
             "files_scanned": run_state.get("files_scanned", 0),
             "target_paths": run_state.get("target_paths", []),
             "status": run_state.get("status", "completed"),
+            "tool_access_audit": run_state.get("tool_access_audit"),
         })
 
         if args.dry_run:
@@ -955,9 +1059,10 @@ def _run_review_tool_mode(
         return EXIT_OK
     except Exception as exc:
         logger.error("Tool review failed: %s", exc)
+        diagnostic = diagnostic_from_exception(exc, origin="review")
         payload.update({
             "status": "error",
-            "error": {"message": str(exc)},
+            "error": _error_payload(str(exc), diagnostic=diagnostic),
         })
         _write_json_result(payload, args.json_out)
         return EXIT_FAILURE
@@ -997,29 +1102,26 @@ def _run_fix_plan_tool_mode(args: argparse.Namespace) -> int:
 
         for issue in selected_issues:
             review_type = issue.issue_type or (report.review_types[0] if report.review_types else report.review_type)
-            fixed_content = apply_ai_fix(issue, client, review_type, report.language)
-            if fixed_content:
+            fix_result = generate_ai_fix_result(issue, client, review_type, report.language)
+            if fix_result.ok:
                 generated_count += 1
-                fixes.append({
-                    "issue_id": issue.issue_id,
-                    "file_path": issue.file_path,
-                    "issue_type": issue.issue_type,
-                    "severity": issue.severity,
-                    "description": issue.description,
-                    "status": "generated",
-                    "proposed_content": fixed_content,
-                })
+                fixes.append(
+                    _fix_item_payload(
+                        issue,
+                        status="generated",
+                        proposed_content=fix_result.content,
+                    )
+                )
             else:
                 failed_count += 1
-                fixes.append({
-                    "issue_id": issue.issue_id,
-                    "file_path": issue.file_path,
-                    "issue_type": issue.issue_type,
-                    "severity": issue.severity,
-                    "description": issue.description,
-                    "status": "failed",
-                    "proposed_content": None,
-                })
+                fixes.append(
+                    _fix_item_payload(
+                        issue,
+                        status="failed",
+                        proposed_content=None,
+                        diagnostic=fix_result.diagnostic,
+                    )
+                )
 
         success = generated_count > 0
         payload.update({
@@ -1035,9 +1137,10 @@ def _run_fix_plan_tool_mode(args: argparse.Namespace) -> int:
         return EXIT_OK if success else EXIT_FAILURE
     except Exception as exc:
         logger.error("Tool fix-plan failed: %s", exc)
+        diagnostic = diagnostic_from_exception(exc, origin="fix_plan")
         payload.update({
             "status": "error",
-            "error": {"message": str(exc)},
+            "error": _error_payload(str(exc), diagnostic=diagnostic),
         })
         _write_json_result(payload, args.json_out)
         return EXIT_FAILURE
@@ -1104,11 +1207,22 @@ def _run_apply_fixes_tool_mode(args: argparse.Namespace) -> int:
                 })
             except Exception as exc:
                 failed_count += 1
+                diagnostic = (
+                    build_failure_diagnostic(
+                        category="configuration",
+                        origin="apply_fix_item",
+                        detail=str(exc),
+                        exception_type=type(exc).__name__,
+                    )
+                    if isinstance(exc, FileNotFoundError)
+                    else diagnostic_from_exception(exc, origin="apply_fix_item")
+                )
                 results.append({
                     "issue_id": issue_id,
                     "file_path": file_path,
                     "status": "failed",
                     "error": str(exc),
+                    "diagnostic": diagnostic.to_dict(),
                 })
 
         success = applied_count > 0 and failed_count == 0
@@ -1124,9 +1238,10 @@ def _run_apply_fixes_tool_mode(args: argparse.Namespace) -> int:
         return EXIT_OK if success else EXIT_FAILURE
     except Exception as exc:
         logger.error("Tool apply-fixes failed: %s", exc)
+        diagnostic = diagnostic_from_exception(exc, origin="apply_fixes")
         payload.update({
             "status": "error",
-            "error": {"message": str(exc)},
+            "error": _error_payload(str(exc), diagnostic=diagnostic),
         })
         _write_json_result(payload, args.json_out)
         return EXIT_FAILURE
@@ -1252,11 +1367,24 @@ def _check_connection(backend_name: str | None) -> int:
     )
     _print_console(t("conn.checking", backend=backend_name))
 
+    diagnostic: dict[str, Any] | None = None
     try:
         client = create_backend(backend_name)
-        ok = client.validate_connection()
+        diagnostic_getter = getattr(client, "validate_connection_diagnostic", None)
+        if callable(diagnostic_getter):
+            raw_diagnostic = diagnostic_getter()
+            diagnostic = cast(dict[str, Any], raw_diagnostic) if isinstance(raw_diagnostic, dict) else None
+            ok = bool(diagnostic and diagnostic.get("ok"))
+        else:
+            ok = client.validate_connection()
     except Exception as exc:
         ok = False
+        diagnostic = {
+            "category": "provider",
+            "detail": str(exc),
+            "fix_hint": t("health.hint_conn_test"),
+            "origin": "connection_test",
+        }
         logger.error("%s", exc)
 
     if ok:
@@ -1275,6 +1403,24 @@ def _check_connection(backend_name: str | None) -> int:
         return 0
     else:
         _print_console(t("conn.failure"))
+        if diagnostic:
+            category = str(diagnostic.get("category") or "unknown")
+            origin = str(diagnostic.get("origin") or "connection_test")
+            detail = str(diagnostic.get("detail") or "").strip()
+            fix_hint = str(diagnostic.get("fix_hint") or "").strip()
+            retryable = bool(diagnostic.get("retryable"))
+            retry_delay_seconds = diagnostic.get("retry_delay_seconds")
+            _print_console(t("conn.category", category=category.replace("_", " ")))
+            _print_console(t("conn.origin", origin=origin.replace("_", " ")))
+            if detail:
+                _print_console(t("conn.detail", detail=detail))
+            if fix_hint:
+                _print_console(t("conn.fix_hint", fix_hint=fix_hint))
+            if retryable:
+                if isinstance(retry_delay_seconds, int) and retry_delay_seconds > 0:
+                    _print_console(t("conn.retry_after", seconds=retry_delay_seconds))
+                else:
+                    _print_console(t("conn.retry"))
         # Provide helpful hints
         if backend_name == "bedrock":
             _print_console(t("conn.hint_bedrock_sso"))
@@ -1356,6 +1502,8 @@ def _print_review_type_presets() -> int:
 
 
 def _setup_logging():
+    from logging.handlers import RotatingFileHandler
+
     from aicodereviewer.config import config as _cfg
 
     level_name = (_cfg.get("logging", "log_level", "INFO") or "INFO").upper()
@@ -1364,6 +1512,11 @@ def _setup_logging():
     root = logging.getLogger()
     root.setLevel(level)
     root.handlers.clear()
+
+    audit_logger = logging.getLogger("aicodereviewer.audit")
+    audit_logger.setLevel(logging.INFO)
+    audit_logger.handlers.clear()
+    audit_logger.propagate = True
 
     console = logging.StreamHandler()
     console.setLevel(level)
@@ -1379,6 +1532,22 @@ def _setup_logging():
                 logging.Formatter("[%(asctime)s] %(levelname)s %(name)s: %(message)s")
             )
             root.addHandler(fh)
+
+        if _cfg.get("logging", "enable_api_audit_file_logging", True):
+            audit_log_file = _cfg.get("logging", "api_audit_log_file", "aicodereviewer-audit.log")
+            audit_max_bytes = int(_cfg.get("logging", "api_audit_log_max_bytes", 1048576) or 1048576)
+            audit_backup_count = int(_cfg.get("logging", "api_audit_log_backup_count", 5) or 5)
+            audit_handler = RotatingFileHandler(
+                audit_log_file,
+                maxBytes=max(1024, audit_max_bytes),
+                backupCount=max(1, audit_backup_count),
+                encoding="utf-8",
+            )
+            audit_handler.setLevel(logging.INFO)
+            audit_handler.setFormatter(
+                logging.Formatter("[%(asctime)s] %(levelname)s %(message)s")
+            )
+            audit_logger.addHandler(audit_handler)
     except Exception:
         pass
 

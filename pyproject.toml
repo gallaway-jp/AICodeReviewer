@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aicodereviewer"
-version = "2.0.0"
+version = "0.2.0"
 description = "AI-powered multi-backend code review tool"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -14,7 +14,7 @@ authors = [
 ]
 dependencies = [
     "boto3",
-    "github-copilot-sdk>=0.1.30",
+    "github-copilot-sdk>=0.2.1",
     "keyring",
     "psutil>=5.9",
 ]

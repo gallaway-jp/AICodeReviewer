@@ -94,11 +94,15 @@ Actions include:
 - `SKIP`
 - force-resolve when verification fails and the user chooses to override
 
+When interactive `AI FIX` generation fails, the terminal flow now prints the classified failure category, detail, remediation hint, and retry guidance when that diagnostic metadata is available.
+
 ## Tool Mode
 
 Tool mode is the supported non-interactive surface for scripts, CI jobs, and other AI tools.
 
 The commands are designed to be chainable through JSON artifacts so another tool can resume work from any completed step.
+
+When tool-mode `review`, `fix-plan`, or `apply-fixes` fails, the JSON envelope now includes `error.diagnostic` metadata with the same shared failure categories used by health and connection checks. Automation can distinguish `auth`, `permission`, `transport`, `timeout`, `configuration`, `tool_compatibility`, and `provider` failures without scraping free-form error text, and transient failures may also include `retryable` plus `retry_delay_seconds` guidance.
 
 ### review
 
@@ -185,6 +189,8 @@ aicodereviewer fix-plan --report-file review_report_20260320_100000.json --issue
 
 If `--issue-id` is omitted, all issues in the review artifact are considered.
 
+Failed fix-generation items now carry per-item `diagnostic` metadata in the emitted JSON, so automation can distinguish configuration/input problems from backend/provider failures without relying on only `status="failed"`. Transient failures may also include `retryable` and `retry_delay_seconds` fields.
+
 ### apply-fixes
 
 Loads a fix-plan artifact and writes selected generated fixes to disk. Each applied fix creates a sibling `.backup` file before overwriting the original source file.
@@ -196,6 +202,8 @@ aicodereviewer apply-fixes --plan-file artifacts/fix-plan.json --issue-id issue-
 ```
 
 If `--issue-id` is omitted, all generated fixes in the plan are applied.
+
+When individual file writes fail, each failed result item now includes `diagnostic` metadata alongside the flat `error` string. Transient failures may include `retryable` and `retry_delay_seconds` guidance.
 
 ### resume
 
@@ -229,6 +237,8 @@ Typical `resume` output includes:
 - `next_command`
 - `can_resume`
 - issue or fix/result lists depending on the artifact type
+- `failed_diagnostics` and `failed_diagnostic_categories` for failed fix-plan or apply-fixes items
+- retry guidance fields such as `retryable` and `retry_delay_seconds` when the failure looks transient
 - filtered `selected_issue_ids` when `--issue-id` is used
 
 ## Exit Codes

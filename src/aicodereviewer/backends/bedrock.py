@@ -77,6 +77,7 @@ class BedrockBackend(AIBackend):
         review_type: str = "best_practices",
         lang: str = "en",
         spec_content: Optional[str] = None,
+        tool_context=None,
     ) -> str:
         max_content = config.get("performance", "max_content_length")
         if len(code_content) > max_content:
@@ -137,6 +138,54 @@ class BedrockBackend(AIBackend):
         except Exception as exc:
             logger.error("Bedrock connection test failed: %s", exc)
             return False
+
+    def validate_connection_diagnostic(self) -> dict[str, str | bool]:
+        try:
+            self.client.converse(
+                modelId=self.model_id,
+                messages=[{"role": "user", "content": [{"text": "Hello"}]}],
+                inferenceConfig={"maxTokens": 1},
+            )
+            return {
+                "ok": True,
+                "category": "none",
+                "detail": "",
+                "fix_hint": "",
+                "origin": "connection_test",
+            }
+        except TokenRetrievalError:
+            return {
+                "ok": False,
+                "category": "auth",
+                "detail": "AWS login has expired. Run 'aws sso login' to refresh.",
+                "fix_hint": "Run 'aws sso login' or reconfigure AWS credentials.",
+                "origin": "connection_test",
+            }
+        except ClientError as exc:
+            msg = exc.response.get("Error", {}).get("Message", "")
+            category = "permission"
+            lower_msg = msg.lower()
+            if "expiredtoken" in lower_msg or "security token" in lower_msg or "credential" in lower_msg:
+                category = "auth"
+            elif "timeout" in lower_msg:
+                category = "timeout"
+            elif "could not connect" in lower_msg or "endpoint" in lower_msg or "network" in lower_msg:
+                category = "transport"
+            return {
+                "ok": False,
+                "category": category,
+                "detail": msg or "Bedrock connection test failed.",
+                "fix_hint": "Check AWS credentials, Bedrock permissions, region, and model access.",
+                "origin": "connection_test",
+            }
+        except Exception as exc:
+            return {
+                "ok": False,
+                "category": "provider",
+                "detail": str(exc),
+                "fix_hint": "Check Bedrock service availability and backend configuration.",
+                "origin": "connection_test",
+            }
 
     # ── private helpers ────────────────────────────────────────────────────
 

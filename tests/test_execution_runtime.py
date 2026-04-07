@@ -34,6 +34,8 @@ def test_runtime_records_events_for_completed_dry_run_job() -> None:
 
 
 def test_runtime_lists_report_artifacts_for_completed_job(tmp_path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
     runtime = ReviewExecutionRuntime(
         execution_service=ReviewExecutionService(
             scan_fn=lambda *_args: [{"path": "src/example.py"}],
@@ -51,7 +53,7 @@ def test_runtime_lists_report_artifacts_for_completed_job(tmp_path) -> None:
         backend_factory=lambda _backend_name: object(),
     )
     request = ReviewRequest(
-        path="./proj",
+        path=str(project_root),
         scope="project",
         diff_file=None,
         commits=None,
@@ -62,11 +64,51 @@ def test_runtime_lists_report_artifacts_for_completed_job(tmp_path) -> None:
         dry_run=False,
     )
 
-    job = runtime.submit_job(request, output_file=str(tmp_path / "report.json"))
+    job = runtime.submit_job(request, output_file=str(project_root / "report.json"))
     runtime.wait_for_job(job.job_id, timeout=2.0)
     artifacts = runtime.list_job_artifacts(job.job_id)
 
     keys = {artifact.key for artifact in artifacts}
     assert "report_primary" in keys
     assert len(artifacts) >= 1
+    runtime.shutdown(wait=True, timeout=2.0)
+
+
+def test_runtime_skips_artifacts_outside_allowed_roots(tmp_path) -> None:
+    runtime = ReviewExecutionRuntime(
+        execution_service=ReviewExecutionService(
+            scan_fn=lambda *_args: [{"path": "src/example.py"}],
+            collect_issues_fn=lambda *_args, **_kwargs: [
+                ReviewIssue(
+                    file_path="src/example.py",
+                    issue_type="security",
+                    severity="high",
+                    description="Unsafe subprocess usage",
+                    code_snippet="subprocess.run(cmd, shell=True)",
+                    ai_feedback="Avoid shell=True for untrusted input.",
+                )
+            ],
+        ),
+        backend_factory=lambda _backend_name: object(),
+    )
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    external_root = tmp_path / "external"
+    external_root.mkdir()
+    request = ReviewRequest(
+        path=str(project_root),
+        scope="project",
+        diff_file=None,
+        commits=None,
+        review_types=["security"],
+        spec_content=None,
+        target_lang="en",
+        backend_name="local",
+        dry_run=False,
+    )
+
+    job = runtime.submit_job(request, output_file=str(external_root / "report.json"))
+    runtime.wait_for_job(job.job_id, timeout=2.0)
+
+    assert runtime.list_job_artifacts(job.job_id) == []
     runtime.shutdown(wait=True, timeout=2.0)

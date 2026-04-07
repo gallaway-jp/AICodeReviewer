@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable, Protocol
 
+from ..diagnostics import FailureDiagnostic
 from .models import JobState, ReviewExecutionResult
 
 
@@ -49,6 +50,7 @@ class JobFailed(ExecutionEvent):
 
     error_message: str = ""
     exception_type: str | None = None
+    error_diagnostic: FailureDiagnostic | None = None
 
 
 class ExecutionEventSink(Protocol):

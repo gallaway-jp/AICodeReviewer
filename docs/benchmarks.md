@@ -4,6 +4,21 @@ AICodeReviewer includes a small holistic benchmark suite for review-quality regr
 
 These benchmarks are not unit tests for one helper or parser branch. They model realistic review scenarios, run the tool against known fixture projects, and score whether the resulting findings match the expected issue shape.
 
+## Desktop Benchmark Browser
+
+The GUI includes a dedicated Benchmarks tab for browsing saved benchmark runs without leaving the desktop workflow.
+
+The tab is designed for artifact-driven comparison rather than benchmark authoring. It lets you:
+
+- browse the fixture catalog rooted at `benchmarks/holistic_review/fixtures/`
+- discover benchmark-like JSON summaries under the configured saved-runs folder
+- load one summary as the main run and a second as the comparison run
+- inspect representative fixture metadata, summary takeaways, and fixture-level score/status deltas
+- preview the primary and comparison report payloads for a changed fixture and inspect a unified diff
+- open the page in a detached desktop window and redock it later without losing the loaded comparison state
+
+The desktop benchmark browser respects the same saved-run and fixture-root boundary checks described in [Security Review](security.md).
+
 Some benchmark categories also rely on narrow reviewer-side normalization or deterministic supplements when a backend drifts into subtype labels or entirely misses an obvious, fixture-specific structural problem. Current examples include cache invalidation, cross-file N+1 query loops, controller-to-repository boundary bypasses, GET-based create routes in `api_design`, macOS-only `open` launch helpers in `compatibility`, stale return-shape caller mismatches, the Local `security` shell-command-injection, SSRF, path-traversal, raw-SQL interpolation, and unsafe-YAML deserialization cases, and the Local `ui_ux` cases for desktop busy feedback, wizard dependency orientation, and blank loading/error/empty-state handling.
 
 ## What The Benchmarks Cover

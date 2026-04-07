@@ -326,6 +326,12 @@ Detailed class and interface design for this milestone lives in `milestone-0-des
 - provide a simple editor API surface in the addon registry so plugins can attach to buffer events, diagnostics, and patch application routines without needing to know internal buffer representations
 - add integration tests that simulate large-file opens, rapid edits, and automated tentative-fix application to catch regressions early
 
+#### Current Status
+
+- completed in the current repository baseline with a concrete UX audit, ten executed GUI improvement slices, popup-controller extraction, progressive large-file handling, recovery flows, syntax fallback hardening, richer search and bookmark workflows, tab and pane navigation, and addon-facing editor hook integration
+- the remaining editor/viewer backlog items are now incremental quality work rather than Milestone 6 blockers; the original acceptance criteria are satisfied by the current desktop baseline and regression coverage
+- validated in the current milestone audit with clean targeted baseline runs across both non-GUI and GUI slices before Milestone 7 work began
+
 ### Milestone 7: Tool-Aware File Acquisition
 
 #### Scope
@@ -348,6 +354,27 @@ Detailed class and interface design for this milestone lives in `milestone-0-des
 3. File-access events are logged clearly enough to debug prompt/tool behavior.
 4. Tool use improves review quality or efficiency on representative repository scenarios.
 5. Sensitive file access can be constrained and explained to the user before tool-mediated reads occur.
+
+#### Current Status
+
+
+- Milestone 7 is complete in the current repository baseline:
+	- shared tool-review context and tool-access audit models
+	- config-gated tool-aware review path with Copilot-first backend support
+	- workspace-root and sensitive-path policy enforcement around tool-mediated reads
+	- reviewer fallback to the existing static prompt path when tool access is disabled, unsupported, denied, or unused
+	- execution, HTTP, and tool-mode result propagation for per-run tool-access audit metadata
+	- focused regression coverage for reviewer fallback, Copilot policy hooks, SDK prompt/session plumbing, live tool-name policy handling, JSON-string tool-argument parsing, execution result propagation, orchestration, HTTP serialization, and CLI tool-mode output
+	- live Copilot validation with `gpt-5-mini` on a representative command-injection scenario now confirms the tool-aware path works in practice:
+		- direct live tool probe read `app/runner.py` and `app/api.py` via Copilot `view` tool calls, returned the expected cross-file security findings, and recorded `file_read_count = 2` with `denied_request_count = 0`
+		- end-to-end `collect_review_issues(...)` live validation on the same two-file scenario recorded `file_read_count = 3`, `denied_request_count = 0`, and returned 5 concrete security findings
+		- the compact tool-aware user prompt for that same scenario was 950 characters versus 1444 for the static embedded prompt, a 34.21% prompt-size reduction while still producing live findings
+- the live close-out work surfaced and fixed three runtime compatibility gaps that were not visible in the earlier unit-only slice:
+	- Copilot SDK compatibility had to be updated to `github-copilot-sdk>=0.2.1`
+	- Copilot live tool calls use safe tool names such as `view` and `report_intent`, which now pass the policy gate
+	- Copilot SDK hook payloads provide `toolArgs` as JSON strings, so tool-path extraction now parses stringified JSON before path normalization and policy checks
+
+The Milestone 7 acceptance criteria are now satisfied for the current Copilot-first baseline. Remaining robustness work around broader tool ecosystems, authenticated tooling failure modes, and generalized permission handling rolls into Milestone 8.
 
 ### Milestone 8: Tooling Robustness And Permission Handling
 
@@ -374,6 +401,17 @@ Detailed class and interface design for this milestone lives in `milestone-0-des
 5. Users can configure credentials that are referenced securely by the application (not displayed or stored in plain text), and tooling/addons may reference these credentials via audited, access-controlled references.
 6. Credential usage can be audited, rotated, and revoked without exposing secret values.
 
+#### Current Status
+
+- in progress in the current repository baseline with seven concrete slices now implemented: keyring-backed Local LLM credential references, shared health/connection failure categorization, runtime failure propagation plus credential lifecycle UX, per-issue fix generation/apply failure diagnostics, diagnostic-aware failed-fix messaging in GUI/tool resume flows, interactive AI-fix diagnostic messaging, and shared retry/backoff guidance for transient failures
+- `local_llm.api_key` can now be stored as a keyring-backed `keyring://...` reference, GUI save/reload keeps showing the resolved secret value without writing it back to `config.ini` in plain text, and the Settings tab now exposes explicit Rotate / Revoke controls on top of that reference model
+- backend health reports, tool-mode health JSON, human `--check-connection` output, runtime job state/events, local HTTP job payloads, top-level tool-mode `review` / `fix-plan` / `apply-fixes` error envelopes, and per-item `fix-plan` / `apply-fixes` failures now surface categorized failures with explicit `category` / `origin` metadata so auth, permission, transport, timeout, tool-compatibility, configuration, and provider-side failures are no longer collapsed into generic error strings
+- the batch AI Fix popup now preserves structured per-item failure payloads, shows category/detail/hint text for failed rows instead of only a generic "Could not generate a fix", and the all-failed toast summarizes the classified failure cause(s); tool-mode `resume` now also lifts failed fix diagnostics into top-level `failed_diagnostics` and `failed_diagnostic_categories` fields so automation does not need to scrape nested item payloads just to explain a failed fix batch
+- the legacy interactive terminal `AI FIX` flow now uses the same structured fix-generation result path, so fix failures print diagnostic category/detail/hint output instead of stopping at the generic `interactive.fix_failed` line
+- shared failure diagnostics now also classify whether a transient failure is retryable and, when appropriate, provide a suggested backoff delay; timeout, transport, and temporary/provider-throttling failures now carry `retryable` / `retry_delay_seconds` metadata that flows through tool-mode JSON, resume summaries, local HTTP serialization, interactive AI-fix messaging, and batch-fix popup failure rows
+- Milestone 8 does not need a broader multi-secret audit or inventory surface in the current repository baseline. The only credential currently managed through the new secure-reference path is `local_llm.api_key`, so explicit Rotate / Revoke actions plus stable keyring-backed references are sufficient for this milestone; a broader secret-management dashboard should wait until multiple secret-bearing backends or audit consumers actually exist
+- validated with focused regression coverage across auth helpers, Local backend construction, fix-generation helpers, execution-service/runtime failure paths, local HTTP serialization, tool-mode review/fix failure output, settings-controller actions, Local LLM GUI credential workflows, the interactive AI-fix flow, and transient retry-guidance behavior; broader automated retry planners or retry execution remain open follow-on work
+
 ### Milestone 9: Security Validation And Hardening
 
 #### Scope
@@ -397,15 +435,39 @@ Detailed class and interface design for this milestone lives in `milestone-0-des
 4. The final report distinguishes confirmed vulnerabilities from speculative concerns.
 5. The threat model captures addon, tool, file-access, and local-API trust boundaries.
 
+#### Current Status
+
+- completed in the current repository baseline; `docs/security.md` now serves as the Milestone 9 closeout artifact covering the threat model, confirmed findings, remediation decisions, and residual accepted risks
+- the completed hardening work closes the confirmed boundary-validation gaps across:
+	- local HTTP `output_file` validation
+	- local HTTP artifact re-validation plus dedicated audit retention
+	- GUI session file validation and restored issue-path validation
+	- addon entry-point root confinement
+	- benchmark saved summary selection and summary-derived report-path handling
+	- benchmark summary-derived source-folder handling
+	- benchmark fixture manifest `project_dir` / `diff_file` / `spec_file` handling
+- the final Milestone 9 review explicitly distinguished internal persisted-data loaders from intentional direct user-selected inputs; direct project-path, diff-file, spec-file, and save-log pickers remain intentionally user-controlled rather than being treated as vulnerabilities
+- the current evidence for the shipped feature set points to fixed boundary-validation and audit-visibility gaps, plus an explicitly accepted trusted-addon model, rather than an obvious built-in remote-code-execution vulnerability
+- validated with focused regression coverage across HTTP API, execution runtime, GUI session restore, popup recovery, addon manifest loading, benchmark browsing, benchmark fixture loading, and dedicated audit logging, including a combined closeout slice of `20 passed, 96 deselected`
+
 ### Milestone 10: Multi-Window Desktop Workflow
 
 #### Scope
 
 - allow detachable desktop windows for non-Review pages that can be snapped back into the main application
 
+Current baseline status:
+- in progress; the current Milestone 10 baseline supports detaching the Output Log, Settings, and Benchmarks pages into their own desktop windows with explicit redock behavior
+- the detached Output Log window still shares the same underlying log stream as the main tab, the detached Settings page preserves unsaved form state across detach and redock by rebuilding the canonical Settings surface in the active host window, and the detached Benchmark page preserves its loaded browser/compare surface state across detach and redock through snapshot-and-restore of the active benchmark view
+- persisted detached-page state now restores multiple windows after restart through shared `gui.detached_pages` tracking plus per-page geometry keys for log, settings, and benchmark windows
+- the keyboard portion of the Milestone 10 workflow now uses `Ctrl+Shift+O` to open the currently selected detachable page in a window, and detached pages standardize on `Ctrl+W` for redocking back into the main app
+- targeted regression coverage now exercises detach, redock, restart restore, shortcut-handler dispatch, and three-page restore for the log-plus-settings-plus-benchmark baseline without breaking the existing single-window workflows for those pages
+- Milestone 10 no longer treats literal drag-out tab gestures as a blocking requirement; explicit Open In Window actions plus `Ctrl+Shift+O` and `Ctrl+W` satisfy the detachable-window acceptance path, while true drag-out remains optional future UX polish
+- remaining Milestone 10 work is optional expansion to additional approved non-Review pages such as Results if broader detachable coverage is still desired
+
 #### Deliverables
 
-- drag-out workflow for detachable tabs other than the Review page
+- detachable-window workflow for approved non-Review pages via explicit actions and keyboard shortcuts
 - snap-back or redock workflow preserving page state
 - window-management rules for focus, close behavior, and shared application state
 - regression coverage for detach, redock, and state preservation paths
@@ -425,6 +487,11 @@ Detailed class and interface design for this milestone lives in `milestone-0-des
 #### Scope
 
 - complete the program’s technical and reference documentation set
+
+Current baseline status:
+- completed in the current repository baseline; the maintained docs set now covers the shipped five-tab GUI, the desktop Benchmarks browser, the detached-window workflow for Benchmarks, Settings, and Output Log, the embedded local HTTP configuration and architecture seams, the addon manifest/runtime contract, and the typed deferred-report/session-state path behind restored GUI finalization
+- examples and release notes have been refreshed to match the current maintained docs set, including the addon examples and contributor-facing local HTTP references
+- the checked-in screenshot set is intentionally capped at the durable GUI surfaces already covered by the review, results, AI Fix, log, benchmark, and detached-workflow images; a separate queue-state screenshot is not required for milestone close because queue state is already represented in the stable Review tab surface and the standalone queue states are transient
 
 #### Deliverables
 
@@ -451,6 +518,10 @@ Detailed class and interface design for this milestone lives in `milestone-0-des
 
 - produce a complete end-user manual for GUI, CLI, tool usage, addon creation and usage, and HTTP/web workflows
 
+Current baseline status:
+- in progress but effectively coverage-complete; the maintained docs set now includes a task-oriented user manual that covers first-review CLI and GUI paths, diff review, partial-project selected-file and diff-filter workflows, a concrete repository example from dry run to final report, specification review, GUI AI Fix plus session restore/finalize flows, benchmark runner, benchmark authoring, and compare-run triage workflows, basic addon loading, a concrete local-HTTP submit/stream/fetch workflow, backend-specific credential-refresh plus logging examples, worked recovery examples with shipped failure text and rerun outcomes, and targeted annotated captures for the partial-project and benchmark workflow sections without forcing users to start from the deeper reference pages
+- remaining Milestone 12 work is now incremental polish only: command freshness checks, wording cleanup, or updates for newly shipped user-facing flows; a further broad coverage pass is not currently needed before treating the milestone as effectively complete
+
 #### Deliverables
 
 - task-oriented manual covering GUI usage
@@ -474,6 +545,18 @@ Detailed class and interface design for this milestone lives in `milestone-0-des
 #### Scope
 
 - systematically evaluate and improve each built-in review type on this repository
+
+Current status:
+- Milestone 13 execution is now complete against the criteria in `docs/review-quality-program.md`: every built-in review type has at least one evaluated repository run, every evaluated run has recorded adjudication in `docs/review-quality-log.md`, every reviewer/scorer/supplement change is tied to a documented failure mode, and repeated tranche reruns can be compared against preserved baseline and postfix artifacts
+- `docs/review-quality-log.md` now records baseline plus follow-up outcomes across all five tranche families: code health, runtime safety, engineering confidence, product surface, and platform and scale
+- the code-health tranche is closed at the tranche-summary level; `best_practices`, `maintainability`, and `dead_code` now all have stable adjudicated baseline records and passing follow-up summaries where recovery was needed
+- the runtime-safety tranche is closed at the tranche-summary level; `security`, `error_handling`, `data_validation`, and `regression` now have adjudicated baselines plus logged postfix recoveries for the earlier transport, scorer-shape, and Local supplement gaps
+- the engineering-confidence tranche is closed at the tranche-summary level; `testing`, `documentation`, `architecture`, and `api_design` now have preserved baselines and passing Local follow-up summaries for the transport-heavy and clean-miss slices that previously lagged
+- the product-surface tranche is closed at the tranche-summary level; Local `ui_ux`, `accessibility`, and `localization` now have passing postfix summaries, and Copilot `ui_ux` was closed by rescoring the existing report directory through the tranche wrapper once the scorer aliases were in place
+- the platform-and-scale tranche is closed at the tranche-summary level; `compatibility`, `dependency`, `license`, `scalability`, `concurrency`, `specification`, and `complexity` now have adjudicated baselines and logged follow-up outcomes for the prior transport, scope-shape, and supplement-backed misses
+- `tools/run_benchmark_tranche.py` is now the established execution and recovery path for tranche-scoped reruns, including `--evaluate-existing` summary reconstruction when long runner invocations leave per-fixture artifacts on disk without a final summary write
+- the main recurring Local failure modes are now documented rather than open blockers: timeout envelopes after optional interaction analysis, retryable backend failures such as `Context size has been exceeded`, and stale summary artifacts after scorer changes all have explicit recovery paths captured in the review-quality log and repository benchmark memory
+- remaining Milestone 13 work is maintenance rather than tranche execution: future benchmark additions or regressions should extend the same log with new baseline or follow-up entries instead of reopening the existing tranche-completion work
 
 #### Deliverables
 
@@ -504,6 +587,20 @@ Detailed class and interface design for this milestone lives in `milestone-0-des
 - standardize commit and branching workflows (e.g., `main`, `milestone/*`, `feature/*`, `release/*`) and document merge policies
 - standardize versioning policy and release cadence (versions should only be incremented as part of the release flow and prior to merging into `main`; treat historical releases up to now as beta and establish a first official release tag)
 - repository cleanup: remove or archive stale branches, consolidate or document legacy artifacts, and enforce a minimal repository layout and ownership
+
+Current status:
+- kickoff audit complete; the repository currently exposes only `main` and `origin/main`, which confirmed that Milestone 14 needed explicit branch-policy documentation rather than cleanup-by-convention
+- contributor and maintainer docs now define a concrete branch taxonomy for `main`, `milestone/*`, `feature/*`, and `release/*`, plus manual validation gates to use until checked-in CI workflows exist
+- release-process documentation now records the one-time version normalization plan: preserve `v0.1.0` as the only tagged historical release, keep the later `v2.0.x` notes as internal repository milestones, and cut the first standardized maintained pre-1.0 release as `v0.2.0` from a `release/0.2.0` branch with aligned metadata and tag state
+- `docs/repository-maintenance.md` now records the first cleanup inventory and execution plan, separating maintained source-of-truth areas from generated artifacts, review-before-prune files, and the staged `release/0.2.0` normalization flow
+- the first explicit top-level inventory pass is now documented in `docs/repository-maintenance.md`, classifying current root items into keep-at-root, generated-or-reproducible, delete-or-recreate, review-before-relocating, and release-normalization buckets
+- the first ownership decisions for the review-before-relocating items are now documented and partially executed: Kiro diagnostics now live under `tools/diagnostics/kiro/`, the top-level model/dropdown smoke scripts now live under `tools/manual_checks/models/`, `tools/run_gui_validator.py` now writes `artifacts/gui_validation_report.json`, and `.kilocode/` plus `.vscode/` remain ignored local workspace config
+- the first post-relocation audit of the retained manual model checks is now recorded and executed: only the live environment probes remain under `tools/manual_checks/models/`, while the overlapping Kiro dropdown smoke scripts were pruned after direct pytest coverage landed in `tests/test_health_mixin.py` alongside the existing backend-cache, backend, local-model, and GUI persistence tests
+- release-normalization work now has both an executable preflight check and an in-repo metadata cutover: `tools/check_release_metadata.py` can enforce strict `0.2.0` alignment across `pyproject.toml`, `src/aicodereviewer/__init__.py`, and `RELEASE_NOTES.md`, inspect local release-branch/tag readiness, and the checked-in version surfaces now promote `v0.2.0` while reopening an empty `Unreleased` section for future work
+- the current git preflight baseline is now partially complete and explicit: the repo is on `release/0.2.0`, the local release branch exists and satisfies the branch gate, and the only observed local tag is still `v0.1.0`
+- the Windows release-packaging path has now been revalidated against the current repository state: `build_exe.bat` uses the checked-in spec, the maintained icon asset under `src/aicodereviewer/assets/`, and regenerates the GitHub-release asset pair `dist/AICodeReviewer.exe` plus `dist/AICodeReviewer.exe.sha256`; the rebuilt executable also smoke-tests successfully with `--help`
+- repository cleanup execution still needs the remaining retention work plus the final operational release follow-through outside the checked-in files: creation of the matching `v0.2.0` git tag after the release branch is ready to merge
+- the next concrete milestone step is to finish the tag-side release flow against the already aligned in-repo metadata surfaces and re-run the git-aware preflight after tagging
 
 #### Deliverables
 

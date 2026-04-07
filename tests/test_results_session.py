@@ -153,3 +153,60 @@ def test_finalize_without_report_context_preserves_loaded_issues() -> None:
     assert len(app._issue_cards) == 1
     assert app.results_summary.configured == {}
     assert app.toasts and app.toasts[-1][1] is True
+
+
+def test_load_session_rejects_file_outside_workspace_or_config(monkeypatch, tmp_path: Path) -> None:
+    session_path = tmp_path / 'session.json'
+    app = _DummyResultsApp(session_path)
+    external_session = tmp_path.parent / 'outside-session.json'
+    external_session.write_text(json.dumps({"issues": []}), encoding='utf-8')
+
+    errors: list[str] = []
+    monkeypatch.setattr('aicodereviewer.gui.results_mixin.filedialog.askopenfilename', lambda **_: str(external_session))
+    monkeypatch.setattr(
+        'aicodereviewer.gui.results_mixin.messagebox.showerror',
+        lambda _title, message: errors.append(str(message)),
+    )
+
+    app._load_session()
+
+    assert errors
+    assert 'Session file must stay within the workspace or config directory' in errors[0]
+    assert app._current_session_runner() is None
+    assert app.shown_issues == []
+
+
+def test_load_session_rejects_issue_file_path_outside_workspace(monkeypatch, tmp_path: Path) -> None:
+    session_path = tmp_path / 'session.json'
+    app = _DummyResultsApp(session_path)
+    session_path.write_text(
+        json.dumps(
+            {
+                'format_version': SESSION_PAYLOAD_VERSION,
+                'saved_at': '2026-04-06T00:00:00',
+                'issues': [
+                    {
+                        'file_path': str(tmp_path.parent / 'outside.py'),
+                        'issue_type': 'security',
+                        'description': 'outside path',
+                    }
+                ],
+                SESSION_REPORT_CONTEXT_KEY: None,
+            }
+        ),
+        encoding='utf-8',
+    )
+
+    errors: list[str] = []
+    monkeypatch.setattr('aicodereviewer.gui.results_mixin.filedialog.askopenfilename', lambda **_: str(session_path))
+    monkeypatch.setattr(
+        'aicodereviewer.gui.results_mixin.messagebox.showerror',
+        lambda _title, message: errors.append(str(message)),
+    )
+
+    app._load_session()
+
+    assert errors
+    assert 'Session payload file paths must stay within the expected session roots' in errors[0]
+    assert app._current_session_runner() is None
+    assert app.shown_issues == []

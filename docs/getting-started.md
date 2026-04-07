@@ -78,6 +78,7 @@ If you find yourself using the same recommended bundle repeatedly, pin the curre
 
 ## Recommended Reading
 
+- [User Manual](user-manual.md)
 - [Backend Guide](backends.md)
 - [CLI Guide](cli.md)
 - [GUI Guide](gui.md)

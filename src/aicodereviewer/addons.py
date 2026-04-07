@@ -119,6 +119,19 @@ def _parse_configured_paths(raw_paths: str) -> list[str]:
     return [token.strip() for token in normalized.splitlines() if token.strip()]
 
 
+def _resolve_addon_entry_path(root_dir: Path, raw_path: str, *, source: str, field_name: str) -> Path:
+    candidate = Path(raw_path).expanduser()
+    if not candidate.is_absolute():
+        candidate = root_dir / candidate
+    resolved = candidate.resolve()
+    resolved_root = root_dir.resolve()
+    if not (resolved == resolved_root or resolved.is_relative_to(resolved_root)):
+        raise ValueError(
+            f"{source}: {field_name} '{raw_path}' must stay within the addon root"
+        )
+    return resolved
+
+
 def _coerce_string(value: Any, *, field_name: str, source: str) -> str:
     if not isinstance(value, str):
         raise ValueError(f"{source}: field '{field_name}' must be a string")
@@ -306,7 +319,12 @@ def load_addon_manifest(manifest_path: str | Path) -> AddonManifest:
     root_dir = path.parent
     review_pack_paths: list[Path] = []
     for raw_pack_path in raw_review_pack_paths:
-        pack_path = (root_dir / raw_pack_path).resolve() if not Path(raw_pack_path).is_absolute() else Path(raw_pack_path).resolve()
+        pack_path = _resolve_addon_entry_path(
+            root_dir,
+            raw_pack_path,
+            source=source,
+            field_name="entry_points.review_packs",
+        )
         if not pack_path.is_file():
             raise ValueError(
                 f"{source}: review pack entry '{raw_pack_path}' does not resolve to a file"
@@ -320,7 +338,12 @@ def load_addon_manifest(manifest_path: str | Path) -> AddonManifest:
         display_name = str(provider_payload.get("display_name") or key).strip() or key
         module_relative_path = _coerce_string(provider_payload.get("module"), field_name="module", source=provider_source)
         factory_name = _coerce_string(provider_payload.get("factory"), field_name="factory", source=provider_source)
-        module_path = (root_dir / module_relative_path).resolve() if not Path(module_relative_path).is_absolute() else Path(module_relative_path).resolve()
+        module_path = _resolve_addon_entry_path(
+            root_dir,
+            module_relative_path,
+            source=provider_source,
+            field_name="module",
+        )
         if not module_path.is_file():
             raise ValueError(
                 f"{provider_source}: module '{module_relative_path}' does not resolve to a file"
@@ -365,7 +388,12 @@ def load_addon_manifest(manifest_path: str | Path) -> AddonManifest:
         hook_source = f"{source} editor hook #{index}"
         module_relative_path = _coerce_string(hook_payload.get("module"), field_name="module", source=hook_source)
         factory_name = _coerce_string(hook_payload.get("factory"), field_name="factory", source=hook_source)
-        module_path = (root_dir / module_relative_path).resolve() if not Path(module_relative_path).is_absolute() else Path(module_relative_path).resolve()
+        module_path = _resolve_addon_entry_path(
+            root_dir,
+            module_relative_path,
+            source=hook_source,
+            field_name="module",
+        )
         if not module_path.is_file():
             raise ValueError(
                 f"{hook_source}: module '{module_relative_path}' does not resolve to a file"

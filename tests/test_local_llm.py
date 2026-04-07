@@ -99,6 +99,24 @@ class TestLocalLLMConstruction:
 
         assert backend.timeout == 600
 
+    def test_api_key_resolves_keyring_reference(self):
+        with patch("aicodereviewer.backends.local_llm.config") as mock_cfg, \
+             patch("aicodereviewer.auth.keyring.get_password", return_value="resolved-secret"):
+            mock_cfg.get.side_effect = lambda section, key, default=None: {
+                ("local_llm", "api_url"): "http://localhost:9999/v1",
+                ("local_llm", "api_type"): "openai",
+                ("local_llm", "model"): "test-model",
+                ("local_llm", "api_key"): "keyring://local_llm/api_key",
+                ("local_llm", "timeout"): "30",
+                ("local_llm", "max_tokens"): "512",
+                ("local_llm", "enable_web_search"): False,
+                ("performance", "min_request_interval_seconds"): 0.0,
+            }.get((section, key), default)
+
+            backend = LocalLLMBackend()
+
+        assert backend.api_key == "resolved-secret"
+
     def test_ollama_url_normalizes_api_suffix(self):
         backend = _make_backend(api_type="ollama", api_url="http://localhost:11434/api/")
         assert backend.api_url == "http://localhost:11434"

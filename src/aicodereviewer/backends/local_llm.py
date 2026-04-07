@@ -27,6 +27,7 @@ from urllib.parse import urlsplit, urlunsplit
 import requests
 
 from .base import AIBackend
+from aicodereviewer.auth import resolve_credential_value
 from aicodereviewer.config import config
 
 logger = logging.getLogger(__name__)
@@ -184,7 +185,11 @@ class LocalLLMBackend(AIBackend):
         self.api_url: str = self._normalize_api_url(raw_api_url, self.api_type)
 
         self.model: str = str(model or config.get("local_llm", "model", "default"))
-        self.api_key: str = str(api_key or config.get("local_llm", "api_key", ""))
+        if api_key is None:
+            configured_api_key = str(config.get("local_llm", "api_key", "") or "")
+            self.api_key = resolve_credential_value(configured_api_key).secret
+        else:
+            self.api_key = str(api_key)
         self.timeout: int = int(float(config.get("local_llm", "timeout", "300") or "300"))
         self.max_tokens: int = int(config.get("local_llm", "max_tokens", "4096") or "4096")
         if enable_web_search is None:
@@ -295,6 +300,7 @@ class LocalLLMBackend(AIBackend):
         review_type: str = "best_practices",
         lang: str = "en",
         spec_content: Optional[str] = None,
+        tool_context=None,
     ) -> str:
         max_content: int = int(config.get("performance", "max_content_length"))
         if len(code_content) > max_content:
@@ -387,6 +393,65 @@ class LocalLLMBackend(AIBackend):
         except Exception as exc:
             logger.error("Local LLM connection test failed: %s", exc)
             return False
+
+    def validate_connection_diagnostic(self) -> dict[str, str | bool]:
+        try:
+            if self.api_type == "lmstudio":
+                ok = self._validate_lmstudio()
+            elif self.api_type == "ollama":
+                ok = self._validate_ollama()
+            elif self.api_type == "openai":
+                ok = self._validate_openai()
+            elif self.api_type == "anthropic":
+                ok = self._validate_anthropic()
+            else:
+                return {
+                    "ok": False,
+                    "category": "configuration",
+                    "detail": (
+                        f"Unknown api_type '{self.api_type}'. Use 'lmstudio', 'ollama', 'openai' or 'anthropic'."
+                    ),
+                    "fix_hint": "Set local_llm.api_type to one of: lmstudio, ollama, openai, anthropic.",
+                    "origin": "connection_test",
+                }
+
+            return {
+                "ok": bool(ok),
+                "category": "none" if ok else "provider",
+                "detail": "" if ok else "Local LLM backend did not accept the validation request.",
+                "fix_hint": "Check the local server, selected model, API type, and credentials." if not ok else "",
+                "origin": "connection_test",
+            }
+        except requests.ConnectionError:
+            return {
+                "ok": False,
+                "category": "transport",
+                "detail": f"Cannot connect to {self.api_url}. Is the LLM server running?",
+                "fix_hint": "Start the local server and verify the configured base URL.",
+                "origin": "connection_test",
+            }
+        except requests.Timeout:
+            return {
+                "ok": False,
+                "category": "timeout",
+                "detail": f"Connection to {self.api_url} timed out.",
+                "fix_hint": "Increase the timeout or reduce server startup latency before retrying.",
+                "origin": "connection_test",
+            }
+        except Exception as exc:
+            lower_msg = str(exc).lower()
+            category = "provider"
+            if "api key" in lower_msg or "unauthorized" in lower_msg or "forbidden" in lower_msg:
+                category = "auth"
+            elif "timeout" in lower_msg:
+                category = "timeout"
+            return {
+                "ok": False,
+                "category": category,
+                "detail": str(exc),
+                "fix_hint": "Check the configured model, API type, credentials, and server compatibility.",
+                "origin": "connection_test",
+            }
 
     # ── shared validation helper ───────────────────────────────────────────
 

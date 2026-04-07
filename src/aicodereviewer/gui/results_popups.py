@@ -53,7 +53,9 @@ class ResultsPopupHelper:
             return
 
         try:
-            session_state = ReviewSessionState.from_serialized_dict(session_payload)
+            session_state = self.host._validate_loaded_session_state(
+                ReviewSessionState.from_serialized_dict(session_payload)
+            )
         except Exception as exc:
             logger.warning("Failed to restore popup recovery session state: %s", exc)
             controller.recovery_store.clear()
@@ -121,16 +123,25 @@ class ResultsPopupHelper:
     def show_batch_fix_popup(
         self,
         selected: list[tuple[int, Any]],
-        results: dict[int, str | None],
+        results: dict[int, Any],
         *,
         recovery_state: dict[str, Any] | None = None,
     ) -> None:
-        success_count = sum(1 for value in results.values() if value)
-        fail_count = len(results) - success_count
+        normalized_results = {
+            idx: self._normalize_batch_fix_result(value)
+            for idx, value in results.items()
+        }
+        success_count = sum(
+            1 for value in normalized_results.values() if self._batch_fix_result_content(value)
+        )
+        fail_count = len(normalized_results) - success_count
 
         if success_count == 0:
             self._restore_selected_card_statuses(selected)
-            self.host._show_toast(t("gui.results.no_fix"), error=True)
+            self.host._show_toast(
+                self._build_batch_fix_failure_toast(normalized_results),
+                error=True,
+            )
             self.host.start_ai_fix_btn.configure(state="normal")
             self.host.cancel_ai_fix_btn.configure(state="normal", text=t("gui.results.cancel_ai_fix"))
             self.host._finish_active_ai_fix()
@@ -138,7 +149,7 @@ class ResultsPopupHelper:
             self.host.status_var.set(t("common.ready"))
             return
 
-        logger.info("Batch AI Fix: %d/%d fixes generated.", success_count, len(results))
+        logger.info("Batch AI Fix: %d/%d fixes generated.", success_count, len(normalized_results))
 
         self.host.cancel_ai_fix_btn.configure(state="normal", text=t("gui.results.cancel_ai_fix"))
 
@@ -178,7 +189,9 @@ class ResultsPopupHelper:
         scroll.grid_columnconfigure(0, weight=1)
 
         controller = self.ensure_surface_controller()
-        original_generated_results = {idx: value for idx, value in results.items() if value}
+        original_generated_results = {
+            idx: dict(value) for idx, value in normalized_results.items()
+        }
         recovery_selected_indexes = recovery_state.get("selected_issue_indexes") if isinstance(recovery_state, dict) else None
         recovery_enabled_indexes = recovery_state.get("enabled_issue_indexes") if isinstance(recovery_state, dict) else None
         recovery_current_fixes = recovery_state.get("current_fixes") if isinstance(recovery_state, dict) else None
@@ -310,7 +323,9 @@ class ResultsPopupHelper:
 
         row_num = 0
         for idx, record in selected:
-            fix_text = results.get(idx)
+            result_value = normalized_results.get(idx, self._normalize_batch_fix_result(None))
+            fix_text = self._batch_fix_result_content(result_value)
+            diagnostic = self._batch_fix_result_diagnostic(result_value)
             issue = record["issue"]
             fname = Path(issue.file_path).name
 
@@ -413,11 +428,45 @@ class ResultsPopupHelper:
             else:
                 frame = ctk.CTkFrame(scroll, border_width=1, border_color="#dc2626")
                 frame.grid(row=row_num, column=0, sticky="ew", padx=4, pady=3)
+                frame.grid_columnconfigure(0, weight=1)
                 ctk.CTkLabel(
                     frame,
                     text=f"✗ {fname} — {t('gui.results.no_fix')}",
                     text_color="#dc2626",
                 ).grid(row=0, column=0, sticky="w", padx=6, pady=4)
+                detail_text = self._format_batch_fix_failure_detail(diagnostic)
+                if detail_text:
+                    ctk.CTkLabel(
+                        frame,
+                        text=detail_text,
+                        anchor="w",
+                        justify="left",
+                        wraplength=700,
+                        text_color="#b91c1c",
+                        font=ctk.CTkFont(size=11),
+                    ).grid(row=1, column=0, sticky="w", padx=6, pady=(0, 2))
+                hint_text = self._format_batch_fix_failure_hint(diagnostic)
+                if hint_text:
+                    ctk.CTkLabel(
+                        frame,
+                        text=hint_text,
+                        anchor="w",
+                        justify="left",
+                        wraplength=700,
+                        text_color=self.host._MUTED_TEXT,
+                        font=ctk.CTkFont(size=11),
+                    ).grid(row=2, column=0, sticky="w", padx=6, pady=(0, 4))
+                retry_text = self._format_batch_fix_failure_retry(diagnostic)
+                if retry_text:
+                    ctk.CTkLabel(
+                        frame,
+                        text=retry_text,
+                        anchor="w",
+                        justify="left",
+                        wraplength=700,
+                        text_color=self.host._MUTED_TEXT,
+                        font=ctk.CTkFont(size=11),
+                    ).grid(row=3, column=0, sticky="w", padx=6, pady=(0, 4))
 
             row_num += 1
 
@@ -591,6 +640,87 @@ class ResultsPopupHelper:
             elif str(raw_key).isdigit():
                 normalized[int(raw_key)] = value
         return normalized
+
+    @staticmethod
+    def _normalize_batch_fix_result(value: Any) -> dict[str, Any]:
+        if isinstance(value, dict):
+            normalized = dict(value)
+            content = normalized.get("content")
+            normalized["content"] = content if isinstance(content, str) and content else None
+            diagnostic = normalized.get("diagnostic")
+            normalized["diagnostic"] = diagnostic if isinstance(diagnostic, dict) else None
+            status = normalized.get("status")
+            if status not in {"generated", "failed"}:
+                normalized["status"] = "generated" if normalized["content"] else "failed"
+            return normalized
+        if isinstance(value, str) and value:
+            return {"status": "generated", "content": value, "diagnostic": None}
+        return {"status": "failed", "content": None, "diagnostic": None}
+
+    @staticmethod
+    def _batch_fix_result_content(value: dict[str, Any]) -> str | None:
+        content = value.get("content")
+        return content if isinstance(content, str) and content else None
+
+    @staticmethod
+    def _batch_fix_result_diagnostic(value: dict[str, Any]) -> dict[str, Any] | None:
+        diagnostic = value.get("diagnostic")
+        return diagnostic if isinstance(diagnostic, dict) else None
+
+    def _build_batch_fix_failure_toast(self, results: dict[int, dict[str, Any]]) -> str:
+        diagnostics = [
+            diagnostic
+            for diagnostic in (self._batch_fix_result_diagnostic(value) for value in results.values())
+            if diagnostic
+        ]
+        if not diagnostics:
+            return t("gui.results.no_fix")
+        if len(diagnostics) == 1:
+            detail_text = self._format_batch_fix_failure_detail(diagnostics[0])
+            if detail_text:
+                return f"{t('gui.results.no_fix')} {detail_text}"
+        category_counts: dict[str, int] = {}
+        for diagnostic in diagnostics:
+            category = self._diagnostic_category_label(str(diagnostic.get("category") or "provider"))
+            category_counts[category] = category_counts.get(category, 0) + 1
+        summary = ", ".join(
+            f"{category} ({count})"
+            for category, count in sorted(category_counts.items())
+        )
+        return t("gui.results.batch_fix_failure_summary", summary=summary)
+
+    def _format_batch_fix_failure_detail(self, diagnostic: dict[str, Any] | None) -> str:
+        if not diagnostic:
+            return ""
+        detail = str(diagnostic.get("detail") or "").strip()
+        if not detail:
+            return ""
+        category = self._diagnostic_category_label(str(diagnostic.get("category") or "provider"))
+        return t("gui.results.batch_fix_failure_detail", category=category, detail=detail)
+
+    def _format_batch_fix_failure_hint(self, diagnostic: dict[str, Any] | None) -> str:
+        if not diagnostic:
+            return ""
+        hint = str(diagnostic.get("fix_hint") or "").strip()
+        if not hint:
+            return ""
+        return t("gui.results.batch_fix_failure_hint", hint=hint)
+
+    def _format_batch_fix_failure_retry(self, diagnostic: dict[str, Any] | None) -> str:
+        if not diagnostic or not diagnostic.get("retryable"):
+            return ""
+        retry_delay = diagnostic.get("retry_delay_seconds")
+        if isinstance(retry_delay, int) and retry_delay > 0:
+            return t("gui.results.batch_fix_failure_retry_after", seconds=retry_delay)
+        return t("gui.results.batch_fix_failure_retry")
+
+    @staticmethod
+    def _diagnostic_category_label(category: str) -> str:
+        category_key = f"gui.results.diagnostic_category_{category}"
+        label = t(category_key)
+        if label == category_key:
+            return category.replace("_", " ").title()
+        return label
 
     def _restore_selected_card_statuses(self, selected: list[tuple[int, Any]]) -> None:
         for idx, record in selected:

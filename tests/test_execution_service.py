@@ -7,9 +7,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from aicodereviewer.diagnostics import FailureDiagnostic
 from aicodereviewer.execution import (
     CallbackEventSink,
     DeferredReportState,
+    JobFailed,
     JobProgressUpdated,
     JobResultAvailable,
     JobStateChanged,
@@ -26,6 +28,7 @@ from aicodereviewer.execution.models import (
     SESSION_REPORT_CONTEXT_KEY,
 )
 from aicodereviewer.models import ReviewIssue
+from aicodereviewer.tool_access import ToolAccessAudit
 
 
 def test_create_job_assigns_identity_and_created_state() -> None:
@@ -670,14 +673,59 @@ def test_review_job_fail_with_error_stores_message_and_timestamp() -> None:
         backend_name="local",
     )
     job = ReviewJob(job_id="job-123", request=request)
+    diagnostic = FailureDiagnostic(
+        category="permission",
+        origin="review",
+        detail="boom",
+        fix_hint="Verify access.",
+        exception_type="PermissionError",
+    )
 
-    previous_state = job.fail_with_error("boom")
+    previous_state = job.fail_with_error("boom", diagnostic=diagnostic)
 
     assert previous_state == "created"
     assert job.error_message == "boom"
+    assert job.error_diagnostic is diagnostic
     assert job.state == "failed"
     assert job.started_at is not None
     assert job.completed_at is not None
+
+
+def test_execute_job_failure_emits_structured_diagnostic() -> None:
+    seen_events: list[Any] = []
+
+    def _collect_issues(*_args: object, **_kwargs: object) -> list[ReviewIssue]:
+        raise PermissionError("Access denied to backend")
+
+    service = ReviewExecutionService(
+        scan_fn=lambda *_args: ["src/example.py"],
+        collect_issues_fn=_collect_issues,
+    )
+    request = ReviewRequest(
+        path="./proj",
+        scope="project",
+        diff_file=None,
+        commits=None,
+        review_types=["security"],
+        spec_content=None,
+        target_lang="en",
+        backend_name="local",
+    )
+    job = service.create_job(request)
+
+    with pytest.raises(PermissionError, match="Access denied to backend"):
+        service.execute_job(job, MagicMock(), sink=CallbackEventSink(seen_events.append))
+
+    assert job.state == "failed"
+    assert job.error_message == "Access denied to backend"
+    assert job.error_diagnostic is not None
+    assert job.error_diagnostic.category == "permission"
+    assert job.error_diagnostic.origin == "review"
+
+    failed_event = next(event for event in seen_events if isinstance(event, JobFailed))
+    assert failed_event.error_diagnostic is not None
+    assert failed_event.error_diagnostic.category == "permission"
+    assert failed_event.error_diagnostic.detail == "Access denied to backend"
 
 
 def test_execute_job_emits_progress_state_and_result_events() -> None:
@@ -701,6 +749,7 @@ def test_execute_job_emits_progress_state_and_result_events() -> None:
         target_lang: str,
         spec_content: str | None,
         *,
+        project_root,
         progress_callback,
         cancel_check,
     ) -> list[ReviewIssue]:
@@ -708,6 +757,7 @@ def test_execute_job_emits_progress_state_and_result_events() -> None:
         assert review_types == ["security"]
         assert target_lang == "en"
         assert spec_content is None
+        assert project_root == "./proj"
         assert cancel_check is None
         progress_callback(1, 1, "Reviewing")
         return [issue]
@@ -750,6 +800,66 @@ def test_execute_job_emits_progress_state_and_result_events() -> None:
     ]
 
 
+def test_execute_job_captures_tool_access_audit_from_backend() -> None:
+    issue = ReviewIssue(
+        file_path="src/example.py",
+        issue_type="security",
+        severity="high",
+        description="Unsafe subprocess usage",
+        code_snippet="subprocess.run(cmd, shell=True)",
+        ai_feedback="Avoid shell=True for untrusted input.",
+    )
+    audit = ToolAccessAudit(
+        backend_name="copilot",
+        model_name="gpt-5.4",
+        enabled=True,
+        used_tool_access=True,
+        file_read_count=2,
+    )
+
+    def _collect_issues(
+        target_files: list[str],
+        review_types: list[str],
+        client: object,
+        target_lang: str,
+        spec_content: str | None,
+        *,
+        project_root,
+        progress_callback,
+        cancel_check,
+    ) -> list[ReviewIssue]:
+        assert project_root == "./proj"
+        progress_callback(1, 1, "Reviewing")
+        return [issue]
+
+    client = MagicMock()
+    client.supports_tool_file_access.return_value = True
+    client.consume_tool_access_audit.return_value = audit
+
+    service = ReviewExecutionService(
+        scan_fn=lambda *_args: ["src/example.py"],
+        collect_issues_fn=_collect_issues,
+    )
+    request = ReviewRequest(
+        path="./proj",
+        scope="project",
+        diff_file=None,
+        commits=None,
+        review_types=["security"],
+        spec_content=None,
+        target_lang="en",
+        backend_name="copilot",
+    )
+    job = service.create_job(request)
+
+    result = service.execute_job(job, client)
+
+    client.reset_tool_access_audit.assert_called_once_with()
+    client.consume_tool_access_audit.assert_called_once_with()
+    assert result.tool_access_audit is audit
+    assert result.to_summary_dict()["tool_access_audit"]["file_read_count"] == 2
+
+
 def test_generate_report_writes_report_and_updates_job(monkeypatch) -> None:
     issue = ReviewIssue(
         file_path="src/example.py",
@@ -766,6 +876,7 @@ def test_generate_report_writes_report_and_updates_job(monkeypatch) -> None:
         target_lang: str,
         spec_content: str | None,
         *,
+        project_root,
         progress_callback,
         cancel_check,
     ) -> list[ReviewIssue]:
@@ -773,6 +884,7 @@ def test_generate_report_writes_report_and_updates_job(monkeypatch) -> None:
         assert review_types == ["security"]
         assert target_lang == "en"
         assert spec_content is None
+        assert project_root == "./proj"
         assert cancel_check is None
         progress_callback(1, 1, "Reviewing")
         return [issue]

@@ -12,7 +12,7 @@ import logging
 import os
 import shutil
 import subprocess
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from aicodereviewer.config import config
 
@@ -131,23 +131,22 @@ async def _discover_copilot_models_via_sdk(copilot_path: str) -> List[str]:
 
     Returns a sorted list of model-name strings.
     """
-    from copilot import CopilotClient  # github-copilot-sdk
+    from copilot import CopilotClient, SubprocessConfig  # github-copilot-sdk
 
-    options: dict = {
-        "cli_path": copilot_path,
-        "auto_restart": False,
-        "log_level": "warning",
-    }
+    client_config = SubprocessConfig(
+        cli_path=copilot_path,
+        log_level="warning",
+    )
     github_token = (
         os.environ.get("COPILOT_GITHUB_TOKEN")
         or os.environ.get("GH_TOKEN")
         or os.environ.get("GITHUB_TOKEN")
     )
     if github_token:
-        options["github_token"] = github_token
+        client_config.github_token = github_token
 
-    client = CopilotClient(options)
-    models_raw: list = []
+    client = CopilotClient(client_config)
+    models_raw: list[Any] = []
     try:
         await client.start()
         models_raw = await client.list_models() or []

@@ -152,6 +152,7 @@ class BenchmarkLayoutHelper:
             "benchmark_advanced_hint_label",
             "benchmark_source_hint_label",
             "benchmark_fixture_diff_empty_label",
+            "benchmark_detached_notice_label",
         ):
             label = getattr(self.host, label_name, None)
             if label is not None:

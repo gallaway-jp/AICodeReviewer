@@ -20,6 +20,8 @@ import customtkinter as ctk  # type: ignore[import-untyped]
 from aicodereviewer.execution import DeferredReportState, ReviewSessionState
 from aicodereviewer.backends import create_backend
 from aicodereviewer.config import config
+from aicodereviewer.diagnostics import build_failure_diagnostic, diagnostic_from_exception
+from aicodereviewer.fixer import generate_ai_fix_result
 from aicodereviewer.i18n import t
 from aicodereviewer.models import ReviewIssue
 from aicodereviewer.reviewer import verify_issue_resolved
@@ -772,16 +774,20 @@ class ResultsTabMixin:
             return
 
         if not self._current_ai_fix_client() and self._testing_mode:
-            fake_results: dict[int, str | None] = {}
+            fake_results: dict[int, dict[str, Any]] = {}
             for idx, rec in selected:
                 issue = rec["issue"]
                 original = issue.code_snippet or (
                     f"# {Path(issue.file_path).name}\n# (no snippet available)\n"
                 )
-                fake_results[idx] = (
-                    f"# Simulated AI fix\n"
-                    f"# Issue: {issue.description[:80]}\n\n"
-                ) + original
+                fake_results[idx] = {
+                    "status": "generated",
+                    "content": (
+                        f"# Simulated AI fix\n"
+                        f"# Issue: {issue.description[:80]}\n\n"
+                    ) + original,
+                    "diagnostic": None,
+                }
             self._show_batch_fix_popup(selected, fake_results)
             return
 
@@ -811,7 +817,7 @@ class ResultsTabMixin:
                     client = create_backend(fix_backend)
                     self._attach_active_ai_fix_client(client)
 
-                results = {}
+                results: dict[int, dict[str, Any]] = {}
                 for idx, rec in selected:
                     if ai_fix_cancel_event.is_set():
                         logger.info("AI Fix cancelled by user")
@@ -819,33 +825,65 @@ class ResultsTabMixin:
                         break
                     issue = rec["issue"]
                     try:
-                        code = ""
-                        try:
-                            with open(issue.file_path, "r", encoding="utf-8") as fh:
-                                code = fh.read()
-                        except Exception:
-                            pass
                         logger.info("  AI Fix: %s …", issue.file_path)
-                        fix = client.get_fix(
-                            code_content=code,
-                            issue_feedback=issue.ai_feedback or issue.description,
-                            review_type=issue.issue_type,
-                            lang=review_language,
-                        )
+                        if Path(issue.file_path).exists() or not issue.code_snippet:
+                            fix_result = generate_ai_fix_result(
+                                issue,
+                                client,
+                                issue.issue_type,
+                                review_language,
+                            )
+                        else:
+                            fix = client.get_fix(
+                                code_content=issue.code_snippet,
+                                issue_feedback=issue.ai_feedback or issue.description,
+                                review_type=issue.issue_type,
+                                lang=review_language,
+                            )
+                            if fix and not fix.startswith("Error:"):
+                                fix_result = {
+                                    "content": fix.strip(),
+                                    "diagnostic": None,
+                                }
+                            else:
+                                detail = str(fix).strip() if isinstance(fix, str) and fix.strip() else "Backend returned no usable fix content."
+                                fix_result = {
+                                    "content": None,
+                                    "diagnostic": build_failure_diagnostic(
+                                        category="provider",
+                                        origin="fix_generation",
+                                        detail=detail,
+                                    ),
+                                }
                         if ai_fix_cancel_event.is_set():
                             logger.info("AI Fix cancelled by user")
                             cancelled = True
                             break
-                        if fix and not fix.startswith("Error:"):
-                            results[idx] = fix.strip()
+                        content = fix_result.content if hasattr(fix_result, "content") else fix_result["content"]
+                        diagnostic = fix_result.diagnostic if hasattr(fix_result, "diagnostic") else fix_result["diagnostic"]
+                        if isinstance(content, str) and content:
+                            results[idx] = {
+                                "status": "generated",
+                                "content": content.strip(),
+                                "diagnostic": None,
+                            }
                             logger.info("    → fix generated")
                         else:
-                            results[idx] = None
+                            results[idx] = {
+                                "status": "failed",
+                                "content": None,
+                                "diagnostic": diagnostic.to_dict() if diagnostic else None,
+                            }
                             logger.warning("    → no fix returned")
                     except Exception as exc:
                         logger.error("  AI Fix error for %s: %s",
                                      issue.file_path, exc)
-                        results[idx] = None
+                        diagnostic = diagnostic_from_exception(exc, origin="fix_generation")
+                        results[idx] = {
+                            "status": "failed",
+                            "content": None,
+                            "diagnostic": diagnostic.to_dict(),
+                        }
                         if ai_fix_cancel_event.is_set():
                             logger.info("AI Fix cancelled by user")
                             cancelled = True
@@ -1074,6 +1112,62 @@ class ResultsTabMixin:
         except Exception as exc:
             messagebox.showerror(t("common.error"), str(exc))
 
+    def _validate_session_file_path(self, path_str: str) -> Path:
+        candidate = Path(path_str).expanduser()
+        if not candidate.is_absolute():
+            candidate = Path.cwd() / candidate
+        resolved = candidate.resolve(strict=False)
+        allowed_roots = [self._session_path.parent.resolve(), Path.cwd().resolve()]
+        if any(resolved == root or resolved.is_relative_to(root) for root in allowed_roots):
+            return resolved
+        raise ValueError("Session file must stay within the workspace or config directory")
+
+    @staticmethod
+    def _session_issue_allowed_roots(session_state: ReviewSessionState, session_parent: Path) -> tuple[Path, ...]:
+        roots: list[Path] = [Path.cwd().resolve(), session_parent.resolve()]
+        deferred_state = session_state.deferred_report_state
+        if deferred_state is not None:
+            project_path = str(deferred_state.context.project_path or "").strip()
+            if project_path:
+                candidate = Path(project_path).expanduser()
+                if not candidate.is_absolute():
+                    candidate = Path.cwd() / candidate
+                resolved = candidate.resolve(strict=False)
+                roots.append(resolved if resolved.suffix == "" else resolved.parent)
+        deduped: list[Path] = []
+        for root in roots:
+            if root not in deduped:
+                deduped.append(root)
+        return tuple(deduped)
+
+    @staticmethod
+    def _validate_session_issue_file_path(path_str: str, *, allowed_roots: tuple[Path, ...]) -> str:
+        raw_path = str(path_str or "").strip()
+        if not raw_path:
+            raise ValueError("Session payload file paths must stay within the expected session roots")
+        candidate = Path(raw_path).expanduser()
+        if not candidate.is_absolute():
+            candidate = Path.cwd() / candidate
+        resolved = candidate.resolve(strict=False)
+        if any(resolved == root or resolved.is_relative_to(root) for root in allowed_roots):
+            return str(resolved)
+        raise ValueError("Session payload file paths must stay within the expected session roots")
+
+    def _validate_loaded_session_state(self, session_state: ReviewSessionState) -> ReviewSessionState:
+        allowed_roots = self._session_issue_allowed_roots(session_state, self._session_path.parent)
+        validated_issues: list[ReviewIssue] = []
+        for issue in session_state.issues:
+            issue_payload = dict(vars(issue))
+            issue_payload["file_path"] = self._validate_session_issue_file_path(
+                issue.file_path,
+                allowed_roots=allowed_roots,
+            )
+            validated_issues.append(ReviewIssue(**issue_payload))
+        return ReviewSessionState(
+            issues=validated_issues,
+            deferred_report_state=session_state.deferred_report_state,
+        )
+
     def _load_session(self):
         initial_dir = str(self._session_path.parent)
         initial_file = (str(self._session_path)
@@ -1093,14 +1187,18 @@ class ResultsTabMixin:
             ):
                 return
         try:
-            raw = json.loads(Path(path_str).read_text(encoding="utf-8"))
-            session_state = ReviewSessionState.from_serialized_dict(raw)
+            session_path = self._validate_session_file_path(path_str)
+            raw = json.loads(session_path.read_text(encoding="utf-8"))
+            session_state = self._validate_loaded_session_state(
+                ReviewSessionState.from_serialized_dict(raw)
+            )
         except Exception as exc:
             messagebox.showerror(
                 t("common.error"),
                 t("gui.results.session_load_fail", err=str(exc)),
             )
             return
+        logger.info("Loaded GUI session from %s", session_path)
         self._restore_session_state(session_state)
         self._issues = list(session_state.issues)
         self._show_issues(session_state.issues)

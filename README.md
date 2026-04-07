@@ -8,7 +8,7 @@ It supports four backends:
 - GitHub Copilot CLI
 - Local LLM servers via LM Studio, Ollama, OpenAI-compatible, or Anthropic-compatible APIs
 
-It supports 22 selectable review types across quality, architecture, and compliance domains, plus an interactive CLI review flow and a GUI with review, results, settings, and log views.
+It supports 22 selectable review types across quality, architecture, and compliance domains, plus an interactive CLI review flow and a GUI with review, results, benchmarks, settings, and log views.
 
 The repository also includes holistic benchmark fixtures that score review quality against known cross-file and UI/UX scenarios.
 
@@ -104,13 +104,16 @@ See [docs/README.md](docs/README.md) for the maintained documentation set.
 Start with [docs/README.md](docs/README.md).
 
 Core guides:
+- [User Manual](docs/user-manual.md)
 - [Getting Started](docs/getting-started.md)
 - [Backend Guide](docs/backends.md)
 - [CLI Guide](docs/cli.md)
+- [Security Review](docs/security.md)
 - [GUI Guide](docs/gui.md)
 - [Configuration Reference](docs/configuration.md)
 - [Review Types Reference](docs/review-types.md)
 - [Quality Benchmarks](docs/benchmarks.md)
+- [Review Quality Program](docs/review-quality-program.md)
 - [Reports and Outputs](docs/reports.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Architecture](docs/architecture.md)
@@ -189,6 +192,8 @@ Quality regression:
 ## Repository Status
 
 The documentation now uses curated Markdown guides instead of generated HTML API pages. The code and tests are the source of truth for product behavior.
+
+For task-oriented end-user workflows, start with [docs/user-manual.md](docs/user-manual.md).
 
 The current execution/session architecture is split intentionally:
 - user-facing CLI and GUI entry points stay stable

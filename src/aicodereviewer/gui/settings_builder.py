@@ -5,6 +5,7 @@ from typing import Any, List
 
 import customtkinter as ctk  # type: ignore[import-untyped]
 
+from aicodereviewer.auth import resolve_credential_value
 from aicodereviewer.config import config
 from aicodereviewer.i18n import t
 from aicodereviewer.path_utils import get_wsl_distros
@@ -13,14 +14,21 @@ from .widgets import InfoTooltip, _Tooltip
 
 
 class SettingsTabBuilder:
-    def __init__(self, host: Any) -> None:
+    def __init__(self, host: Any, *, parent: Any | None = None, detached: bool = False) -> None:
         self.host = host
+        self.parent = parent
+        self.detached = detached
         self.scroll: Any = None
         self.row = 0
 
     def build(self) -> None:
-        tab = self.host.tabs.add(t("gui.tab.settings"))
-        self.host.settings_root_tab = tab
+        if self.parent is None:
+            tab = self.host.tabs.add(t("gui.tab.settings"))
+            self.host.settings_root_tab = tab
+        else:
+            tab = self.parent
+            if not self.detached:
+                self.host.settings_root_tab = tab
         tab.grid_columnconfigure(0, weight=1)
         tab.grid_rowconfigure(0, weight=1)
 
@@ -74,7 +82,15 @@ class SettingsTabBuilder:
         sep.grid(row=self.row + 1, column=0, columnspan=4, sticky="ew", padx=6)
         self.row += 2
 
-    def _add_entry(self, label: str, section: str, key: str, default: str, tooltip_key: str = "") -> None:
+    def _add_entry(
+        self,
+        label: str,
+        section: str,
+        key: str,
+        default: str,
+        tooltip_key: str = "",
+        actions: list[dict[str, Any]] | None = None,
+    ) -> None:
         InfoTooltip.add(self.scroll, t(tooltip_key) if tooltip_key else label, row=self.row, column=0)
         ctk.CTkLabel(self.scroll, text=label + ":").grid(
             row=self.row,
@@ -86,6 +102,26 @@ class SettingsTabBuilder:
         entry = ctk.CTkEntry(self.scroll)
         entry.insert(0, str(default))
         entry.grid(row=self.row, column=2, sticky="ew", padx=6, pady=3)
+        if actions:
+            action_frame = ctk.CTkFrame(self.scroll, fg_color="transparent")
+            action_frame.grid(row=self.row, column=3, sticky="e", padx=(0, 6), pady=3)
+            for index, action in enumerate(actions):
+                btn = ctk.CTkButton(
+                    action_frame,
+                    text=str(action.get("text", "")),
+                    width=int(action.get("width", 74)),
+                    height=28,
+                    command=action.get("command"),
+                    fg_color="gray40",
+                    hover_color="gray30",
+                )
+                btn.grid(row=0, column=index, padx=(0, 6) if index == 0 else 0)
+                tooltip = str(action.get("tooltip", "") or "")
+                if tooltip:
+                    _Tooltip(btn, tooltip)
+                store_name = str(action.get("store_name", "") or "")
+                if store_name:
+                    setattr(self.host, store_name, btn)
         self.host._setting_entries[(section, key)] = entry
         self.row += 1
 
@@ -376,6 +412,13 @@ class SettingsTabBuilder:
             refresh_button_tooltip="Refresh Copilot models",
             refresh_button_store_name="_copilot_refresh_btn",
         )
+        self._add_checkbox(
+            t("gui.settings.copilot_tool_file_access"),
+            "tool_file_access",
+            "enabled",
+            config.get("tool_file_access", "enabled", False),
+            tooltip_key="gui.tip.copilot_tool_file_access",
+        )
 
     def _build_local_llm_section(self) -> None:
         self._section_header(t("gui.settings.section_local"), backend_key="local")
@@ -407,8 +450,24 @@ class SettingsTabBuilder:
             t("gui.settings.local_api_key"),
             "local_llm",
             "api_key",
-            config.get("local_llm", "api_key", ""),
+            resolve_credential_value(str(config.get("local_llm", "api_key", "") or "")).secret,
             tooltip_key="gui.tip.local_api_key",
+            actions=[
+                {
+                    "text": t("gui.settings.local_api_key_rotate"),
+                    "command": self.host._rotate_local_llm_api_key,
+                    "tooltip": t("gui.tip.local_api_key_rotate"),
+                    "store_name": "_local_api_key_rotate_btn",
+                    "width": 78,
+                },
+                {
+                    "text": t("gui.settings.local_api_key_revoke"),
+                    "command": self.host._revoke_local_llm_api_key,
+                    "tooltip": t("gui.tip.local_api_key_revoke"),
+                    "store_name": "_local_api_key_revoke_btn",
+                    "width": 78,
+                },
+            ],
         )
         self._add_entry(
             t("gui.settings.local_timeout"),
@@ -686,6 +745,29 @@ class SettingsTabBuilder:
         )
         reset_btn.grid(row=0, column=1)
         self.host._settings_reset_btn = reset_btn
+
+        if self.detached:
+            detach_btn = ctk.CTkButton(
+                button_frame,
+                text=t("gui.settings.redock"),
+                command=self.host._redock_detached_settings_window,
+                fg_color="gray40",
+                hover_color="gray30",
+            )
+            detach_btn.grid(row=0, column=2, padx=(10, 0))
+            self.host._detached_settings_redock_btn = detach_btn
+            _Tooltip(detach_btn, t("gui.shortcut.redock_detached_page"))
+        else:
+            detach_btn = ctk.CTkButton(
+                button_frame,
+                text=t("gui.settings.open_window"),
+                command=self.host._open_detached_settings_window,
+                fg_color="gray40",
+                hover_color="gray30",
+            )
+            detach_btn.grid(row=0, column=2, padx=(10, 0))
+            self.host.detach_settings_btn = detach_btn
+            _Tooltip(detach_btn, t("gui.shortcut.detach_current_page"))
 
     def _finalize(self) -> None:
         if hasattr(self.host, "_settings_backend_var"):

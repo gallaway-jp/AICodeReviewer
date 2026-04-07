@@ -205,6 +205,23 @@ class HealthMixin:
                           text_color=("gray30", "gray70")).grid(
                 row=i * 3 + 1, column=1, sticky="w", padx=4)
 
+            meta_parts: list[str] = []
+            category = getattr(check, "category", "none")
+            origin = getattr(check, "origin", "prerequisite")
+            if not check.passed and category and category != "none":
+                meta_parts.append(f"{t('health.meta_category')}: {category.replace('_', ' ')}")
+            if origin:
+                meta_parts.append(f"{t('health.meta_origin')}: {origin.replace('_', ' ')}")
+            if meta_parts:
+                ctk.CTkLabel(
+                    scroll,
+                    text=" | ".join(meta_parts),
+                    anchor="w",
+                    wraplength=450,
+                    text_color=("gray45", "gray60"),
+                    font=ctk.CTkFont(size=11),
+                ).grid(row=i * 3 + 2, column=1, sticky="w", padx=4)
+
             if check.fix_hint and not check.passed:
                 url_match = re.search(r'https?://[^\s]+', check.fix_hint)
                 if url_match:
@@ -212,7 +229,7 @@ class HealthMixin:
                     text_before = check.fix_hint[:url_match.start()].rstrip(': ')
 
                     hint_frame = ctk.CTkFrame(scroll, fg_color="transparent")
-                    hint_frame.grid(row=i * 3 + 2, column=1, sticky="w",
+                    hint_frame.grid(row=i * 3 + 3, column=1, sticky="w",
                                     padx=4, pady=(0, 4))
 
                     if text_before:
@@ -239,7 +256,7 @@ class HealthMixin:
                                   anchor="w", wraplength=450,
                                   text_color="#2563eb",
                                   font=ctk.CTkFont(size=11)).grid(
-                        row=i * 3 + 2, column=1, sticky="w", padx=4,
+                        row=i * 3 + 3, column=1, sticky="w", padx=4,
                         pady=(0, 4))
 
         ctk.CTkButton(win, text=t("common.close"),

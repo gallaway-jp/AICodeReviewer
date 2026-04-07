@@ -218,6 +218,8 @@ In the GUI, final reports are produced from the Results workflow after issues ar
 
 The GUI reporting path uses the issue list currently shown in the Results tab together with the saved deferred report metadata attached to the active or restored session state.
 
+Internally, restored finalize-ready GUI sessions round-trip the persisted `report_context` payload through typed `DeferredReportState` and `ReviewSessionState` objects before rebuilding the final report. That typed session model is why a restored session can finalize without rerunning the original backend request while still preserving the report metadata and issue-level provenance needed for JSON, TXT, and Markdown output.
+
 The Results tab also supports:
 - session save and load with the existing JSON file structure preserved on disk
 - AI fix review flows

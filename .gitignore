@@ -40,6 +40,9 @@ agents
 artifacts/
 review_report_*.json
 review_report_*_summary.txt
+gui_validation_report.json
+tmp-test-project/
+tmp-test-project-2/
 
 # Packaging metadata
 *.egg-info/

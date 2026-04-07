@@ -109,6 +109,15 @@ class TestAppCreation:
         tab_dict = getattr(app.tabs, "_tab_dict", {})
         assert len(tab_dict) >= 5, f"Expected >= 5 tabs, got {len(tab_dict)}"
 
+    def test_settings_tab_exposes_tool_file_access_toggle(self, app: Any) -> None:
+        app.tabs.set(t("gui.tab.settings"))
+        app.update_idletasks()
+        app.update()
+
+        assert ("tool_file_access", "enabled") in app._setting_entries
+        assert hasattr(app, "detach_settings_btn")
+        assert app.detach_settings_btn.cget("text") == t("gui.settings.open_window")
+
     def test_benchmark_tab_widgets(self, app: Any) -> None:
         benchmark_tab = BenchmarkTabHarness(app)
 
@@ -127,6 +136,8 @@ class TestAppCreation:
         assert hasattr(app, "benchmark_open_source_btn")
         assert hasattr(app, "benchmark_open_summary_json_btn")
         assert hasattr(app, "benchmark_open_report_dir_btn")
+        assert hasattr(app, "detach_benchmark_btn")
+        assert app.detach_benchmark_btn.cget("text") == t("gui.benchmark.open_window")
         assert hasattr(app, "benchmark_fixture_menu")
         assert hasattr(app, "benchmark_catalog_box")
         assert hasattr(app, "benchmark_detail_box")
@@ -233,6 +244,7 @@ class TestAppCreation:
             app.update()
             assert app.addon_summary_box.winfo_manager() != ""
             assert app.local_http_docs_box.winfo_manager() != ""
+            assert app.detach_settings_btn.winfo_manager() != ""
             _assert_widget_within_window(app, app.local_http_docs_box)
 
             app.tabs.set(t("gui.tab.benchmarks"))
@@ -242,8 +254,10 @@ class TestAppCreation:
             assert app.benchmark_detail_box.winfo_manager() != ""
             assert app.benchmark_primary_summary_box.winfo_manager() != ""
             assert app.benchmark_open_source_btn.winfo_manager() != ""
+            assert app.detach_benchmark_btn.winfo_manager() != ""
             _assert_widget_within_window(app, app.benchmark_load_catalog_btn)
             _assert_widget_within_window(app, app.benchmark_open_source_btn)
+            _assert_widget_within_window(app, app.detach_benchmark_btn)
             _assert_widget_within_window(app, app.benchmark_primary_summary_box)
 
             app.tabs.set(t("gui.tab.log"))
@@ -251,8 +265,17 @@ class TestAppCreation:
             app.update()
             assert app.log_box.winfo_manager() != ""
             assert app.save_log_btn.winfo_manager() != ""
+            assert app.detach_log_btn.winfo_manager() != ""
             _assert_widget_within_window(app, app._log_level_menu)
             _assert_widget_within_window(app, app.save_log_btn)
+
+    def test_log_tab_exposes_detach_window_action(self, app: Any) -> None:
+        app.tabs.set(t("gui.tab.log"))
+        app.update_idletasks()
+        app.update()
+
+        assert hasattr(app, "detach_log_btn")
+        assert app.detach_log_btn.cget("text") == t("gui.log.open_window")
 
     def test_results_settings_and_log_reflow_explicitly_by_logical_width(self, app: Any) -> None:
         app.tabs.set(t("gui.tab.results"))
@@ -300,7 +323,7 @@ class TestAppCreation:
         }
         narrow_settings_button_rows = {
             int(button.grid_info().get("row", 0))
-            for button in (app._settings_save_btn, app._settings_reset_btn)
+            for button in (app._settings_save_btn, app._settings_reset_btn, app.detach_settings_btn)
             if button.winfo_manager() == "grid"
         }
         assert len(narrow_format_rows) >= 2
@@ -315,7 +338,7 @@ class TestAppCreation:
         }
         wide_settings_button_rows = {
             int(button.grid_info().get("row", 0))
-            for button in (app._settings_save_btn, app._settings_reset_btn)
+            for button in (app._settings_save_btn, app._settings_reset_btn, app.detach_settings_btn)
             if button.winfo_manager() == "grid"
         }
         app._settings_logical_width = original_settings_width

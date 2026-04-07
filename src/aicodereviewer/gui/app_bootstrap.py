@@ -74,6 +74,8 @@ class AppBootstrapHelper:
             lambda e: self.host._start_review() if self.host._can_submit_review() else None,
         )
         self.host.bind_all("<Control-s>", self.host._on_ctrl_s)
+        self.host.bind_all("<Control-Shift-o>", self.host._detach_current_page_shortcut)
+        self.host.bind_all("<Control-Shift-O>", self.host._detach_current_page_shortcut)
 
     def install_log_handler(self) -> None:
         level_name = (config.get("logging", "log_level", "INFO") or "INFO").upper()
@@ -145,3 +147,17 @@ class AppBootstrapHelper:
         self.host._bedrock_model_combo = None
         self.host._local_model_combo = None
         self.host._local_http_server_handle = None
+        self.host._app_destroying = False
+        self.host._detached_log_window = None
+        self.host._detached_log_box = None
+        self.host._detached_log_level_var = None
+        self.host._detached_log_level_menu = None
+        self.host._detached_log_clear_btn = None
+        self.host._detached_log_save_btn = None
+        self.host._detached_log_redock_btn = None
+        self.host._detached_settings_window = None
+        self.host._detached_settings_container = None
+        self.host._detached_settings_redock_btn = None
+        self.host._detached_benchmark_window = None
+        self.host._detached_benchmark_container = None
+        self.host._detached_benchmark_redock_btn = None

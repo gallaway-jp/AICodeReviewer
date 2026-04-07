@@ -1,6 +1,6 @@
 # GUI Guide
 
-The GUI exposes the same core review system as the CLI through a four-tab desktop workflow.
+The GUI exposes the same core review system as the CLI through a five-tab desktop workflow.
 
 ## Launch
 
@@ -13,6 +13,8 @@ The screenshots below are generated from the real test-mode GUI with:
 ```powershell
 ./tools/capture_gui_screenshots.ps1
 ```
+
+The checked-in screenshots now cover the main review, results, AI Fix, log, benchmark, and detached-window workflow surfaces. The detached-workflow image shows the shipped placeholder-and-redock state that appears in the main app while the benchmark browser is detached into its own window.
 
 ## Screenshots
 
@@ -32,6 +34,14 @@ The screenshots below are generated from the real test-mode GUI with:
 
 ![Output Log tab screenshot](images/gui-output-log-tab.png)
 
+### Benchmarks Tab
+
+![Benchmarks tab screenshot](images/gui-benchmarks-tab.png)
+
+### Detached Benchmark Workflow
+
+![Detached benchmark workflow screenshot](images/gui-detached-benchmark-window.png)
+
 ## Tabs
 
 ### Review Tab
@@ -48,6 +58,7 @@ Capabilities:
 - choose backend
 - enter programmers and reviewers
 - run a full review or dry run
+- inspect the built-in review queue summary and cancel queued submissions when scheduler-backed execution is active
 
 Additional controls:
 - progress bar
@@ -75,6 +86,21 @@ Capabilities:
 - review changes for resolved items
 - finalize reports from the current active or restored session state
 
+### Benchmarks Tab
+
+Use the Benchmarks tab to compare saved benchmark runs and inspect representative scenarios.
+
+Capabilities:
+- browse the built-in benchmark fixture catalog from the configured scenarios folder
+- discover saved benchmark summary artifacts under the configured saved-runs folder
+- load one summary as the main run and a second summary as the comparison run
+- inspect scenario metadata such as review types, fixture tags, and expected focus areas
+- scan the fixture-level diff table for shared, primary-only, and comparison-only scenarios
+- filter and sort the fixture diff table by presence state or score/status churn
+- preview primary and comparison report payloads and inspect a unified diff of the two JSON bodies
+- open the active scenario folder, main summary JSON, and generated report directory from the tab
+- open the page in a detached window and redock it later without losing the loaded compare state
+
 ### Settings Tab
 
 Use the Settings tab to manage persistent configuration.
@@ -86,6 +112,7 @@ Capabilities:
 - GUI preferences
 - output format selection
 - model selection fields where supported
+- open the Settings surface in a detached window and redock it later while preserving unsaved form edits
 
 ### Output Log Tab
 
@@ -96,6 +123,27 @@ Capabilities:
 - severity filtering
 - clear log
 - save log to a text file
+- open the log stream in a detached window and redock it later without losing synchronized log history
+
+## Detached Windows
+
+The desktop app supports a detachable-window workflow for selected non-Review pages.
+
+Currently supported detachable pages:
+- Benchmarks
+- Settings
+- Output Log
+
+Behavior:
+- each supported page exposes an `Open In Window` action in the main tab
+- detached windows expose a `Redock` action that returns the page to the main tab
+- the Review tab remains anchored in the main window
+- detached window geometry is persisted and restored on restart through the GUI config
+- the app keeps one canonical surface active per detachable page, then rebuilds that page in the active host during detach and redock
+
+Keyboard shortcuts:
+- `Ctrl+Shift+O` opens the currently selected detachable page in its own window
+- `Ctrl+W` redocks the active detached page back into the main app
 
 ## Typical GUI Workflow
 
@@ -106,7 +154,8 @@ Capabilities:
 5. Start the review.
 6. Use the Results tab overview cards and quick triage filters to prioritize findings.
 7. Inspect issue cards, apply fixes, save sessions, reload sessions, and finalize reports from the current in-memory issue list.
-8. Use the Output Log tab if anything looks wrong or you need runtime detail.
+8. Use the Benchmarks tab when you need to compare saved benchmark runs or inspect scenario-level deltas between two review setups.
+9. Use the Settings or Output Log tabs if you need configuration changes or runtime detail, and detach those pages into their own windows when a multi-window layout is more convenient.
 
 ## GUI Workflow Diagram
 
@@ -124,6 +173,10 @@ flowchart TD
 	Results --> Fix[AI Fix mode / preview / edit]
 	Results --> Session[Save or load session]
 	Results --> Finalize[Finalize report]
+	Results --> Benchmarks[Benchmarks Tab]
+	Benchmarks --> Compare[Load main and comparison benchmark runs]
+	Compare --> Diff[Inspect fixture diffs / previews]
+	Settings[Settings Tab] --> Review
 	Backend --> Health[Check setup / health]
 	Health --> Log
 ```
@@ -133,12 +186,18 @@ flowchart TD
 ```mermaid
 flowchart LR
 	ReviewTab[Review Tab] --> ResultsTab[Results Tab]
+	ResultsTab --> BenchmarksTab[Benchmarks Tab]
 	ReviewTab --> LogTab[Output Log Tab]
 	SettingsTab[Settings Tab] --> ReviewTab
 	SettingsTab --> ResultsTab
+	SettingsTab --> BenchmarksTab
 	HealthChecks[Health / Model Refresh] --> ReviewTab
 	HealthChecks --> SettingsTab
 	ResultsTab --> LogTab
+	BenchmarksTab --> LogTab
+	DetachedPages[Detached Benchmarks / Settings / Log Windows] --> ReviewTab
+	DetachedPages --> ResultsTab
+	DetachedPages --> BenchmarksTab
 ```
 
 ## Session And Finalize Notes
@@ -158,8 +217,10 @@ python tools/manual_test_gui.py
 
 This is useful for validating:
 - results rendering
+- benchmark browsing and comparison behavior
 - log output
 - settings behavior in testing mode
+- detached-window open, redock, and restart-restore flows
 - AI fix and review-session UI flows
 
 ## Related Guides

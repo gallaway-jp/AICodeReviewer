@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from aicodereviewer import auth
 from aicodereviewer.config import config
 import aicodereviewer.gui.settings_actions as settings_actions
 from aicodereviewer.gui.settings_actions import SettingsPersistenceController
@@ -16,6 +17,12 @@ class _FakeEntry:
 
     def get(self) -> str:
         return self._value
+
+    def delete(self, _start: int, _end: str | None = None) -> None:
+        self._value = ""
+
+    def insert(self, _index: int, value: str) -> None:
+        self._value = value
 
 
 class _FakeStringVar:
@@ -125,3 +132,51 @@ def test_settings_persistence_controller_reports_invalid_numeric_value(monkeypat
     controller.save()
 
     assert any("not a valid" in message and error for message, error in host.toasts)
+
+
+def test_settings_persistence_controller_rotates_local_llm_api_key(monkeypatch: Any, tmp_path: Path) -> None:
+    _install_fake_vars(monkeypatch)
+    config_path = tmp_path / "settings-actions-rotate.ini"
+    monkeypatch.setattr(config, "config_path", config_path)
+    config.config.clear()
+    config._set_defaults()  # type: ignore[reportPrivateUsage]
+    config.set_value("local_llm", "api_key", auth.build_credential_reference("local_llm", "api_key"))
+    config.save()
+
+    cleared: list[tuple[str, str]] = []
+    monkeypatch.setattr(settings_actions, "clear_config_credential", lambda section, key: cleared.append((section, key)))
+
+    host = _FakeHost()
+    host._setting_entries[("local_llm", "api_key")] = _FakeEntry("secret")
+    controller = SettingsPersistenceController(host, numeric_settings=_NUMERIC_SETTINGS)
+
+    controller.rotate_local_llm_api_key()
+
+    assert host._setting_entries[("local_llm", "api_key")].get() == ""
+    assert config.get("local_llm", "api_key") == auth.build_credential_reference("local_llm", "api_key")
+    assert cleared == [("local_llm", "api_key")]
+    assert any(message == t("gui.settings.local_api_key_rotated") and not error for message, error in host.toasts)
+
+
+def test_settings_persistence_controller_revokes_local_llm_api_key(monkeypatch: Any, tmp_path: Path) -> None:
+    _install_fake_vars(monkeypatch)
+    config_path = tmp_path / "settings-actions-revoke.ini"
+    monkeypatch.setattr(config, "config_path", config_path)
+    config.config.clear()
+    config._set_defaults()  # type: ignore[reportPrivateUsage]
+    config.set_value("local_llm", "api_key", auth.build_credential_reference("local_llm", "api_key"))
+    config.save()
+
+    cleared: list[tuple[str, str]] = []
+    monkeypatch.setattr(settings_actions, "clear_config_credential", lambda section, key: cleared.append((section, key)))
+
+    host = _FakeHost()
+    host._setting_entries[("local_llm", "api_key")] = _FakeEntry("secret")
+    controller = SettingsPersistenceController(host, numeric_settings=_NUMERIC_SETTINGS)
+
+    controller.revoke_local_llm_api_key()
+
+    assert host._setting_entries[("local_llm", "api_key")].get() == ""
+    assert config.get("local_llm", "api_key") == ""
+    assert cleared == [("local_llm", "api_key")]
+    assert any(message == t("gui.settings.local_api_key_revoked") and not error for message, error in host.toasts)

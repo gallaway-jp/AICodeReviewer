@@ -157,6 +157,7 @@ def _build_default_backend_registry() -> BackendRegistry:
             display_name="GitHub Copilot CLI",
             factory=_create_copilot_backend,
             aliases=("github-copilot", "copilot-cli"),
+            capabilities=frozenset({"tool_file_access"}),
         )
     )
     registry.register(

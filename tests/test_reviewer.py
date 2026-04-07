@@ -6,11 +6,13 @@ Updated for v2.0 API: collect_review_issues now takes review_types (List[str])
 instead of a single review_type string.
 """
 import json
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from pathlib import Path
 from typing import List
 from aicodereviewer.reviewer import collect_review_issues, verify_issue_resolved, FileInfo, _merge_combined_with_fallback
 from aicodereviewer.models import ReviewIssue
+from aicodereviewer.tool_access import ToolReviewContext, ToolReviewTarget
 
 
 class TestCollectReviewIssues:
@@ -104,6 +106,41 @@ class TestCollectReviewIssues:
 
         assert len(issues) == 1
         assert mock_client.get_review.call_count == 2
+
+    def test_collect_review_issues_tool_access_falls_back_to_static_prompt_when_unused(self):
+        mock_client = MagicMock()
+        mock_client.get_review.side_effect = [
+            "Error: Tool-aware file access was not used by the selected model.",
+            "Recovered feedback after static fallback",
+        ]
+        mock_client.current_tool_access_audit.return_value = SimpleNamespace(
+            file_read_count=0,
+            fallback_reason="tool access unused",
+        )
+
+        target_files: List[FileInfo] = [{  # type: ignore[list-item]
+            'path': Path('/path/to/test.py'),
+            'content': "print('code')",
+            'filename': 'test.py'
+        }]
+
+        with patch('aicodereviewer.reviewer._tool_file_access_enabled_for_client', return_value=True), \
+             patch(
+                 'aicodereviewer.reviewer._build_tool_review_context',
+                 return_value=ToolReviewContext(
+                     workspace_root='/path/to',
+                     targets=(ToolReviewTarget(path='test.py'),),
+                 ),
+             ):
+            issues = collect_review_issues(target_files, ['security'], mock_client, 'en', project_root='/path/to')
+
+        assert len(issues) == 1
+        assert issues[0].ai_feedback == 'Recovered feedback after static fallback'
+        assert mock_client.get_review.call_count == 2
+        first_call = mock_client.get_review.call_args_list[0]
+        second_call = mock_client.get_review.call_args_list[1]
+        assert first_call.kwargs['tool_context'] is not None
+        assert second_call.kwargs['tool_context'] is None
 
     def test_collect_review_issues_retries_combined_batch_transient_error(self):
         """Combined multi-file reviews retry once before falling back."""

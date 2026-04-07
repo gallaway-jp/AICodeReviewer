@@ -257,6 +257,11 @@ _ISSUE_TYPE_ALIASES = {
         "shared state",
         "shared_state",
         "synchronization",
+        "atomicity",
+        "concurrent iteration",
+        "concurrent_iteration",
+        "inconsistent snapshot",
+        "inconsistent_snapshot",
     },
     "regression": {
         "regression",
@@ -371,6 +376,12 @@ _ISSUE_TYPE_ALIASES = {
 }
 
 _TEXT_EXPECTATION_ALIASES = {
+    "enable cloud sync": (
+        "enable cloud sync",
+        "cloud sync",
+        "cloud_sync_enabled",
+        "self.cloud_sync_enabled.get()",
+    ),
     "aria-label": (
         "aria-label",
         "aria label",
@@ -427,6 +438,12 @@ _TEXT_EXPECTATION_ALIASES = {
     "controller": ("controller", "controllers", "コントローラー", "controller.py"),
     "database": ("database", "db", "databases", "データベース", "db.py"),
     "db": ("db", "database", "データベース", "db.py", "execute_query"),
+    "confused": (
+        "confused",
+        "confusion",
+        "blank",
+        "unclear",
+    ),
     "drift": (
         "drift",
         "divergent",
@@ -448,6 +465,12 @@ _TEXT_EXPECTATION_ALIASES = {
         "breaks",
         "broken",
     ),
+        "build_retry_delay": (
+            "build_retry_delay",
+            "signature changed in src/retry_policy.py",
+            "retry_policy.py changes build_retry_delay",
+            "(retry_count, network_profile) to (network_profile, retry_count)",
+        ),
     "except exception": (
         "except exception",
         "except returns status 'completed'",
@@ -477,6 +500,15 @@ _TEXT_EXPECTATION_ALIASES = {
         "profiles",
     ),
     "email": ("email", "emails"),
+    "invoice_id": (
+        "invoice_id",
+        "invoice id",
+        "account_id",
+        "account id",
+        "ownership",
+        "belongs to the current account",
+        "belongs to the requesting account",
+    ),
     "invalid": (
         "invalid",
         "unvalidated",
@@ -567,6 +599,15 @@ _TEXT_EXPECTATION_ALIASES = {
     ),
     "require_admin": ("require_admin", "admin guard", "guard", "管理者ガード", "ガード"),
     "transaction": ("transaction", "transactional", "トランザクション"),
+    "signature verification": (
+        "signature verification",
+        "verify_signature",
+        "verifying signature",
+        "without verifying signature",
+        "signature verification disabled",
+        "signature checks",
+        "signature validation",
+    ),
     "unvalidated": (
         "unvalidated",
         "not validated",
@@ -582,6 +623,28 @@ _TEXT_EXPECTATION_ALIASES = {
         "検証されていない",
         "検証不足",
         "バリデーション漏れ",
+    ),
+    "obsolete": (
+        "obsolete",
+        "unused",
+        "unreachable",
+        "dormant",
+        "deprecated",
+        "permanently disabled",
+        "no callers",
+        "no live caller",
+        "no live wiring",
+    ),
+    "unused": (
+        "unused",
+        "obsolete",
+        "unreachable",
+        "dormant",
+        "deprecated",
+        "no callers",
+        "no live caller",
+        "no live wiring",
+        "effectively dead code",
     ),
     "validation": ("validation", "validate", "validator", "検証", "バリデーション"),
 }
@@ -661,10 +724,30 @@ def _load_json(path: Path) -> dict[str, Any]:
     return data
 
 
-def load_fixture(manifest_path: Path) -> BenchmarkFixture:
+def _resolve_fixture_path(
+    manifest_path: Path,
+    raw_path: Any,
+    *,
+    field_name: str,
+    allowed_root: Path | None = None,
+) -> Path | None:
+    if not raw_path:
+        return None
+    candidate = Path(str(raw_path)).expanduser()
+    base_dir = manifest_path.parent
+    resolved = candidate.resolve() if candidate.is_absolute() else (base_dir / candidate).resolve()
+    if allowed_root is not None:
+        resolved_root = allowed_root.expanduser().resolve()
+        if not (resolved == resolved_root or resolved.is_relative_to(resolved_root)):
+            raise ValueError(
+                f"Benchmark fixture '{manifest_path}' field '{field_name}' must stay within the fixtures root"
+            )
+    return resolved
+
+
+def load_fixture(manifest_path: Path, *, allowed_root: Path | None = None) -> BenchmarkFixture:
     """Load a single benchmark fixture manifest."""
     payload = _load_json(manifest_path)
-    base_dir = manifest_path.parent
     expectations = [
         BenchmarkExpectation(
             id=str(item["id"]),
@@ -696,17 +779,33 @@ def load_fixture(manifest_path: Path) -> BenchmarkFixture:
         review_types=[str(entry) for entry in payload.get("review_types", [])],
         minimum_score=float(payload.get("minimum_score", 1.0)),
         manifest_path=manifest_path,
-        project_dir=(base_dir / payload["project_dir"]).resolve() if payload.get("project_dir") else None,
-        diff_file=(base_dir / payload["diff_file"]).resolve() if payload.get("diff_file") else None,
-        spec_file=(base_dir / payload["spec_file"]).resolve() if payload.get("spec_file") else None,
+        project_dir=_resolve_fixture_path(
+            manifest_path,
+            payload.get("project_dir"),
+            field_name="project_dir",
+            allowed_root=allowed_root,
+        ),
+        diff_file=_resolve_fixture_path(
+            manifest_path,
+            payload.get("diff_file"),
+            field_name="diff_file",
+            allowed_root=allowed_root,
+        ),
+        spec_file=_resolve_fixture_path(
+            manifest_path,
+            payload.get("spec_file"),
+            field_name="spec_file",
+            allowed_root=allowed_root,
+        ),
         expected_findings=expectations,
     )
 
 
 def discover_fixtures(fixtures_root: Path) -> list[BenchmarkFixture]:
     """Discover all benchmark fixture manifests below *fixtures_root*."""
-    manifests = sorted(fixtures_root.rglob("fixture.json"))
-    return [load_fixture(path) for path in manifests]
+    resolved_root = fixtures_root.expanduser().resolve()
+    manifests = sorted(resolved_root.rglob("fixture.json"))
+    return [load_fixture(path, allowed_root=resolved_root) for path in manifests]
 
 
 def _extract_report(payload: dict[str, Any]) -> dict[str, Any]:
@@ -755,6 +854,55 @@ def _resolve_related_issue_paths(issue: dict[str, Any], raw_issues: Sequence[dic
     return related_paths
 
 
+def _path_match_keys(path: str) -> set[str]:
+    if not path:
+        return set()
+    normalized = path.replace("\\", "/").lower()
+    return {normalized, Path(normalized).name}
+
+
+def _participates_in_explicit_cross_file_chain(
+    file_path: str,
+    related_files: Sequence[str],
+    raw_issues: Sequence[dict[str, Any]],
+) -> bool:
+    current_keys = _path_match_keys(file_path)
+    if not current_keys:
+        return False
+
+    current_related_keys = {
+        key
+        for entry in related_files
+        for key in _path_match_keys(str(entry))
+    }
+
+    for candidate in raw_issues:
+        if not isinstance(candidate, dict):
+            continue
+        candidate_path = str(candidate.get("file_path") or candidate.get("file") or "")
+        candidate_keys = _path_match_keys(candidate_path)
+        if not candidate_keys or candidate_keys == current_keys:
+            continue
+
+        candidate_related = candidate.get("related_files")
+        candidate_related_files = [str(entry) for entry in candidate_related] if isinstance(candidate_related, list) else []
+        for resolved_path in _resolve_related_issue_paths(candidate, raw_issues):
+            if resolved_path not in candidate_related_files:
+                candidate_related_files.append(resolved_path)
+        candidate_related_keys = {
+            key
+            for entry in candidate_related_files
+            for key in _path_match_keys(str(entry))
+        }
+
+        if current_keys & candidate_related_keys:
+            return True
+        if candidate_keys & current_related_keys:
+            return True
+
+    return False
+
+
 def _normalize_issue(issue: dict[str, Any], raw_issues: Sequence[dict[str, Any]]) -> dict[str, Any]:
     related_files = issue.get("related_files")
     if not isinstance(related_files, list):
@@ -765,6 +913,11 @@ def _normalize_issue(issue: dict[str, Any], raw_issues: Sequence[dict[str, Any]]
         if candidate_path not in normalized_related_files:
             normalized_related_files.append(candidate_path)
 
+    normalized_issue_type = re.sub(
+        r"[\s\-/]+",
+        "_",
+        str(issue.get("issue_type") or "").lower(),
+    ).strip("_")
     raw_context_scope = str(issue.get("context_scope") or "local").lower()
     normalized_context_scope = (
         "cross_file"
@@ -772,9 +925,39 @@ def _normalize_issue(issue: dict[str, Any], raw_issues: Sequence[dict[str, Any]]
         else raw_context_scope
     )
 
+    normalized_file_path = str(issue.get("file_path") or issue.get("file") or "")
+    file_name = Path(normalized_file_path).name.lower()
+    related_names = {
+        Path(entry).name.lower()
+        for entry in normalized_related_files
+        if isinstance(entry, str) and entry
+    }
+    if (
+        normalized_context_scope == "cross_file"
+        and related_names
+        and related_names == {file_name}
+    ):
+        normalized_context_scope = "local"
+    if (
+        normalized_context_scope == "project"
+        and related_names
+        and related_names != {file_name}
+        and normalized_issue_type != "architecture"
+    ):
+        normalized_context_scope = "cross_file"
+    if (
+        normalized_context_scope == "local"
+        and _participates_in_explicit_cross_file_chain(
+            normalized_file_path,
+            normalized_related_files,
+            raw_issues,
+        )
+    ):
+        normalized_context_scope = "cross_file"
+
     return {
         "issue_id": str(issue.get("issue_id") or ""),
-        "file_path": str(issue.get("file_path") or issue.get("file") or ""),
+        "file_path": normalized_file_path,
         "issue_type": str(issue.get("issue_type") or issue.get("type") or ""),
         "severity": str(issue.get("severity") or "medium").lower(),
         "description": str(issue.get("description") or ""),

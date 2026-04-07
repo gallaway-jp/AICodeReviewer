@@ -98,7 +98,7 @@ The second Milestone 6 slice in this repository adds:
 - popup recovery for unsaved editor drafts and staged AI-fix preview state
 - restart-style GUI workflow coverage for popup recovery and large-file guardrails
 
-This still does not close Milestone 6. It establishes the audit artifact, closes the first navigation gaps, and delivers the first resilience-focused refactor without yet adding true virtualization, multi-buffer navigation, or richer editor tooling.
+This document now records the full Milestone 6 execution trail. The milestone is complete in the current repository baseline, with the original navigation, resilience, keyboard-flow, and editor-surface gaps reduced to future quality improvements rather than milestone blockers.
 
 The third Milestone 6 slice in this repository adds:
 

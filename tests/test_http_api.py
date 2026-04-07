@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import threading
 import time
 from wsgiref.util import setup_testing_defaults
@@ -397,6 +398,8 @@ def test_cancel_job_endpoint_cancels_queued_job() -> None:
 
 def test_report_and_artifact_endpoints_expose_generated_report(tmp_path) -> None:
     install_review_registry([])
+    project_root = tmp_path / "project"
+    project_root.mkdir()
     service = LocalReviewHttpService(
         execution_service=ReviewExecutionService(
             scan_fn=lambda *_args: [{"path": "src/example.py"}],
@@ -420,13 +423,13 @@ def test_report_and_artifact_endpoints_expose_generated_report(tmp_path) -> None
         "POST",
         "/api/jobs",
         payload={
-            "path": "./proj",
+            "path": str(project_root),
             "scope": "project",
             "review_types": ["security"],
             "target_lang": "en",
             "backend_name": "local",
             "dry_run": False,
-            "output_file": str(tmp_path / "report.json"),
+            "output_file": str(project_root / "report.json"),
         },
     )
 
@@ -440,7 +443,7 @@ def test_report_and_artifact_endpoints_expose_generated_report(tmp_path) -> None
     report_status, report_payload = _call_app(app, "GET", f"/api/jobs/{job_id}/report")
     assert report_status == 200
     assert report_payload["job_id"] == job_id
-    assert report_payload["report"]["project_path"] == "./proj"
+    assert report_payload["report"]["project_path"] == str(project_root)
 
     artifacts_status, artifacts_payload = _call_app(app, "GET", f"/api/jobs/{job_id}/artifacts")
     assert artifacts_status == 200
@@ -464,6 +467,135 @@ def test_report_and_artifact_endpoints_expose_generated_report(tmp_path) -> None
     assert raw_headers["Content-Type"] in {"application/json", "text/markdown", "text/plain"}
     assert "attachment; filename=" in raw_headers["Content-Disposition"]
     assert raw_body
+    service.shutdown(wait=True, timeout=2.0)
+
+
+def test_job_submission_rejects_output_file_outside_review_root(tmp_path) -> None:
+    install_review_registry([])
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    escape_root = tmp_path.parent / "escape"
+    escape_root.mkdir(exist_ok=True)
+
+    service = LocalReviewHttpService(
+        execution_service=ReviewExecutionService(
+            scan_fn=lambda *_args: [{"path": "src/example.py"}],
+        ),
+        backend_factory=lambda _backend_name: object(),
+    )
+    app = LocalHttpApiApplication(service)
+
+    create_status, create_payload = _call_app(
+        app,
+        "POST",
+        "/api/jobs",
+        payload={
+            "path": str(project_root),
+            "scope": "project",
+            "review_types": ["security"],
+            "target_lang": "en",
+            "backend_name": "local",
+            "dry_run": True,
+            "output_file": str(escape_root / "report.json"),
+        },
+    )
+
+    assert create_status == 400
+    assert create_payload["error"] == "Field 'output_file' must stay within the review path or current workspace"
+    service.shutdown(wait=True, timeout=2.0)
+
+
+def test_job_submission_emits_audit_log(caplog, tmp_path) -> None:
+    install_review_registry([])
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    service = LocalReviewHttpService(
+        execution_service=ReviewExecutionService(
+            scan_fn=lambda *_args: [{"path": "src/example.py"}],
+        ),
+        backend_factory=lambda _backend_name: object(),
+    )
+    app = LocalHttpApiApplication(service)
+
+    with caplog.at_level(logging.INFO, logger="aicodereviewer.audit"):
+        status_code, payload = _call_app(
+            app,
+            "POST",
+            "/api/jobs",
+            payload={
+                "path": str(project_root),
+                "scope": "project",
+                "review_types": ["security"],
+                "target_lang": "en",
+                "backend_name": "local",
+                "dry_run": True,
+            },
+        )
+
+    assert status_code == 201
+    assert any(
+        "Local HTTP audit: action=job_submit" in record.getMessage()
+        and f"job_id={payload['job_id']}" in record.getMessage()
+        for record in caplog.records
+    )
+    service.shutdown(wait=True, timeout=2.0)
+
+
+def test_artifact_fetch_emits_audit_log(caplog, tmp_path) -> None:
+    install_review_registry([])
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    service = LocalReviewHttpService(
+        execution_service=ReviewExecutionService(
+            scan_fn=lambda *_args: [{"path": "src/example.py"}],
+            collect_issues_fn=lambda *_args, **_kwargs: [
+                ReviewIssue(
+                    file_path="src/example.py",
+                    issue_type="security",
+                    severity="high",
+                    description="Unsafe subprocess usage",
+                    code_snippet="subprocess.run(cmd, shell=True)",
+                    ai_feedback="Avoid shell=True for untrusted input.",
+                )
+            ],
+        ),
+        backend_factory=lambda _backend_name: object(),
+    )
+    app = LocalHttpApiApplication(service)
+
+    create_status, create_payload = _call_app(
+        app,
+        "POST",
+        "/api/jobs",
+        payload={
+            "path": str(project_root),
+            "scope": "project",
+            "review_types": ["security"],
+            "target_lang": "en",
+            "backend_name": "local",
+            "dry_run": False,
+            "output_file": str(project_root / "report.json"),
+        },
+    )
+    assert create_status == 201
+    job_id = str(create_payload["job_id"])
+    service.wait_for_job(job_id, timeout=2.0)
+
+    with caplog.at_level(logging.INFO, logger="aicodereviewer.audit"):
+        raw_status, _, _ = _call_app_raw_with_headers(
+            app,
+            "GET",
+            f"/api/jobs/{job_id}/artifacts/report_primary/raw",
+        )
+
+    assert raw_status == 200
+    assert any(
+        "Local HTTP audit: action=artifact_fetch" in record.getMessage()
+        and f"job_id={job_id}" in record.getMessage()
+        and "artifact_key=report_primary" in record.getMessage()
+        and "raw=True" in record.getMessage()
+        for record in caplog.records
+    )
     service.shutdown(wait=True, timeout=2.0)
 
 
@@ -505,4 +637,50 @@ def test_job_event_stream_endpoint_returns_sse_payload() -> None:
     assert "event: job.state_changed" in event_body
     assert "event: job.result_available" in event_body
     assert f'"job_id": "{job_id}"' in event_body
+    service.shutdown(wait=True, timeout=2.0)
+
+
+def test_failed_job_endpoint_and_event_payload_include_error_diagnostic() -> None:
+    install_review_registry([])
+    service = LocalReviewHttpService(
+        execution_service=ReviewExecutionService(
+            scan_fn=lambda *_args: [{"path": "src/example.py"}],
+            collect_issues_fn=lambda *_args, **_kwargs: (_ for _ in ()).throw(TimeoutError("connection timeout")),
+        ),
+        backend_factory=lambda _backend_name: object(),
+    )
+    app = LocalHttpApiApplication(service)
+
+    create_status, create_payload = _call_app(
+        app,
+        "POST",
+        "/api/jobs",
+        payload={
+            "path": "./proj",
+            "scope": "project",
+            "review_types": ["security"],
+            "target_lang": "en",
+            "backend_name": "local",
+            "dry_run": False,
+        },
+    )
+
+    assert create_status == 201
+    job_id = str(create_payload["job_id"])
+
+    settled = service.wait_for_job(job_id, timeout=2.0)
+    assert settled["state"] == "failed"
+    assert settled["error_diagnostic"] is not None
+    assert settled["error_diagnostic"]["category"] == "timeout"
+    assert settled["error_diagnostic"]["origin"] == "review"
+
+    events = service.read_events(job_id=job_id, after_sequence=0, timeout=0.0)
+    failed_event = next(
+        service.serialize_event_record(record)
+        for record in events
+        if record.event.kind == "job.failed"
+    )
+    assert failed_event["error_diagnostic"] is not None
+    assert failed_event["error_diagnostic"]["category"] == "timeout"
+    assert failed_event["error_diagnostic"]["detail"] == "connection timeout"
     service.shutdown(wait=True, timeout=2.0)

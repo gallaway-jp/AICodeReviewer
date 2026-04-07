@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 
+import aicodereviewer.auth as auth
 from aicodereviewer.backends import health
 
 
@@ -38,6 +39,41 @@ def test_check_backend_unknown_backend_returns_failed_report():
 
     assert report.ready is False
     assert report.backend == "does-not-exist"
+
+
+def test_health_report_collects_failure_categories():
+    report = health.HealthReport(
+        backend="local",
+        ready=False,
+        checks=[
+            health.CheckResult(name="Auth", passed=False, category="auth"),
+            health.CheckResult(name="Timeout", passed=False, category="timeout"),
+            health.CheckResult(name="Duplicate Auth", passed=False, category="auth"),
+        ],
+    )
+
+    assert report.failure_categories == ["auth", "timeout"]
+
+
+def test_run_connection_test_uses_backend_diagnostic(monkeypatch):
+    class _FakeBackend:
+        def validate_connection_diagnostic(self):
+            return {
+                "ok": False,
+                "category": "transport",
+                "detail": "Connection refused by local server.",
+                "fix_hint": "Start the local server.",
+                "origin": "connection_test",
+            }
+
+    monkeypatch.setattr("aicodereviewer.backends.create_backend", lambda _backend: _FakeBackend())
+
+    check = health._run_connection_test("local")
+
+    assert check.passed is False
+    assert check.category == "transport"
+    assert check.origin == "connection_test"
+    assert check.detail == "Connection refused by local server."
 
 
 def test_check_copilot_accepts_copilot_specific_token(monkeypatch):
@@ -100,6 +136,26 @@ def test_check_local_llm_reports_missing_configured_model(monkeypatch):
     assert report.ready is False
     model_check = next(check for check in report.checks if check.name == "Model Availability")
     assert model_check.passed is False
+
+
+def test_check_local_llm_reports_missing_keyring_credential_reference(monkeypatch):
+    monkeypatch.setattr(health.config, "get", lambda section, key, default=None: {
+        ("local_llm", "api_url"): "http://localhost:1234",
+        ("local_llm", "api_type"): "lmstudio",
+        ("local_llm", "model"): "loaded-model",
+        ("local_llm", "api_key"): "keyring://local_llm/api_key",
+    }.get((section, key), default))
+    monkeypatch.setattr(
+        "requests.get",
+        lambda url, timeout, headers: _Response(200, {"data": [{"id": "loaded-model"}]}),
+    )
+    monkeypatch.setattr(auth.keyring, "get_password", lambda service, name: None)
+
+    report = health.check_local_llm()
+
+    assert report.ready is False
+    credential_check = next(check for check in report.checks if check.name == "API Credential")
+    assert credential_check.passed is False
 
 
 def test_check_local_llm_uses_ollama_tags_endpoint(monkeypatch):

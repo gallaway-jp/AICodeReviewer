@@ -77,6 +77,7 @@ class KiroBackend(AIBackend):
         review_type: str = "best_practices",
         lang: str = "en",
         spec_content: Optional[str] = None,
+        tool_context=None,
     ) -> str:
         system_prompt = self._build_system_prompt(
             review_type, lang, self._project_context, self._detected_frameworks,
@@ -128,6 +129,47 @@ class KiroBackend(AIBackend):
                 logger.error("Kiro CLI ('%s') not found in PATH.", self.cli_cmd)
                 return False
         return True
+
+    def validate_connection_diagnostic(self) -> dict[str, str | bool]:
+        if os.name == "nt":
+            if not is_wsl_available():
+                return {
+                    "ok": False,
+                    "category": "tool_compatibility",
+                    "detail": "WSL is not available.",
+                    "fix_hint": "Install and enable WSL before using the Kiro backend.",
+                    "origin": "connection_test",
+                }
+            if not ensure_wsl_tool(self.cli_cmd, self.distro):
+                return {
+                    "ok": False,
+                    "category": "tool_compatibility",
+                    "detail": (
+                        f"Kiro CLI ('{self.cli_cmd}') was not found in WSL"
+                        f" ({self.distro})." if self.distro else f"Kiro CLI ('{self.cli_cmd}') was not found in WSL."
+                    ),
+                    "fix_hint": "Install Kiro CLI inside the target WSL distribution and verify the configured command.",
+                    "origin": "connection_test",
+                }
+        else:
+            import shutil
+
+            if not shutil.which(self.cli_cmd):
+                return {
+                    "ok": False,
+                    "category": "tool_compatibility",
+                    "detail": f"Kiro CLI ('{self.cli_cmd}') was not found in PATH.",
+                    "fix_hint": "Install Kiro CLI or update the configured CLI command.",
+                    "origin": "connection_test",
+                }
+
+        return {
+            "ok": True,
+            "category": "none",
+            "detail": "",
+            "fix_hint": "",
+            "origin": "connection_test",
+        }
 
     # ── private helpers ────────────────────────────────────────────────────
 

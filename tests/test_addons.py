@@ -98,6 +98,28 @@ def test_load_addon_manifest_rejects_incompatible_version(tmp_path: Path) -> Non
         load_addon_manifest(manifest_path)
 
 
+def test_load_addon_manifest_rejects_review_pack_escape_from_addon_root(tmp_path: Path) -> None:
+    shared_pack = _write_json(
+        tmp_path / "shared" / "review-pack.json",
+        {
+            "version": 1,
+            "review_definitions": [{"key": "shared", "parent_key": "security"}],
+        },
+    )
+    manifest_path = _write_json(
+        tmp_path / "addon" / "addon.json",
+        {
+            "manifest_version": 1,
+            "id": "escape-addon",
+            "version": "1.0.0",
+            "entry_points": {"review_packs": [str(shared_pack)]},
+        },
+    )
+
+    with pytest.raises(ValueError, match="must stay within the addon root"):
+        load_addon_manifest(manifest_path)
+
+
 def test_load_addon_manifests_rejects_duplicate_ids(tmp_path: Path) -> None:
     manifest_a = _write_json(
         tmp_path / "addon_a" / "addon.json",

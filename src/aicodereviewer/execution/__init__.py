@@ -1,5 +1,7 @@
 """Execution models and services for review runs."""
 
+from ..diagnostics import FailureDiagnostic
+
 from .events import (
     CallbackEventSink,
     CompositeEventSink,
@@ -36,6 +38,7 @@ __all__ = [
     "DeferredReportState",
     "ExecutionEvent",
     "ExecutionEventSink",
+    "FailureDiagnostic",
     "JobFailed",
     "ReviewArtifact",
     "ReviewExecutionRuntime",

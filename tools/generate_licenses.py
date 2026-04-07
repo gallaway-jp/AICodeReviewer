@@ -1,9 +1,20 @@
 import os
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 OUTPUT_DIR = Path("licenses")
+
+
+def _pip_licenses_command() -> list[str]:
+    scripts_dir = Path(sys.executable).resolve().parent
+    executable_names = ["pip-licenses.exe", "pip-licenses"] if os.name == "nt" else ["pip-licenses"]
+    for executable_name in executable_names:
+        candidate = scripts_dir / executable_name
+        if candidate.exists():
+            return [str(candidate)]
+    return ["pip-licenses"]
 
 
 def ensure_output_dir():
@@ -12,7 +23,7 @@ def ensure_output_dir():
 
 def run_pip_licenses_json():
     cmd = [
-        "pip-licenses",
+        *_pip_licenses_command(),
         "--from=mixed",
         "--format=json",
         "--with-license-file",
@@ -69,13 +80,14 @@ def write_combined_markdown(entries):
 
 def main():
     ensure_output_dir()
+    pip_licenses_cmd = _pip_licenses_command()
 
     # Ensure pip-licenses is available
     try:
-        subprocess.run(["pip-licenses", "--version"], capture_output=True, text=True, check=True)
+        subprocess.run([*pip_licenses_cmd, "--version"], capture_output=True, text=True, check=True)
     except Exception:
         print("Installing pip-licenses...")
-        subprocess.run(["pip", "install", "pip-licenses"], check=True)
+        subprocess.run([sys.executable, "-m", "pip", "install", "pip-licenses"], check=True)
 
     print("Collecting license information...")
     entries = run_pip_licenses_json()

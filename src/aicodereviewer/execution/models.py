@@ -6,7 +6,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal
 
+from ..diagnostics import FailureDiagnostic
 from ..models import ReviewIssue, ReviewReport, calculate_quality_score
+from ..tool_access import ToolAccessAudit
 
 JobState = Literal[
     "created",
@@ -462,6 +464,7 @@ class ReviewExecutionResult:
     report_context: PendingReportContext | None = None
     report: ReviewReport | None = None
     report_path: str | None = None
+    tool_access_audit: ToolAccessAudit | None = None
 
     @property
     def issue_count(self) -> int:
@@ -500,6 +503,7 @@ class ReviewExecutionResult:
             report_context=self.report_context,
             report=report,
             report_path=report_path,
+            tool_access_audit=self.tool_access_audit,
         )
 
     def to_session_state(self) -> ReviewSessionState | None:
@@ -510,7 +514,7 @@ class ReviewExecutionResult:
 
     def to_summary_dict(self) -> dict[str, Any]:
         """Serialize the execution summary payload used by compatibility callers."""
-        return {
+        payload = {
             "status": self.status,
             "project_path": self.request.path or "",
             "scope": self.request.scope,
@@ -523,6 +527,9 @@ class ReviewExecutionResult:
             "backend": self.request.backend_name,
             "dry_run": self.request.dry_run,
         }
+        if self.tool_access_audit is not None:
+            payload["tool_access_audit"] = self.tool_access_audit.to_dict()
+        return payload
 
 
 @dataclass
@@ -537,6 +544,7 @@ class ReviewJob:
     completed_at: datetime | None = None
     result: ReviewExecutionResult | None = None
     error_message: str | None = None
+    error_diagnostic: FailureDiagnostic | None = None
 
     @classmethod
     def from_pending_context_result(
@@ -586,6 +594,8 @@ class ReviewJob:
     ) -> JobState:
         """Store a review result awaiting later report finalization."""
         self.result = result
+        self.error_message = None
+        self.error_diagnostic = None
         return self.transition_to("awaiting_gui_finalize", started_at=started_at)
 
     def complete_with_result(
@@ -597,6 +607,8 @@ class ReviewJob:
         """Mark the job completed with a successful result and timestamp."""
         previous_state = self.transition_to("completed")
         self.result = result
+        self.error_message = None
+        self.error_diagnostic = None
         self.completed_at = completed_at or datetime.now()
         return previous_state
 
@@ -604,10 +616,12 @@ class ReviewJob:
         self,
         error_message: str,
         *,
+        diagnostic: FailureDiagnostic | None = None,
         completed_at: datetime | None = None,
     ) -> JobState:
         """Mark the job failed with an error message and completion timestamp."""
         previous_state = self.transition_to("failed")
         self.error_message = error_message
+        self.error_diagnostic = diagnostic
         self.completed_at = completed_at or datetime.now()
         return previous_state

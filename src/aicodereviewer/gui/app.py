@@ -198,6 +198,30 @@ class App(
     def _save_log(self):
         self._app_helpers().surfaces().save_log()
 
+    def _open_detached_log_window(self) -> None:
+        self._app_helpers().surfaces().open_detached_log_window()
+
+    def _redock_detached_log_window(self) -> None:
+        self._app_helpers().surfaces().redock_detached_log_window()
+
+    def _restore_detached_windows(self) -> None:
+        self._app_helpers().surfaces().restore_detached_windows()
+
+    def _open_detached_settings_window(self, *, restoring: bool = False) -> None:
+        self._settings_open_detached_window(restoring=restoring)
+
+    def _redock_detached_settings_window(self) -> None:
+        self._settings_redock_detached_window()
+
+    def _open_detached_benchmark_window(self, *, restoring: bool = False) -> None:
+        self._benchmark_open_detached_window(restoring=restoring)
+
+    def _redock_detached_benchmark_window(self) -> None:
+        self._benchmark_redock_detached_window()
+
+    def _detach_current_page_shortcut(self, event: Any = None) -> str | None:
+        return self._app_helpers().surfaces().detach_current_page_into_window(event)
+
     # -- TOAST NOTIFICATIONS --
 
     _TOAST_SLOT_PX = 52

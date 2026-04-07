@@ -71,6 +71,42 @@ def test_set_profile_name_uses_keyring_without_prompt():
     mock_set_password.assert_called_once_with('AICodeReviewer', 'aws_profile', 'test-profile')
 
 
+def test_store_config_credential_returns_keyring_reference():
+    with patch('aicodereviewer.auth.keyring.set_password') as mock_set_password:
+        reference = auth.store_config_credential('local_llm', 'api_key', 'secret-token')
+
+    assert reference == auth.build_credential_reference('local_llm', 'api_key')
+    mock_set_password.assert_called_once_with(
+        'AICodeReviewer',
+        'credential:local_llm.api_key',
+        'secret-token',
+    )
+
+
+def test_resolve_credential_value_reads_keyring_reference():
+    reference = auth.build_credential_reference('local_llm', 'api_key')
+
+    with patch('aicodereviewer.auth.keyring.get_password', return_value='resolved-secret'):
+        credential = auth.resolve_credential_value(reference)
+
+    assert credential.secret == 'resolved-secret'
+    assert credential.source == 'keyring'
+    assert credential.reference == reference
+    assert credential.missing_reference is False
+
+
+def test_resolve_credential_value_reports_missing_keyring_reference():
+    reference = auth.build_credential_reference('local_llm', 'api_key')
+
+    with patch('aicodereviewer.auth.keyring.get_password', return_value=None):
+        credential = auth.resolve_credential_value(reference)
+
+    assert credential.secret == ''
+    assert credential.source == 'keyring'
+    assert credential.reference == reference
+    assert credential.missing_reference is True
+
+
 def test_get_profile_name_noninteractive_requires_stored_profile():
     with patch('aicodereviewer.auth.keyring.get_password', return_value=None):
         try:

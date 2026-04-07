@@ -20,7 +20,7 @@ The current GUI cleanup plan is tracked in `docs/handoffs/gui-architecture-plan-
 ```mermaid
 flowchart TD
 	CLI[CLI: main.py] --> ORCH[AppRunner / orchestration.py]
-	GUI[GUI: app.py + mixins] --> ORCH
+	GUI[GUI: app.py + helpers + mixins] --> ORCH
 	ORCH --> EXEC[execution/*]
 	EXEC --> SCAN[scanner.py]
 	EXEC --> BACKENDS[backends/*]
@@ -230,16 +230,31 @@ The GUI is composed around mixins:
 
 This keeps the main application shell smaller while preserving a unified window and shared state. Session save/load and deferred report finalization are routed through the same typed execution/session models used by orchestration rather than through GUI-local state assembly.
 
+The current GUI shell is split between page mixins and helper modules:
+- mixins own page-specific behavior such as review setup, benchmark browsing, results workflows, settings persistence, and health/model-refresh actions
+- helper modules own startup, shutdown, detached-window lifecycle, embedded local HTTP startup, runtime callback cleanup, and shared shell/status behavior
+
 ## GUI Internal Roles
 
 | Module | Responsibility |
 |---|---|
 | `gui/app.py` | top-level window, tabs, log plumbing, common status UI |
+| `gui/app_bootstrap.py` | startup initialization, shared runtime state, tab creation, and global shortcut binding |
+| `gui/app_lifecycle.py` | post-build startup actions, detached-window restore, and clean shutdown |
+| `gui/app_surfaces.py` | status bar, Output Log tab, shared toasts, and detached-window lifecycle helpers |
+| `gui/app_local_http.py` | embedded local HTTP server startup and status wiring from GUI settings |
 | `gui/review_mixin.py` | review setup, validation, execution start, dry-run flow |
+| `gui/benchmark_mixin.py` | benchmark browser loading, comparison state, preview/diff actions, and detached benchmark behavior |
 | `gui/results_mixin.py` | issue cards, filtering, AI fix mode, sessions, finalization |
 | `gui/settings_mixin.py` | config editing and persistence |
 | `gui/health_mixin.py` | backend health checks and model refresh behavior |
+| `gui/review_execution_*` and `gui/review_queue_*` | scheduler-backed review submission, queue coordination, and queue presentation |
 | `gui/widgets.py` | shared widgets, tooltips, log handler |
+
+Recent GUI/runtime behaviors worth knowing:
+- the Review page remains anchored in the main window, but Benchmarks, Settings, and Output Log can be detached into their own windows and redocked later
+- detached-window restore and geometry persistence are part of the main shell lifecycle, not ad hoc page-local popups
+- the embedded local HTTP API can start automatically from GUI settings and shares the same execution runtime as the desktop app
 
 ## Addon Extension Surfaces
 

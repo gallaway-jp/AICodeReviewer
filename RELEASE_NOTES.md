@@ -13,9 +13,17 @@ Maintainer release workflow guidance lives in:
 
 This changelog preserves historical release milestones. Repository metadata such as the package version in `pyproject.toml` is the source of truth for the current package build version.
 
+Milestone 14 intentionally resets the maintained release line to `v0.2.0` to reflect that the product is still pre-1.0, while preserving the earlier `v2.0.x` entries as internal repository milestones from an earlier arbitrary version jump rather than the forward release line.
+
 ---
 
 ## Unreleased
+
+No unreleased changes are currently recorded after the `v0.2.0` release normalization cutover.
+
+---
+
+## v0.2.0
 
 Local LLM review-quality improvements focused on holistic, cross-file issue detection and reproducible benchmarking.
 
@@ -28,6 +36,7 @@ Local LLM review-quality improvements focused on holistic, cross-file issue dete
 - A new holistic `best_practices` fixture for direct reads of private backing state instead of a collaborator's public filtered accessor
 - CLI review-type bundle presets such as `runtime_safety`, `code_health`, `interface_platform`, `product_surface`, and `release_safety` for stable multi-review sessions
 - GUI review-type preset picker for the same stable multi-review bundles, plus `--list-type-presets` to print preset definitions directly from the CLI
+- Maintained addon and local-HTTP contributor reference pages under `docs/` so the shipped extension and embedded-API contracts are documented separately from the broader user guides
 
 ### Changed
 - Local LLM prompt enrichment now uses privacy-constrained, high-level public guidance without sending repository source code to the search provider
@@ -37,6 +46,7 @@ Local LLM review-quality improvements focused on holistic, cross-file issue dete
 - Holistic benchmark runs now derive a child tool-mode review timeout automatically from `--fixture-timeout-seconds`, with a tighter default cap for Local backends so sampled Local checkpoints finish in one invocation without manual `--timeout` tuning
 - Review execution and GUI session restore/finalize flows now run through a typed execution/session layer, with `AppRunner` retained as the stable CLI and GUI orchestration facade
 - Saved GUI sessions still preserve the same legacy JSON payload shape on disk while the in-memory restore path now round-trips through typed session-state models
+- The maintained docs set now reflects the shipped five-tab GUI, detached benchmark workflow, addon manifest/runtime contract, and contributor-facing local HTTP seams without adding separate queue-state screenshots for transient review states
 
 ### Fixed
 - Local LLM combined and per-file reviews now retry once on transient backend errors before failing
@@ -52,7 +62,7 @@ Local LLM review-quality improvements focused on holistic, cross-file issue dete
 
 ## v2.0.1
 
-Maintenance release focused on UX improvements and reliability fixes.
+Internal repository milestone captured during post-GUI stabilization work. It was not shipped as a formal tagged release.
 
 ### Added
 - AI Fix batch mode from the Results tab
@@ -70,7 +80,7 @@ Maintenance release focused on UX improvements and reliability fixes.
 
 ## v2.0.0
 
-Major release introducing multi-backend support, multi-type reviews, and the GUI.
+Internal repository milestone for the GUI and multi-backend expansion. It was not shipped as a formal tagged release.
 
 ### Added
 - Multi-type reviews in one session with comma-separated `--type` values and `--type all`

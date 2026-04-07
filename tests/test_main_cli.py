@@ -6,6 +6,7 @@ create_backend() factory instead of BedrockClient().
 """
 import io
 import json
+import logging
 import sys
 import configparser
 from pathlib import Path
@@ -37,6 +38,15 @@ def _reset_config_to_path(config_path: Path) -> None:
     config._set_defaults()
     if config_path.exists():
         config.config.read(config_path, encoding="utf-8")
+
+
+def _flush_logger_handlers(logger_name: str) -> None:
+    logger = logging.getLogger(logger_name)
+    for handler in logger.handlers:
+        try:
+            handler.flush()
+        except Exception:
+            pass
 
 
 def test_project_scope_requires_path(monkeypatch):
@@ -150,6 +160,29 @@ def test_recommend_types_prints_recommendation_summary(monkeypatch, capsys):
     assert t("cli.recommendation_header") in captured.out
     assert "runtime_safety" in captured.out
     assert "security, error_handling, data_validation" in captured.out
+
+
+def test_setup_logging_writes_local_api_audit_events_to_dedicated_file(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.ini"
+    _reset_config_to_path(config_path)
+    audit_log_file = tmp_path / "audit.log"
+    config.set_value("logging", "enable_file_logging", "false")
+    config.set_value("logging", "enable_api_audit_file_logging", "true")
+    config.set_value("logging", "api_audit_log_file", str(audit_log_file))
+    config.set_value("logging", "api_audit_log_max_bytes", "4096")
+    config.set_value("logging", "api_audit_log_backup_count", "2")
+
+    cli._setup_logging()
+
+    logging.getLogger("aicodereviewer.audit").info(
+        "Local HTTP audit: action=job_submit job_id=test-job remote_addr=127.0.0.1"
+    )
+    _flush_logger_handlers("aicodereviewer.audit")
+
+    assert audit_log_file.exists()
+    contents = audit_log_file.read_text(encoding="utf-8")
+    assert "Local HTTP audit: action=job_submit" in contents
+    assert "job_id=test-job" in contents
 
 
 def test_recommend_types_does_not_require_review_metadata(monkeypatch):
@@ -480,6 +513,13 @@ def test_check_connection_failure(monkeypatch, capsys):
     """--check-connection with a failing backend prints failure and hints."""
     mock_backend = MagicMock()
     mock_backend.validate_connection.return_value = False
+    mock_backend.validate_connection_diagnostic.return_value = {
+        "ok": False,
+        "category": "auth",
+        "detail": "GitHub Copilot CLI is not authenticated.",
+        "fix_hint": "Run 'copilot' and use /login to authenticate.",
+        "origin": "connection_test",
+    }
     monkeypatch.setattr(cli, "create_backend", lambda name: mock_backend)
 
     exit_code = run_main_with_args(["--check-connection", "--backend", "local"])
@@ -487,6 +527,8 @@ def test_check_connection_failure(monkeypatch, capsys):
     captured = capsys.readouterr()
     assert exit_code == 1
     assert "❌" in captured.out or "fail" in captured.out.lower()
+    assert "Failure category" in captured.out or "失敗分類" in captured.out
+    assert "auth" in captured.out.lower()
     # Should include local backend hints
     assert "Hint" in captured.out or "ヒント" in captured.out
 

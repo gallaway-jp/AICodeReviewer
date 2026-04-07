@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from aicodereviewer.addons import AddonEditorDiagnostic
+import aicodereviewer.auth as auth
 from aicodereviewer.i18n import t
 from aicodereviewer.models import ReviewIssue
 from aicodereviewer.config import config
@@ -114,6 +115,10 @@ def _latest_toplevel(app: Any) -> Any:
     return toplevels[-1]
 
 
+def _all_toplevels(app: Any) -> list[Any]:
+    return [child for child in app.winfo_children() if isinstance(child, tk.Toplevel)]
+
+
 def _find_normal_text_widget(root: Any) -> Any:
     for widget in _walk_widgets(root):
         if isinstance(widget, tk.Text):
@@ -140,6 +145,148 @@ def _reset_config_to_path(config_path: Path) -> None:
 def _save_default_config_to_path(config_path: Path) -> None:
     _reset_config_to_path(config_path)
     config.save()
+
+
+def _write_sample_benchmark_summaries(tmp_path: Path) -> tuple[Path, Path, Path]:
+    artifacts_root = tmp_path / "artifacts"
+    artifacts_root.mkdir()
+    reports_dir = artifacts_root / "holistic-benchmark-reports"
+    reports_dir.mkdir()
+    compare_reports_dir = artifacts_root / "holistic-benchmark-reports-compare"
+    compare_reports_dir.mkdir()
+    summary_path = artifacts_root / "benchmark-summary.json"
+    compare_path = artifacts_root / "benchmark-summary-compare.json"
+
+    primary_payload = {
+        "backend": "local",
+        "status": "completed",
+        "overall_score": 0.5,
+        "fixtures_evaluated": 2,
+        "fixtures_passed": 1,
+        "fixtures_failed": 1,
+        "representative_fixtures": [
+            {
+                "id": "auth-jwt-bypass",
+                "title": "JWT Auth Bypass",
+                "scope": "project",
+                "review_types": ["security", "data_validation"],
+                "benchmark_metadata": {
+                    "fixture_tags": ["auth", "jwt"],
+                    "expected_focus": ["token validation", "trust boundaries"],
+                    "review_types": [
+                        {
+                            "key": "security",
+                            "label": "Security",
+                            "group": "Quality",
+                            "metadata": {
+                                "fixture_tags": ["auth", "jwt"],
+                                "expected_focus": ["token validation"],
+                            },
+                        }
+                    ],
+                },
+            },
+            {
+                "id": "validation-gap",
+                "title": "Validation Gap",
+                "scope": "project",
+                "review_types": ["data_validation"],
+            },
+        ],
+        "generated_reports": [
+            {
+                "fixture_id": "auth-jwt-bypass",
+                "output_path": str(reports_dir / "auth-jwt-bypass.json"),
+                "status": "completed",
+                "issue_count": 2,
+                "success": True,
+            },
+            {
+                "fixture_id": "validation-gap",
+                "output_path": str(reports_dir / "validation-gap.json"),
+                "status": "completed",
+                "issue_count": 1,
+                "success": True,
+            },
+        ],
+        "score_summary": {
+            "overall_score": 0.5,
+            "fixtures_evaluated": 2,
+            "fixtures_passed": 1,
+            "fixtures_failed": 1,
+            "results": [
+                {
+                    "fixture_id": "auth-jwt-bypass",
+                    "title": "JWT Auth Bypass",
+                    "status": "completed",
+                    "score": 0.5,
+                    "passed": False,
+                    "report_path": str(reports_dir / "auth-jwt-bypass.json"),
+                    "selected_review_types": ["security", "data_validation"],
+                },
+                {
+                    "fixture_id": "validation-gap",
+                    "title": "Validation Gap",
+                    "status": "completed",
+                    "score": 0.0,
+                    "passed": False,
+                    "report_path": str(reports_dir / "validation-gap.json"),
+                    "selected_review_types": ["data_validation"],
+                },
+            ],
+        },
+    }
+    compare_payload = {
+        "backend": "copilot",
+        "status": "completed",
+        "overall_score": 0.75,
+        "fixtures_evaluated": 2,
+        "fixtures_passed": 2,
+        "fixtures_failed": 0,
+        "representative_fixtures": [
+            {
+                "id": "auth-jwt-bypass",
+                "title": "JWT Auth Bypass",
+                "scope": "project",
+                "review_types": ["security"],
+            },
+            {
+                "id": "cache-gap",
+                "title": "Cache Gap",
+                "scope": "project",
+                "review_types": ["performance"],
+            },
+        ],
+        "score_summary": {
+            "overall_score": 0.75,
+            "fixtures_evaluated": 2,
+            "fixtures_passed": 2,
+            "fixtures_failed": 0,
+            "results": [
+                {
+                    "fixture_id": "auth-jwt-bypass",
+                    "title": "JWT Auth Bypass",
+                    "status": "completed",
+                    "score": 0.75,
+                    "passed": True,
+                    "selected_review_types": ["security"],
+                    "report_path": str(compare_reports_dir / "auth-jwt-bypass.json"),
+                },
+                {
+                    "fixture_id": "cache-gap",
+                    "title": "Cache Gap",
+                    "status": "completed",
+                    "score": 1.0,
+                    "passed": True,
+                    "selected_review_types": ["performance"],
+                },
+            ],
+        },
+    }
+
+    summary_path.write_text(json.dumps(primary_payload), encoding="utf-8")
+    compare_path.write_text(json.dumps(compare_payload), encoding="utf-8")
+    return artifacts_root, summary_path, compare_path
 
 
 def _runner_with_report_context(
@@ -302,147 +449,7 @@ def test_benchmark_tab_loads_representative_fixture_summary_artifact(
     harness: GuiTestHarness,
     tmp_path: Path,
 ) -> None:
-    artifacts_root = tmp_path / "artifacts"
-    artifacts_root.mkdir()
-    reports_dir = artifacts_root / "holistic-benchmark-reports"
-    reports_dir.mkdir()
-    compare_reports_dir = artifacts_root / "holistic-benchmark-reports-compare"
-    compare_reports_dir.mkdir()
-    summary_path = artifacts_root / "benchmark-summary.json"
-    compare_path = artifacts_root / "benchmark-summary-compare.json"
-    primary_payload = {
-        "backend": "local",
-        "status": "completed",
-        "overall_score": 0.5,
-        "fixtures_evaluated": 2,
-        "fixtures_passed": 1,
-        "fixtures_failed": 1,
-        "representative_fixtures": [
-            {
-                "id": "auth-jwt-bypass",
-                "title": "JWT Auth Bypass",
-                "scope": "project",
-                "review_types": ["security", "data_validation"],
-                "benchmark_metadata": {
-                    "fixture_tags": ["auth", "jwt"],
-                    "expected_focus": ["token validation", "trust boundaries"],
-                    "review_types": [
-                        {
-                            "key": "security",
-                            "label": "Security",
-                            "group": "Quality",
-                            "metadata": {
-                                "fixture_tags": ["auth", "jwt"],
-                                "expected_focus": ["token validation"],
-                            },
-                        }
-                    ],
-                },
-            },
-            {
-                "id": "validation-gap",
-                "title": "Validation Gap",
-                "scope": "project",
-                "review_types": ["data_validation"],
-            },
-        ],
-        "generated_reports": [
-            {
-                "fixture_id": "auth-jwt-bypass",
-                "output_path": str(reports_dir / "auth-jwt-bypass.json"),
-                "status": "completed",
-                "issue_count": 2,
-                "success": True,
-            },
-            {
-                "fixture_id": "validation-gap",
-                "output_path": str(reports_dir / "validation-gap.json"),
-                "status": "completed",
-                "issue_count": 1,
-                "success": True,
-            }
-        ],
-        "score_summary": {
-            "overall_score": 0.5,
-            "fixtures_evaluated": 2,
-            "fixtures_passed": 1,
-            "fixtures_failed": 1,
-            "results": [
-                {
-                    "fixture_id": "auth-jwt-bypass",
-                    "title": "JWT Auth Bypass",
-                    "status": "completed",
-                    "score": 0.5,
-                    "passed": False,
-                    "report_path": str(reports_dir / "auth-jwt-bypass.json"),
-                    "selected_review_types": ["security", "data_validation"],
-                },
-                {
-                    "fixture_id": "validation-gap",
-                    "title": "Validation Gap",
-                    "status": "completed",
-                    "score": 0.0,
-                    "passed": False,
-                    "report_path": str(reports_dir / "validation-gap.json"),
-                    "selected_review_types": ["data_validation"],
-                }
-            ],
-        },
-    }
-    compare_payload = {
-        "backend": "copilot",
-        "status": "completed",
-        "overall_score": 0.75,
-        "fixtures_evaluated": 2,
-        "fixtures_passed": 2,
-        "fixtures_failed": 0,
-        "representative_fixtures": [
-            {
-                "id": "auth-jwt-bypass",
-                "title": "JWT Auth Bypass",
-                "scope": "project",
-                "review_types": ["security"],
-            },
-            {
-                "id": "cache-gap",
-                "title": "Cache Gap",
-                "scope": "project",
-                "review_types": ["performance"],
-            },
-        ],
-        "score_summary": {
-            "overall_score": 0.75,
-            "fixtures_evaluated": 2,
-            "fixtures_passed": 2,
-            "fixtures_failed": 0,
-            "results": [
-                {
-                    "fixture_id": "auth-jwt-bypass",
-                    "title": "JWT Auth Bypass",
-                    "status": "completed",
-                    "score": 0.75,
-                    "passed": True,
-                    "selected_review_types": ["security"],
-                    "report_path": str(compare_reports_dir / "auth-jwt-bypass.json"),
-                },
-                {
-                    "fixture_id": "cache-gap",
-                    "title": "Cache Gap",
-                    "status": "completed",
-                    "score": 1.0,
-                    "passed": True,
-                    "selected_review_types": ["performance"],
-                },
-            ],
-        },
-    }
-    summary_path.write_text(
-        json.dumps(
-            primary_payload
-        ),
-        encoding="utf-8",
-    )
-    compare_path.write_text(json.dumps(compare_payload), encoding="utf-8")
+    artifacts_root, summary_path, compare_path = _write_sample_benchmark_summaries(tmp_path)
 
     harness.benchmark_tab.open()
     harness.benchmark_tab.refresh_summary_selector(artifacts_root)
@@ -1110,6 +1117,85 @@ def test_benchmark_tab_opens_selected_summary_json_and_report_directory(
     harness.benchmark_tab.open_report_directory()
 
     assert opened_paths == [summary_path.resolve(), reports_dir.resolve()]
+
+
+def test_benchmark_tab_open_source_folder_ignores_summary_embedded_path_outside_fixtures_root(
+    harness: GuiTestHarness,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifacts_root = tmp_path / "artifacts"
+    artifacts_root.mkdir()
+    fixtures_root = tmp_path / "fixtures"
+    fixtures_root.mkdir()
+    external_source = tmp_path / "external-source"
+    external_source.mkdir()
+    summary_path = artifacts_root / "selected-summary.json"
+    summary_path.write_text(
+        json.dumps(
+            {
+                "backend": "local",
+                "status": "completed",
+                "representative_fixtures": [
+                    {
+                        "id": "fixture-a",
+                        "title": "Fixture A",
+                        "scope": "project",
+                        "review_types": ["security"],
+                        "project_dir": str(external_source),
+                    }
+                ],
+                "generated_reports": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    opened_paths: list[Path] = []
+    monkeypatch.setattr(harness.app, "_open_directory_path", lambda path: opened_paths.append(path))
+
+    harness.benchmark_tab.open()
+    harness.app.benchmark_fixtures_root_entry.delete(0, "end")
+    harness.app.benchmark_fixtures_root_entry.insert(0, str(fixtures_root))
+    harness.benchmark_tab.refresh_summary_selector(artifacts_root)
+    harness.benchmark_tab.select_summary_by_fragment("selected-summary.json")
+    harness.benchmark_tab.load_selected_summary()
+    harness.benchmark_tab.open_source_folder()
+
+    assert opened_paths == [artifacts_root.resolve()]
+
+
+def test_benchmark_tab_load_catalog_rejects_manifest_path_outside_fixtures_root(
+    harness: GuiTestHarness,
+    tmp_path: Path,
+) -> None:
+    fixtures_root = tmp_path / "fixtures"
+    scenario_dir = fixtures_root / "scenario-a"
+    scenario_dir.mkdir(parents=True)
+    external_root = tmp_path / "external"
+    external_root.mkdir()
+    (scenario_dir / "fixture.json").write_text(
+        json.dumps(
+            {
+                "id": "scenario-a",
+                "title": "Scenario A",
+                "description": "Escaped fixture paths should be rejected.",
+                "scope": "project",
+                "review_types": ["security"],
+                "project_dir": str(external_root),
+                "expected_findings": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    harness.benchmark_tab.open()
+    harness.benchmark_tab.load_catalog(fixtures_root)
+
+    assert any(
+        "must stay within the fixtures root" in message and error
+        for message, error in harness.toasts
+    )
 
 
 def test_cancel_review_workflow_reports_requested_then_cancelled(
@@ -3281,6 +3367,24 @@ def test_local_llm_settings_persist_across_app_restart(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    secret_store: dict[tuple[str, str], str] = {}
+
+    monkeypatch.setattr(
+        auth.keyring,
+        "set_password",
+        lambda service, name, value: secret_store.__setitem__((service, name), value),
+    )
+    monkeypatch.setattr(
+        auth.keyring,
+        "get_password",
+        lambda service, name: secret_store.get((service, name)),
+    )
+    monkeypatch.setattr(
+        auth.keyring,
+        "delete_password",
+        lambda service, name: secret_store.pop((service, name), None),
+    )
+
     config_path = tmp_path / "gui-local-llm.ini"
     _save_default_config_to_path(config_path)
     monkeypatch.setattr(config, "config_path", config_path)
@@ -3303,10 +3407,11 @@ def test_local_llm_settings_persist_across_app_restart(
     assert config.get("local_llm", "api_url") == "http://127.0.0.1:11434"
     assert config.get("local_llm", "api_type") == "ollama"
     assert config.get("local_llm", "model") == "llama3.2"
-    assert config.get("local_llm", "api_key") == "local-secret"
+    assert config.get("local_llm", "api_key") == auth.build_credential_reference("local_llm", "api_key")
     assert config.get("local_llm", "timeout") == "360"
     assert config.get("local_llm", "max_tokens") == "8192"
     assert config.get("local_llm", "enable_web_search") is False
+    assert secret_store[("AICodeReviewer", "credential:local_llm.api_key")] == "local-secret"
 
     _reset_config_to_path(config_path)
     second_harness = GuiTestHarness(app_factory())
@@ -3351,6 +3456,63 @@ def test_local_http_settings_persist_across_app_restart(
     assert second_harness.app.local_http_base_url_var.get() == "http://127.0.0.1:8877"
     assert "GET /api/jobs" in second_harness.app.local_http_docs_box.get("0.0", "end")
     assert "POST /api/recommendations/review-types" in second_harness.app.local_http_docs_box.get("0.0", "end")
+
+
+def test_local_llm_api_key_rotate_and_revoke_buttons_manage_keyring_reference(
+    app_factory: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    secret_store: dict[tuple[str, str], str] = {}
+
+    monkeypatch.setattr(
+        auth.keyring,
+        "set_password",
+        lambda service, name, value: secret_store.__setitem__((service, name), value),
+    )
+    monkeypatch.setattr(
+        auth.keyring,
+        "get_password",
+        lambda service, name: secret_store.get((service, name)),
+    )
+    monkeypatch.setattr(
+        auth.keyring,
+        "delete_password",
+        lambda service, name: secret_store.pop((service, name), None),
+    )
+
+    config_path = tmp_path / "gui-local-llm-rotate.ini"
+    _save_default_config_to_path(config_path)
+    monkeypatch.setattr(config, "config_path", config_path)
+    _reset_config_to_path(config_path)
+    config.set_value("local_llm", "api_key", auth.build_credential_reference("local_llm", "api_key"))
+    config.save()
+    secret_store[("AICodeReviewer", "credential:local_llm.api_key")] = "local-secret"
+
+    harness = GuiTestHarness(app_factory())
+
+    assert harness.app._setting_entries[("local_llm", "api_key")].get() == "local-secret"
+
+    harness.app._local_api_key_rotate_btn.invoke()
+    harness.pump()
+
+    assert harness.app._setting_entries[("local_llm", "api_key")].get() == ""
+    assert config.get("local_llm", "api_key") == auth.build_credential_reference("local_llm", "api_key")
+    assert ("AICodeReviewer", "credential:local_llm.api_key") not in secret_store
+    assert any(message == t("gui.settings.local_api_key_rotated") and not error for message, error in harness.toasts)
+
+    harness.set_entry(harness.app._setting_entries[("local_llm", "api_key")], "replacement-secret")
+    harness.app._save_settings()
+    harness.pump()
+    assert secret_store[("AICodeReviewer", "credential:local_llm.api_key")] == "replacement-secret"
+
+    harness.app._local_api_key_revoke_btn.invoke()
+    harness.pump()
+
+    assert harness.app._setting_entries[("local_llm", "api_key")].get() == ""
+    assert config.get("local_llm", "api_key") == ""
+    assert ("AICodeReviewer", "credential:local_llm.api_key") not in secret_store
+    assert any(message == t("gui.settings.local_api_key_revoked") and not error for message, error in harness.toasts)
 
 
 def test_gui_starts_and_stops_local_http_server_when_enabled(
@@ -3732,7 +3894,7 @@ def test_ai_fix_recreates_backend_and_generates_preview_results(
             return f"# fixed for {review_type} in {lang}\n{code_content or issue_feedback}"
 
     backend = _FixBackend()
-    shown_popups: list[tuple[list[int], dict[int, str | None]]] = []
+    shown_popups: list[tuple[list[int], dict[int, Any]]] = []
     issue = ReviewIssue(
         file_path="src/needs_fix.py",
         line_number=30,
@@ -3772,8 +3934,8 @@ def test_ai_fix_recreates_backend_and_generates_preview_results(
     )
 
     assert shown_popups[0][0] == [0]
-    assert shown_popups[0][1][0] is not None
-    assert "security" in shown_popups[0][1][0]
+    assert shown_popups[0][1][0]["content"] is not None
+    assert "security" in shown_popups[0][1][0]["content"]
     assert harness.results_tab.ai_fix_runtime_running() is False
     assert harness.results_tab.ai_fix_runtime_client() is None
     assert harness.results_tab.ai_fix_cancel_event() is None
@@ -4098,7 +4260,7 @@ def test_restored_session_ai_fix_recreates_backend_and_opens_preview(
             return f"# restored session fix for {review_type}\n{code_content or issue_feedback}"
 
     backend = _FixBackend()
-    shown_popups: list[tuple[list[int], dict[int, str | None]]] = []
+    shown_popups: list[tuple[list[int], dict[int, Any]]] = []
 
     monkeypatch.setattr(App, "_session_path", property(lambda _self: session_path))
 
@@ -4134,9 +4296,163 @@ def test_restored_session_ai_fix_recreates_backend_and_opens_preview(
     )
 
     assert shown_popups[0][0] == [0]
-    assert shown_popups[0][1][0] is not None
+    assert shown_popups[0][1][0]["content"] is not None
     assert backend.closed is True
     assert harness.results_tab.active_review_client() is None
+
+
+def test_ai_fix_worker_surfaces_failed_fix_diagnostic_results(
+    harness: GuiTestHarness,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backend = _FakeBackend()
+    shown_popups: list[tuple[list[int], dict[int, Any]]] = []
+    issue = ReviewIssue(
+        file_path="src/missing_for_fix.py",
+        line_number=9,
+        issue_type="security",
+        severity="high",
+        description="Missing files should surface a structured diagnostic in AI Fix results.",
+        ai_feedback="Regenerate the file safely.",
+        status="pending",
+    )
+
+    harness.enable_runtime_actions()
+    harness.app._bind_session_runner(_runner_with_report_context({"backend": "local"}))
+    harness.results_tab.show_issues([issue])
+    harness.results_tab.enter_ai_fix_mode()
+    harness.pump()
+
+    monkeypatch.setattr(
+        "aicodereviewer.gui.results_mixin.create_backend",
+        lambda backend_name: backend,
+    )
+    monkeypatch.setattr(
+        harness.app,
+        "_show_batch_fix_popup",
+        lambda selected, results: shown_popups.append(
+            ([idx for idx, _rec in selected], dict(results))
+        ),
+    )
+
+    harness.results_tab.start_ai_fix()
+    harness.wait_until(
+        lambda: bool(shown_popups),
+        message="AI Fix did not surface failed diagnostic results",
+    )
+
+    assert shown_popups[0][0] == [0]
+    assert shown_popups[0][1][0]["content"] is None
+    assert shown_popups[0][1][0]["status"] == "failed"
+    assert shown_popups[0][1][0]["diagnostic"]["category"] == "configuration"
+    assert shown_popups[0][1][0]["diagnostic"]["origin"] == "fix_generation"
+
+
+def test_batch_fix_popup_surfaces_failed_item_diagnostic_details(
+    harness: GuiTestHarness,
+) -> None:
+    issues = [
+        ReviewIssue(
+            file_path="src/diagnostic_ok.py",
+            line_number=3,
+            issue_type="security",
+            severity="high",
+            description="Successful fixes should still preview normally.",
+            ai_feedback="Successful fix.",
+            status="pending",
+        ),
+        ReviewIssue(
+            file_path="src/diagnostic_fail.py",
+            line_number=4,
+            issue_type="performance",
+            severity="medium",
+            description="Failed fixes should show diagnostic detail in the popup.",
+            ai_feedback="Failed fix.",
+            status="pending",
+        ),
+    ]
+
+    harness.app._bind_session_runner(_runner_with_report_context({"backend": "local"}))
+    harness.results_tab.show_issues(issues)
+    harness.results_tab.enter_ai_fix_mode()
+    harness.pump()
+
+    harness.results_tab.show_batch_fix_popup(
+        {
+            0: "safe_ok()\n",
+            1: {
+                "status": "failed",
+                "content": None,
+                "diagnostic": {
+                    "category": "configuration",
+                    "origin": "fix_generation",
+                    "detail": "Fix generation disabled for this file.",
+                    "fix_hint": "Check backend settings.",
+                    "retryable": True,
+                    "retry_delay_seconds": 5,
+                },
+            },
+        }
+    )
+    harness.pump()
+
+    popup = _latest_toplevel(harness.app)
+    assert _find_widget_containing_text(popup, "diagnostic_fail.py")
+    assert _find_widget_containing_text(
+        popup,
+        t("gui.results.batch_fix_failure_detail", category=t("gui.results.diagnostic_category_configuration"), detail="Fix generation disabled for this file."),
+    )
+    assert _find_widget_containing_text(
+        popup,
+        t("gui.results.batch_fix_failure_hint", hint="Check backend settings."),
+    )
+    assert _find_widget_containing_text(
+        popup,
+        t("gui.results.batch_fix_failure_retry_after", seconds=5),
+    )
+
+
+def test_batch_fix_popup_all_failed_toast_includes_diagnostic_summary(
+    harness: GuiTestHarness,
+) -> None:
+    issue = ReviewIssue(
+        file_path="src/all_failed.py",
+        line_number=7,
+        issue_type="security",
+        severity="high",
+        description="All-failed AI Fix runs should surface failure details in the toast.",
+        ai_feedback="Failed fix.",
+        status="pending",
+    )
+
+    harness.app._bind_session_runner(_runner_with_report_context({"backend": "local"}))
+    harness.results_tab.show_issues([issue])
+    harness.results_tab.enter_ai_fix_mode()
+    harness.pump()
+
+    harness.results_tab.show_batch_fix_popup(
+        {
+            0: {
+                "status": "failed",
+                "content": None,
+                "diagnostic": {
+                    "category": "configuration",
+                    "origin": "fix_generation",
+                    "detail": "Fix generation disabled for this file.",
+                    "fix_hint": "Check backend settings.",
+                },
+            }
+        }
+    )
+    harness.pump()
+
+    assert any(
+        message == (
+            f"{t('gui.results.no_fix')} "
+            f"{t('gui.results.batch_fix_failure_detail', category=t('gui.results.diagnostic_category_configuration'), detail='Fix generation disabled for this file.')}"
+        ) and error
+        for message, error in harness.toasts
+    )
 
 
 def test_popup_recovery_restores_unsaved_editor_draft(
@@ -4320,6 +4636,61 @@ def test_popup_recovery_restores_staged_batch_fix_edits_and_selection(
     )
 
 
+def test_popup_recovery_rejects_issue_file_path_outside_workspace(
+    app_factory: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from aicodereviewer.gui.app import App
+
+    session_path = tmp_path / "session.json"
+    popup_recovery_path = tmp_path / "popup-recovery.json"
+    monkeypatch.setattr(App, "_session_path", property(lambda _self: session_path))
+
+    popup_recovery_path.write_text(
+        json.dumps(
+            {
+                "format_version": 1,
+                "saved_at": "2026-04-06T00:00:00",
+                "session_state": {
+                    "format_version": 2,
+                    "saved_at": "2026-04-06T00:00:00",
+                    "issues": [
+                        {
+                            "file_path": str(tmp_path.parent / "outside.py"),
+                            "issue_type": "security",
+                            "description": "outside path",
+                        }
+                    ],
+                    "report_context": None,
+                },
+                "active_popup": {
+                    "kind": "editor",
+                    "issue_index": 0,
+                    "file_path": str(tmp_path.parent / "outside.py"),
+                    "display_name": "outside.py",
+                    "line_number": 1,
+                    "content": "dangerous\n",
+                    "original_content": "dangerous\n",
+                    "cursor_index": "1.0",
+                    "read_only": False,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    harness = GuiTestHarness(app_factory())
+    harness.pump(2)
+
+    assert harness.results_tab.issue_count() == 0
+    assert not popup_recovery_path.exists()
+    assert not any(
+        message == t("gui.results.popup_recovery_restored") and not error
+        for message, error in harness.toasts
+    )
+
+
 def test_restored_session_issue_detail_shows_resolution_provenance(
     app_factory: Any,
     monkeypatch: pytest.MonkeyPatch,
@@ -4491,6 +4862,284 @@ def test_ai_fix_apply_popup_can_apply_only_selected_fixes(
         message == t("gui.results.batch_fix_applied", count=1) and not error
         for message, error in harness.toasts
     )
+
+
+def test_log_tab_detach_and_redock_keeps_log_state_synced(
+    harness: GuiTestHarness,
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "detached-log.ini"
+    _save_default_config_to_path(config_path)
+
+    harness.app.tabs.set(t("gui.tab.log"))
+    harness.pump()
+
+    harness.app._log_queue.put((20, "main info"))
+    harness.app._poll_log_queue()
+    harness.pump()
+
+    harness.app.detach_log_btn.invoke()
+    harness.pump()
+
+    detached = _latest_toplevel(harness.app)
+    assert harness.app._detached_log_window == detached
+    assert config.get("gui", "detached_pages", "") == "log"
+    assert "main info" in harness.app._detached_log_box.get("0.0", "end")
+
+    harness.app._log_queue.put((40, "detached error"))
+    harness.app._poll_log_queue()
+    harness.pump()
+
+    assert "detached error" in harness.app.log_box.get("0.0", "end")
+    assert "detached error" in harness.app._detached_log_box.get("0.0", "end")
+
+    harness.app._detached_log_clear_btn.invoke()
+    harness.pump()
+
+    assert harness.app.log_box.get("0.0", "end").strip() == ""
+    assert harness.app._detached_log_box.get("0.0", "end").strip() == ""
+
+    harness.app._detached_log_redock_btn.invoke()
+    harness.pump()
+
+    assert harness.app._detached_log_window is None
+    assert config.get("gui", "detached_pages", "") == ""
+    assert harness.app.tabs.get() == t("gui.tab.log")
+
+
+def test_settings_tab_detach_and_redock_preserves_unsaved_state(
+    app_factory: Any,
+    tmp_path: Path,
+) -> None:
+    original_config_path = config.config_path
+    temporary_config_path = tmp_path / "detached-settings.ini"
+
+    try:
+        _save_default_config_to_path(temporary_config_path)
+
+        settings_harness = GuiTestHarness(app_factory())
+        settings_harness.app.tabs.set(t("gui.tab.settings"))
+        settings_harness.pump()
+
+        settings_harness.set_entry(settings_harness.app._setting_entries[("local_http", "port")], "8877")
+        settings_harness.app._setting_entries[("processing", "combine_files")].set(False)
+
+        settings_harness.app.detach_settings_btn.invoke()
+        settings_harness.pump(2)
+
+        assert settings_harness.app._detached_settings_window is not None
+        assert config.get("gui", "detached_pages", "") == "settings"
+        assert settings_harness.app._setting_entries[("local_http", "port")].get() == "8877"
+        assert settings_harness.app._setting_entries[("processing", "combine_files")].get() is False
+
+        settings_harness.set_entry(settings_harness.app._setting_entries[("local_http", "port")], "9001")
+        settings_harness.app._setting_entries[("processing", "combine_files")].set(True)
+        settings_harness.app._detached_settings_redock_btn.invoke()
+        settings_harness.pump(2)
+
+        assert settings_harness.app._detached_settings_window is None
+        assert settings_harness.app.tabs.get() == t("gui.tab.settings")
+        assert config.get("gui", "detached_pages", "") == ""
+        assert settings_harness.app._setting_entries[("local_http", "port")].get() == "9001"
+        assert settings_harness.app._setting_entries[("processing", "combine_files")].get() is True
+    finally:
+        _reset_config_to_path(original_config_path)
+
+
+def test_benchmark_tab_detach_and_redock_preserves_loaded_state(
+    app_factory: Any,
+    tmp_path: Path,
+) -> None:
+    original_config_path = config.config_path
+    temporary_config_path = tmp_path / "detached-benchmark.ini"
+
+    try:
+        _save_default_config_to_path(temporary_config_path)
+        artifacts_root, summary_path, compare_path = _write_sample_benchmark_summaries(tmp_path)
+
+        benchmark_harness = GuiTestHarness(app_factory())
+        benchmark_harness.benchmark_tab.open()
+        benchmark_harness.benchmark_tab.refresh_summary_selector(artifacts_root)
+        benchmark_harness.benchmark_tab.load_summary(summary_path)
+        benchmark_harness.benchmark_tab.compare_summary(compare_path)
+        benchmark_harness.benchmark_tab.toggle_advanced_sources()
+        benchmark_harness.benchmark_tab.select_fixture_filter(t("gui.benchmark.fixture_filter_shared"))
+        benchmark_harness.benchmark_tab.select_fixture_sort(t("gui.benchmark.fixture_sort_status_churn"))
+        benchmark_harness.benchmark_tab.preview_fixture_diff_reports("auth-jwt-bypass")
+
+        primary_summary_text = benchmark_harness.benchmark_tab.primary_summary_text()
+        compare_summary_text = benchmark_harness.benchmark_tab.compare_summary_text()
+        preview_diff_text = benchmark_harness.benchmark_tab.preview_diff_text()
+
+        benchmark_harness.app.detach_benchmark_btn.invoke()
+        benchmark_harness.pump(2)
+
+        assert benchmark_harness.app._detached_benchmark_window is not None
+        assert config.get("gui", "detached_pages", "") == "benchmark"
+        assert benchmark_harness.benchmark_tab.advanced_sources_visible() is True
+        assert benchmark_harness.benchmark_tab.selected_fixture_filter() == t("gui.benchmark.fixture_filter_shared")
+        assert benchmark_harness.benchmark_tab.selected_fixture_sort() == t("gui.benchmark.fixture_sort_status_churn")
+        assert benchmark_harness.benchmark_tab.primary_summary_text() == primary_summary_text
+        assert benchmark_harness.benchmark_tab.compare_summary_text() == compare_summary_text
+        assert benchmark_harness.benchmark_tab.preview_diff_text() == preview_diff_text
+
+        benchmark_harness.app._detached_benchmark_redock_btn.invoke()
+        benchmark_harness.pump(2)
+
+        assert benchmark_harness.app._detached_benchmark_window is None
+        assert benchmark_harness.app.tabs.get() == t("gui.tab.benchmarks")
+        assert config.get("gui", "detached_pages", "") == ""
+        assert benchmark_harness.benchmark_tab.advanced_sources_visible() is True
+        assert benchmark_harness.benchmark_tab.selected_fixture_filter() == t("gui.benchmark.fixture_filter_shared")
+        assert benchmark_harness.benchmark_tab.selected_fixture_sort() == t("gui.benchmark.fixture_sort_status_churn")
+        assert benchmark_harness.benchmark_tab.primary_summary_text() == primary_summary_text
+        assert benchmark_harness.benchmark_tab.compare_summary_text() == compare_summary_text
+        assert benchmark_harness.benchmark_tab.preview_diff_text() == preview_diff_text
+    finally:
+        _reset_config_to_path(original_config_path)
+
+
+def test_detachable_pages_support_keyboard_shortcuts_for_open_and_redock(
+    app_factory: Any,
+    tmp_path: Path,
+) -> None:
+    original_config_path = config.config_path
+    temporary_config_path = tmp_path / "detached-shortcuts.ini"
+
+    try:
+        _save_default_config_to_path(temporary_config_path)
+
+        shortcut_harness = GuiTestHarness(app_factory())
+
+        shortcut_harness.app.tabs.set(t("gui.tab.settings"))
+        assert shortcut_harness.app._detach_current_page_shortcut() == "break"
+        shortcut_harness.pump(2)
+
+        assert shortcut_harness.app._detached_settings_window is not None
+
+        shortcut_harness.app._detached_settings_redock_btn.invoke()
+        shortcut_harness.pump(2)
+
+        assert shortcut_harness.app._detached_settings_window is None
+
+        shortcut_harness.app.tabs.set(t("gui.tab.log"))
+        assert shortcut_harness.app._detach_current_page_shortcut() == "break"
+        shortcut_harness.pump(2)
+
+        assert shortcut_harness.app._detached_log_window is not None
+
+        shortcut_harness.app._detached_log_redock_btn.invoke()
+        shortcut_harness.pump(2)
+
+        assert shortcut_harness.app._detached_log_window is None
+
+        shortcut_harness.app.tabs.set(t("gui.tab.benchmarks"))
+        assert shortcut_harness.app._detach_current_page_shortcut() == "break"
+        shortcut_harness.pump(2)
+
+        assert shortcut_harness.app._detached_benchmark_window is not None
+
+        shortcut_harness.app._detached_benchmark_redock_btn.invoke()
+        shortcut_harness.pump(2)
+
+        assert shortcut_harness.app._detached_benchmark_window is None
+    finally:
+        _reset_config_to_path(original_config_path)
+
+
+def test_log_tab_detached_window_restores_after_restart(
+    app_factory: Any,
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "detached-log-restore.ini"
+    _save_default_config_to_path(config_path)
+
+    first_app = app_factory()
+    first_app.tabs.set(t("gui.tab.log"))
+    first_app.update_idletasks()
+    first_app.update()
+    first_app.detach_log_btn.invoke()
+    first_app.update_idletasks()
+    first_app.update()
+
+    assert config.get("gui", "detached_pages", "") == "log"
+    assert first_app._detached_log_window is not None
+
+    first_app.destroy()
+
+    second_app = app_factory()
+    second_app.update_idletasks()
+    second_app.update()
+
+    restored = _latest_toplevel(second_app)
+    assert second_app._detached_log_window == restored
+    assert second_app._detached_log_redock_btn.cget("text") == t("gui.log.redock")
+    assert config.get("gui", "detached_pages", "") == "log"
+
+
+def test_three_detached_pages_restore_after_restart(
+    app_factory: Any,
+    tmp_path: Path,
+) -> None:
+    original_config_path = config.config_path
+    temporary_config_path = tmp_path / "detached-pages-restore.ini"
+
+    try:
+        _save_default_config_to_path(temporary_config_path)
+        artifacts_root, summary_path, compare_path = _write_sample_benchmark_summaries(tmp_path)
+
+        first_app = app_factory()
+        first_app.tabs.set(t("gui.tab.log"))
+        first_app.update_idletasks()
+        first_app.update()
+        first_app.detach_log_btn.invoke()
+        first_app.tabs.set(t("gui.tab.settings"))
+        first_app.update_idletasks()
+        first_app.update()
+        first_app.detach_settings_btn.invoke()
+        first_app.tabs.set(t("gui.tab.benchmarks"))
+        first_app.update_idletasks()
+        first_app.update()
+        first_app._refresh_benchmark_summary_selector(artifacts_root)
+        first_app._load_benchmark_summary_artifact(summary_path)
+        first_app._load_benchmark_summary_artifact(compare_path, compare=True)
+        first_app.benchmark_fixture_filter_var.set(t("gui.benchmark.fixture_filter_shared"))
+        first_app._on_fixture_diff_filter_selected(t("gui.benchmark.fixture_filter_shared"))
+        first_app.benchmark_fixture_sort_var.set(t("gui.benchmark.fixture_sort_status_churn"))
+        first_app._on_fixture_diff_sort_selected(t("gui.benchmark.fixture_sort_status_churn"))
+        first_app.detach_benchmark_btn.invoke()
+        first_app.update_idletasks()
+        first_app.update()
+
+        assert set(filter(None, config.get("gui", "detached_pages", "").split(","))) == {"benchmark", "log", "settings"}
+        assert config.get("gui", "detached_log_geometry", "") != ""
+        assert config.get("gui", "detached_settings_geometry", "") != ""
+        assert config.get("gui", "detached_benchmark_geometry", "") != ""
+
+        first_app.destroy()
+
+        second_app = app_factory()
+        second_app.update_idletasks()
+        second_app.update()
+
+        assert second_app._detached_log_window is not None
+        assert second_app._detached_settings_window is not None
+        assert second_app._detached_benchmark_window is not None
+        assert len(_all_toplevels(second_app)) >= 3
+        assert set(filter(None, config.get("gui", "detached_pages", "").split(","))) == {"benchmark", "log", "settings"}
+        assert second_app.benchmark_artifacts_root_entry.get() == str(artifacts_root.resolve())
+        assert second_app.benchmark_fixture_filter_var.get() == t("gui.benchmark.fixture_filter_shared")
+        assert second_app.benchmark_fixture_sort_var.get() == t("gui.benchmark.fixture_sort_status_churn")
+
+        second_app._detached_benchmark_redock_btn.invoke()
+        second_app._detached_settings_redock_btn.invoke()
+        second_app._detached_log_redock_btn.invoke()
+        second_app.update_idletasks()
+        second_app.update()
+
+        assert config.get("gui", "detached_pages", "") == ""
+    finally:
+        _reset_config_to_path(original_config_path)
 
 
 def test_ai_fix_start_requires_at_least_one_selected_issue(

@@ -15,7 +15,12 @@ import shutil
 from dataclasses import dataclass, field
 from typing import Any, List, Optional
 
+from aicodereviewer.auth import resolve_credential_value
 from aicodereviewer.config import config
+from aicodereviewer.diagnostics import (
+    failure_category_from_exception as _failure_category_from_exception,
+    failure_category_from_http_status as _failure_category_from_http_status,
+)
 from aicodereviewer.i18n import t
 
 # Model discovery – re-exported so existing ``from backends.health import …``
@@ -52,6 +57,8 @@ class CheckResult:
     passed: bool
     detail: str = ""
     fix_hint: str = ""
+    category: str = "none"
+    origin: str = "prerequisite"
 
 
 def _empty_check_list() -> List[CheckResult]:
@@ -70,6 +77,15 @@ class HealthReport:
     @property
     def failed_checks(self) -> List[CheckResult]:
         return [c for c in self.checks if not c.passed]
+
+    @property
+    def failure_categories(self) -> List[str]:
+        seen: list[str] = []
+        for check in self.failed_checks:
+            category = check.category or "unknown"
+            if category not in seen:
+                seen.append(category)
+        return seen
 
 
 # ── individual check helpers ───────────────────────────────────────────────
@@ -90,6 +106,8 @@ def _check_command_exists(cmd: str, friendly_name: str) -> CheckResult:
         passed=False,
         detail=t("health.not_found", name=friendly_name),
         fix_hint=t(f"health.hint_install_{cmd}", name=friendly_name),
+        category="tool_compatibility",
+        origin="prerequisite",
     )
 
 
@@ -121,6 +139,7 @@ def check_bedrock() -> HealthReport:
                 passed=False,
                 detail=t("health.aws_creds_fail", error=stderr.strip()[:200]),
                 fix_hint=t("health.hint_aws_creds"),
+                category="auth",
             ))
 
     # 3. Model configured & accessible
@@ -150,6 +169,7 @@ def check_bedrock() -> HealthReport:
                         passed=False,
                         detail=t("health.model_not_exists", model=model_id),
                         fix_hint=t("health.hint_model_access"),
+                        category="permission",
                     ))
             except Exception as exc:
                 checks.append(CheckResult(
@@ -157,6 +177,7 @@ def check_bedrock() -> HealthReport:
                     passed=False,
                     detail=t("health.model_check_error", error=str(exc)[:200]),
                     fix_hint=t("health.hint_model_access"),
+                    category=_failure_category_from_exception(exc),
                 ))
         else:
             # Credentials not available, just report model is configured
@@ -171,6 +192,7 @@ def check_bedrock() -> HealthReport:
             passed=False,
             detail=t("health.model_not_set"),
             fix_hint=t("health.hint_model"),
+            category="configuration",
         ))
 
     report.checks = checks
@@ -201,6 +223,7 @@ def check_kiro() -> HealthReport:
         detail=(t("health.wsl_ok") if wsl_ok
                 else t("health.wsl_not_found")),
         fix_hint="" if wsl_ok else t("health.hint_wsl"),
+        category="none" if wsl_ok else "tool_compatibility",
     ))
 
     # 2. WSL distro available
@@ -218,6 +241,7 @@ def check_kiro() -> HealthReport:
                         else t("health.distro_not_found", distro=distro,
                                available=", ".join(distros))),
                 fix_hint="" if found else t("health.hint_distro"),
+                category="none" if found else "tool_compatibility",
             ))
         elif distros:
             checks.append(CheckResult(
@@ -231,6 +255,7 @@ def check_kiro() -> HealthReport:
                 passed=False,
                 detail=t("health.no_distros"),
                 fix_hint=t("health.hint_distro"),
+                category="tool_compatibility",
             ))
 
         # 3. Kiro CLI inside WSL — use login shell so ~/.local/bin is on PATH
@@ -266,6 +291,7 @@ def check_kiro() -> HealthReport:
             detail=(t("health.kiro_found", path=found_path) if kiro_found
                     else t("health.kiro_not_found")),
             fix_hint="" if kiro_found else t("health.hint_kiro_install"),
+            category="none" if kiro_found else "tool_compatibility",
         ))
 
         # 4. Kiro authentication check
@@ -282,6 +308,7 @@ def check_kiro() -> HealthReport:
                 detail=(t("health.kiro_auth_ok") if auth_ok
                         else t("health.kiro_auth_fail")),
                 fix_hint="" if auth_ok else t("health.hint_kiro_auth"),
+                category="none" if auth_ok else "auth",
             ))
 
     report.checks = checks
@@ -336,6 +363,7 @@ def check_copilot() -> HealthReport:
                 passed=False,
                 detail=t("health.copilot_timeout", path=found_path),
                 fix_hint=t("health.hint_copilot_install"),
+                category="timeout",
             )
         else:
             cli_check = CheckResult(
@@ -343,6 +371,7 @@ def check_copilot() -> HealthReport:
                 passed=False,
                 detail=t("health.copilot_not_genuine", path=found_path),
                 fix_hint=t("health.hint_copilot_install"),
+                category="tool_compatibility",
             )
     checks.append(cli_check)
 
@@ -366,6 +395,7 @@ def check_copilot() -> HealthReport:
             detail=(t("health.copilot_auth_ok") if auth_ok
                     else t("health.copilot_auth_fail")),
             fix_hint="" if auth_ok else t("health.hint_copilot_auth"),
+            category="none" if auth_ok else "auth",
         ))
 
         # 3. Model availability
@@ -392,6 +422,7 @@ def check_copilot() -> HealthReport:
                 detail=(t("health.copilot_model_ok", model=model) if model_ok
                         else t("health.copilot_model_fail", model=model)),
                 fix_hint="" if model_ok else t("health.hint_copilot_model"),
+                category="none" if model_ok else "configuration",
             ))
 
     report.checks = checks
@@ -450,7 +481,8 @@ def check_local_llm(api_type_override: str | None = None) -> HealthReport:
     api_type = str(api_type_override or config.get("local_llm", "api_type", "lmstudio")).strip().lower()
     api_url = LocalLLMBackend._normalize_api_url(str(raw_api_url), api_type)
     model = config.get("local_llm", "model", "default")
-    api_key = str(config.get("local_llm", "api_key", "") or "")
+    credential = resolve_credential_value(str(config.get("local_llm", "api_key", "") or ""))
+    api_key = credential.secret
     label = _LOCAL_PROVIDER_LABELS.get(api_type, "Local LLM")
 
     # 1. URL configured
@@ -460,6 +492,7 @@ def check_local_llm(api_type_override: str | None = None) -> HealthReport:
         detail=(t("health.api_url_set", url=api_url) if api_url
                 else t("health.api_url_not_set")),
         fix_hint="" if api_url else t("health.hint_api_url"),
+        category="none" if api_url else "configuration",
     ))
 
     # 2. API type configured
@@ -469,7 +502,29 @@ def check_local_llm(api_type_override: str | None = None) -> HealthReport:
         passed=api_type_ok,
         detail=(f"Using {label} detection." if api_type_ok else f"Unsupported local_llm.api_type '{api_type}'."),
         fix_hint="" if api_type_ok else "Use one of: lmstudio, ollama, openai, anthropic.",
+        category="none" if api_type_ok else "configuration",
     ))
+
+    if credential.missing_reference:
+        checks.append(CheckResult(
+            name="API Credential",
+            passed=False,
+            detail="Configured API credential reference could not be resolved from the system keyring.",
+            fix_hint="Re-save the Local LLM API key in Settings to refresh the stored credential.",
+            category="auth",
+        ))
+    else:
+        checks.append(CheckResult(
+            name="API Credential",
+            passed=True,
+            detail=(
+                "Using keyring-backed API credential reference."
+                if credential.source == "keyring"
+                else "Using API credential stored in config."
+                if credential.source == "config"
+                else "No API key configured."
+            ),
+        ))
 
     if not api_url or not api_type_ok:
         report.checks = checks
@@ -498,6 +553,7 @@ def check_local_llm(api_type_override: str | None = None) -> HealthReport:
                 if reachable else t("health.server_error", status=resp.status_code)
             ),
             fix_hint="" if reachable else t("health.hint_server"),
+            category="none" if reachable else _failure_category_from_http_status(resp.status_code),
         ))
         if reachable and model_parser and resp.status_code == 200:
             discovered_models = _parse_local_model_names(resp.json(), model_parser)
@@ -507,6 +563,7 @@ def check_local_llm(api_type_override: str | None = None) -> HealthReport:
             passed=False,
             detail=t("health.server_unreachable", url=api_url),
             fix_hint=t("health.hint_server"),
+            category="transport",
         ))
     except Exception as e:
         checks.append(CheckResult(
@@ -514,6 +571,7 @@ def check_local_llm(api_type_override: str | None = None) -> HealthReport:
             passed=False,
             detail=t("health.server_check_error", error=str(e)),
             fix_hint=t("health.hint_server"),
+            category=_failure_category_from_exception(e),
         ))
 
     # 4. Model configured
@@ -524,6 +582,7 @@ def check_local_llm(api_type_override: str | None = None) -> HealthReport:
         detail=(t("health.model_set", model=model_name) if model_name
                 else t("health.model_not_set")),
         fix_hint="" if model_name else t("health.hint_model"),
+        category="none" if model_name else "configuration",
     ))
 
     # 5. Model availability for providers that advertise model lists
@@ -539,6 +598,7 @@ def check_local_llm(api_type_override: str | None = None) -> HealthReport:
                     f"Configured model '{model_name}' was not advertised by the {label} server."
                 ),
                 fix_hint="" if model_ok else t("health.hint_model"),
+                category="none" if model_ok else "configuration",
             ))
         else:
             checks.append(CheckResult(
@@ -550,6 +610,7 @@ def check_local_llm(api_type_override: str | None = None) -> HealthReport:
                     f"No models were advertised by the {label} server, so configured model '{model_name}' could not be confirmed."
                 ),
                 fix_hint="" if model_name.lower() in {"default", "auto"} else t("health.hint_model"),
+                category="none" if model_name.lower() in {"default", "auto"} else "provider",
             ))
     elif api_type == "anthropic":
         anthropic_model_ok = model_name.lower() not in {"", "default", "auto"}
@@ -562,6 +623,7 @@ def check_local_llm(api_type_override: str | None = None) -> HealthReport:
                 "Anthropic-compatible endpoints require an explicit model instead of default/auto."
             ),
             fix_hint="" if anthropic_model_ok else t("health.hint_model"),
+            category="none" if anthropic_model_ok else "configuration",
         ))
 
     report.checks = checks
@@ -578,26 +640,41 @@ def _run_connection_test(backend_type: str) -> CheckResult:
     from aicodereviewer.backends import create_backend
     try:
         client = create_backend(backend_type)
-        ok = client.validate_connection()
+        diagnostic_getter = getattr(client, "validate_connection_diagnostic", None)
+        diagnostic = diagnostic_getter() if callable(diagnostic_getter) else None
+        ok = bool(diagnostic.get("ok")) if isinstance(diagnostic, dict) else client.validate_connection()
         if ok:
             return CheckResult(
                 name=t("health.conn_test"),
                 passed=True,
                 detail=t("health.conn_test_ok"),
+                origin="connection_test",
             )
-        else:
+        if isinstance(diagnostic, dict):
             return CheckResult(
                 name=t("health.conn_test"),
                 passed=False,
-                detail=t("health.conn_test_fail"),
-                fix_hint=t("health.hint_conn_test"),
+                detail=str(diagnostic.get("detail") or t("health.conn_test_fail")),
+                fix_hint=str(diagnostic.get("fix_hint") or t("health.hint_conn_test")),
+                category=str(diagnostic.get("category") or "unknown"),
+                origin=str(diagnostic.get("origin") or "connection_test"),
             )
+        return CheckResult(
+            name=t("health.conn_test"),
+            passed=False,
+            detail=t("health.conn_test_fail"),
+            fix_hint=t("health.hint_conn_test"),
+            category="unknown",
+            origin="connection_test",
+        )
     except Exception as exc:
         return CheckResult(
             name=t("health.conn_test"),
             passed=False,
             detail=t("health.conn_test_error", error=str(exc)[:200]),
             fix_hint=t("health.hint_conn_test"),
+            category=_failure_category_from_exception(exc),
+            origin="connection_test",
         )
 
 

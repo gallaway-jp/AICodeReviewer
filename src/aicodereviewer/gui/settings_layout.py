@@ -71,15 +71,16 @@ class SettingsLayoutHelper:
             )
 
     @staticmethod
-    def apply_button_layout(save_button: Any, reset_button: Any, *, stacked: bool) -> None:
-        save_button.grid_forget()
-        reset_button.grid_forget()
+    def apply_button_layout(buttons: Iterable[Any], *, stacked: bool) -> None:
+        button_list = list(buttons)
+        for button in button_list:
+            button.grid_forget()
         if stacked:
-            save_button.grid(row=0, column=0, pady=(0, 6), sticky="ew")
-            reset_button.grid(row=1, column=0, pady=0, sticky="ew")
+            for index, button in enumerate(button_list):
+                button.grid(row=index, column=0, pady=(0, 6) if index < len(button_list) - 1 else 0, sticky="ew")
             return
-        save_button.grid(row=0, column=0, padx=(0, 10), pady=0, sticky="w")
-        reset_button.grid(row=0, column=1, pady=0, sticky="w")
+        for index, button in enumerate(button_list):
+            button.grid(row=0, column=index, padx=(0, 10) if index < len(button_list) - 1 else 0, pady=0, sticky="w")
 
     @staticmethod
     def apply_contribution_wraplength(frame: Any, *, wraplength: int) -> None:

@@ -16,11 +16,11 @@ Prerequisites:
 
 Install the SDK::
 
-    pip install github-copilot-sdk>=0.1.30
+    pip install github-copilot-sdk>=0.2.1
 
 .. note::
     The ``github-copilot-sdk`` is currently in **Technical Preview** and
-    may introduce breaking changes in future releases (pinned to >=0.1.30
+    may introduce breaking changes in future releases (pinned to >=0.2.1
     in requirements).
 """
 import asyncio
@@ -34,6 +34,15 @@ from typing import Any, Callable, Optional
 from .base import AIBackend
 from .models import _resolve_copilot_exe
 from aicodereviewer.config import config
+from aicodereviewer.tool_access import (
+    ToolAccessAudit,
+    ToolAccessAuditEntry,
+    ToolReviewContext,
+    extract_tool_path,
+    normalize_relative_path,
+    path_matches_globs,
+    summarize_tool_payload,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +70,7 @@ class CopilotBackend(AIBackend):
     """
 
     def __init__(self, **kwargs: Any) -> None:
+        self.backend_name = "copilot"
         _raw_path: str = config.get("copilot", "copilot_path", "copilot").strip()
         # On Windows, shutil.which("copilot") often resolves to a .bat/.ps1
         # wrapper that the github-copilot-sdk rejects.  Resolve to the real
@@ -76,6 +86,8 @@ class CopilotBackend(AIBackend):
         self._stream_callback: Optional[Callable[[str], None]] = None
         self._active_session = None      # set while a request is in-flight
         self._client = None              # lazily created on first use
+        self._tool_access_lock = threading.Lock()
+        self._tool_access_audit: ToolAccessAudit | None = None
         # asyncio.Lock for guarding async client creation; instantiated lazily
         # on the background loop to avoid cross-loop contamination.
         self._async_client_lock: Optional[asyncio.Lock] = None
@@ -112,12 +124,17 @@ class CopilotBackend(AIBackend):
         review_type: str = "best_practices",
         lang: str = "en",
         spec_content: Optional[str] = None,
+        tool_context: ToolReviewContext | None = None,
     ) -> str:
         system_prompt = self._build_system_prompt(
             review_type, lang, self._project_context, self._detected_frameworks,
         )
-        user_message = self._build_user_message(code_content, review_type, spec_content)
-        return self._run_sdk(system_prompt, user_message)
+        user_message = (
+            code_content
+            if tool_context is not None
+            else self._build_user_message(code_content, review_type, spec_content)
+        )
+        return self._run_sdk(system_prompt, user_message, tool_context=tool_context)
 
     def get_fix(
         self,
@@ -174,6 +191,77 @@ class CopilotBackend(AIBackend):
         except Exception as exc:
             logger.error("Failed to connect to Copilot CLI via SDK: %s", exc)
             return False
+
+    def validate_connection_diagnostic(self) -> dict[str, str | bool]:
+        found = shutil.which(self.copilot_path)
+        if not found:
+            return {
+                "ok": False,
+                "category": "tool_compatibility",
+                "detail": f"GitHub Copilot CLI ('{self.copilot_path}') was not found in PATH.",
+                "fix_hint": "Install the standalone GitHub Copilot CLI and verify the configured executable path.",
+                "origin": "connection_test",
+            }
+
+        try:
+            client = self._submit(self._ensure_client())
+            models = self._submit(client.list_models())
+            if models is not None:
+                return {
+                    "ok": True,
+                    "category": "none",
+                    "detail": "",
+                    "fix_hint": "",
+                    "origin": "connection_test",
+                }
+            return {
+                "ok": False,
+                "category": "auth",
+                "detail": "GitHub Copilot CLI is not authenticated.",
+                "fix_hint": "Run 'copilot' and use /login, or configure GH_TOKEN / GITHUB_TOKEN.",
+                "origin": "connection_test",
+            }
+        except TimeoutError as exc:
+            return {
+                "ok": False,
+                "category": "timeout",
+                "detail": str(exc),
+                "fix_hint": "Retry the connection test and verify the Copilot CLI is responsive.",
+                "origin": "connection_test",
+            }
+        except Exception as exc:
+            lower_msg = str(exc).lower()
+            category = "provider"
+            if "auth" in lower_msg or "token" in lower_msg or "login" in lower_msg:
+                category = "auth"
+            elif "timeout" in lower_msg:
+                category = "timeout"
+            elif "not found" in lower_msg or "cli" in lower_msg:
+                category = "tool_compatibility"
+            return {
+                "ok": False,
+                "category": category,
+                "detail": str(exc),
+                "fix_hint": "Check Copilot authentication, CLI installation, and model availability.",
+                "origin": "connection_test",
+            }
+
+    def supports_tool_file_access(self) -> bool:
+        return True
+
+    def reset_tool_access_audit(self) -> None:
+        with self._tool_access_lock:
+            self._tool_access_audit = None
+
+    def current_tool_access_audit(self) -> ToolAccessAudit | None:
+        with self._tool_access_lock:
+            return self._tool_access_audit
+
+    def consume_tool_access_audit(self) -> ToolAccessAudit | None:
+        with self._tool_access_lock:
+            audit = self._tool_access_audit
+            self._tool_access_audit = None
+            return audit
 
     def cancel(self) -> None:
         """Destroy any in-flight session to interrupt a running review."""
@@ -253,28 +341,235 @@ class CopilotBackend(AIBackend):
         async with self._async_client_lock:
             if self._client is None:
                 # Late import keeps the SDK optional until first use.
-                from copilot import CopilotClient, PermissionHandler  # github-copilot-sdk
+                from copilot import CopilotClient, SubprocessConfig  # github-copilot-sdk
+                try:
+                    from copilot import PermissionHandler  # type: ignore[attr-defined]
+                except ImportError:
+                    from copilot.session import PermissionHandler  # type: ignore[no-redef]
 
-                options: dict = {
-                    "cli_path": self.copilot_path,
-                    "auto_restart": True,
-                    "log_level": "warning",
-                }
+                client_config = SubprocessConfig(
+                    cli_path=self.copilot_path,
+                    log_level="warning",
+                )
                 github_token = (
                     os.environ.get("COPILOT_GITHUB_TOKEN")
                     or os.environ.get("GH_TOKEN")
                     or os.environ.get("GITHUB_TOKEN")
                 )
                 if github_token:
-                    options["github_token"] = github_token
+                    client_config.github_token = github_token
 
-                self._client = CopilotClient(options)
+                self._client = CopilotClient(client_config)
                 self._permission_handler = PermissionHandler.approve_all
                 await self._client.start()
                 logger.debug("CopilotClient started (CLI process managed by SDK).")
         return self._client
 
-    async def _run_sdk_async(self, system_prompt: str, user_message: str) -> str:
+    def _ensure_tool_access_audit(self) -> ToolAccessAudit:
+        with self._tool_access_lock:
+            if self._tool_access_audit is None:
+                self._tool_access_audit = ToolAccessAudit(
+                    backend_name=self.backend_name,
+                    model_name=self.model or "auto",
+                    enabled=True,
+                )
+            return self._tool_access_audit
+
+    @staticmethod
+    def _tool_access_globs() -> list[str]:
+        raw = config.get("tool_file_access", "sensitive_path_globs", "")
+        return [item.strip() for item in str(raw).split(",") if item.strip()]
+
+    @staticmethod
+    def _tool_access_policy() -> str:
+        return str(
+            config.get("tool_file_access", "sensitive_path_policy", "deny")
+        ).strip().lower() or "deny"
+
+    @staticmethod
+    def _is_workspace_list_tool(tool_name: str) -> bool:
+        normalized = tool_name.lower().replace(".", "_")
+        return normalized in {"list_dir", "list_directory", "ls"} or (
+            "list" in normalized and "file" in normalized
+        )
+
+    @staticmethod
+    def _is_workspace_read_tool(tool_name: str) -> bool:
+        normalized = tool_name.lower().replace(".", "_")
+        if normalized in {"view", "read", "open_file"}:
+            return True
+        return "read" in normalized and "file" in normalized
+
+    @staticmethod
+    def _is_harmless_meta_tool(tool_name: str) -> bool:
+        normalized = tool_name.lower().replace(".", "_")
+        return normalized in {"report_intent"}
+
+    def _allow_read_permission(self, request: dict[str, Any], _invocation: dict[str, str]) -> dict[str, Any]:
+        kind = str(request.get("kind", "")).strip().lower()
+        audit = self._ensure_tool_access_audit()
+        if kind == "read":
+            audit.add_entry(
+                ToolAccessAuditEntry(
+                    phase="permission",
+                    tool_name=None,
+                    decision="allow",
+                    decision_reason="approved read permission for workspace tool access",
+                    requested_path=None,
+                    relative_path=None,
+                    args_summary=summarize_tool_payload(request),
+                )
+            )
+            return {"kind": "approved"}
+        audit.add_entry(
+            ToolAccessAuditEntry(
+                phase="permission",
+                tool_name=None,
+                decision="deny",
+                decision_reason=f"denied non-read permission kind '{kind or 'unknown'}'",
+                requested_path=None,
+                relative_path=None,
+                args_summary=summarize_tool_payload(request),
+            )
+        )
+        return {"kind": "denied-no-approval-rule-and-could-not-request-from-user"}
+
+    def _handle_pre_tool_use(self, input_data: dict[str, Any], workspace_root: str) -> dict[str, Any]:
+        tool_name = str(input_data.get("toolName", "") or "")
+        tool_args = input_data.get("toolArgs")
+        requested_path = extract_tool_path(tool_args)
+        audit = self._ensure_tool_access_audit()
+
+        if self._is_workspace_list_tool(tool_name):
+            audit.add_entry(
+                ToolAccessAuditEntry(
+                    phase="pre_tool_use",
+                    tool_name=tool_name,
+                    decision="allow",
+                    decision_reason="allowed workspace file listing",
+                    requested_path=requested_path,
+                    relative_path=None,
+                    args_summary=summarize_tool_payload(tool_args),
+                )
+            )
+            return {"permissionDecision": "allow", "permissionDecisionReason": "workspace file listing allowed"}
+
+        if self._is_harmless_meta_tool(tool_name):
+            audit.add_entry(
+                ToolAccessAuditEntry(
+                    phase="pre_tool_use",
+                    tool_name=tool_name,
+                    decision="allow",
+                    decision_reason="allowed harmless meta tool for tool-aware review",
+                    requested_path=requested_path,
+                    relative_path=None,
+                    args_summary=summarize_tool_payload(tool_args),
+                )
+            )
+            return {"permissionDecision": "allow", "permissionDecisionReason": "meta tool allowed"}
+
+        if not self._is_workspace_read_tool(tool_name):
+            audit.add_entry(
+                ToolAccessAuditEntry(
+                    phase="pre_tool_use",
+                    tool_name=tool_name,
+                    decision="deny",
+                    decision_reason="denied unsupported tool for tool-aware review",
+                    requested_path=requested_path,
+                    relative_path=None,
+                    args_summary=summarize_tool_payload(tool_args),
+                )
+            )
+            return {"permissionDecision": "deny", "permissionDecisionReason": "Only workspace read tools are allowed"}
+
+        if not requested_path:
+            audit.add_entry(
+                ToolAccessAuditEntry(
+                    phase="pre_tool_use",
+                    tool_name=tool_name,
+                    decision="deny",
+                    decision_reason="denied file-read tool call without a path argument",
+                    requested_path=None,
+                    relative_path=None,
+                    args_summary=summarize_tool_payload(tool_args),
+                )
+            )
+            return {"permissionDecision": "deny", "permissionDecisionReason": "File-read tools must include a path"}
+
+        resolved_path, relative_path = normalize_relative_path(requested_path, workspace_root)
+        if relative_path is None:
+            audit.add_entry(
+                ToolAccessAuditEntry(
+                    phase="pre_tool_use",
+                    tool_name=tool_name,
+                    decision="deny",
+                    decision_reason="denied file access outside the configured workspace root",
+                    requested_path=resolved_path,
+                    relative_path=None,
+                    args_summary=summarize_tool_payload(tool_args),
+                )
+            )
+            return {"permissionDecision": "deny", "permissionDecisionReason": "Requested file is outside the workspace root"}
+
+        sensitive = path_matches_globs(relative_path, self._tool_access_globs())
+        if sensitive and self._tool_access_policy() != "allow":
+            audit.add_entry(
+                ToolAccessAuditEntry(
+                    phase="pre_tool_use",
+                    tool_name=tool_name,
+                    decision="deny",
+                    decision_reason="denied sensitive file path by policy",
+                    requested_path=resolved_path,
+                    relative_path=relative_path,
+                    sensitive=True,
+                    args_summary=summarize_tool_payload(tool_args),
+                )
+            )
+            return {"permissionDecision": "deny", "permissionDecisionReason": "Sensitive file path denied by policy"}
+
+        audit.add_entry(
+            ToolAccessAuditEntry(
+                phase="pre_tool_use",
+                tool_name=tool_name,
+                decision="allow",
+                decision_reason="allowed workspace file read",
+                requested_path=resolved_path,
+                relative_path=relative_path,
+                sensitive=sensitive,
+                args_summary=summarize_tool_payload(tool_args),
+            )
+        )
+        return {"permissionDecision": "allow", "permissionDecisionReason": "Workspace file read allowed"}
+
+    def _handle_post_tool_use(self, input_data: dict[str, Any], workspace_root: str) -> None:
+        tool_name = str(input_data.get("toolName", "") or "")
+        tool_args = input_data.get("toolArgs")
+        requested_path = extract_tool_path(tool_args)
+        resolved_path = None
+        relative_path = None
+        if requested_path:
+            resolved_path, relative_path = normalize_relative_path(requested_path, workspace_root)
+        self._ensure_tool_access_audit().add_entry(
+            ToolAccessAuditEntry(
+                phase="post_tool_use",
+                tool_name=tool_name,
+                decision=None,
+                decision_reason=None,
+                requested_path=resolved_path,
+                relative_path=relative_path,
+                sensitive=bool(relative_path and path_matches_globs(relative_path, self._tool_access_globs())),
+                args_summary=summarize_tool_payload(tool_args),
+                result_summary=summarize_tool_payload(input_data.get("toolResult")),
+            )
+        )
+
+    async def _run_sdk_async(
+        self,
+        system_prompt: str,
+        user_message: str,
+        *,
+        tool_context: ToolReviewContext | None = None,
+    ) -> str:
         """Create a session, stream the response, and return the full text.
 
         A fresh session is created and destroyed for every call so the
@@ -284,21 +579,34 @@ class CopilotBackend(AIBackend):
         # from another coroutine on that same loop (no deadlock).
         client = await self._ensure_client()
 
-        session_config: dict = {
+        session_config: dict[str, Any] = {
             "streaming": True,
             "system_message": {"content": system_prompt},
-            "on_permission_request": getattr(self, "_permission_handler", None),
             # Single-shot requests don't need context compaction.
             "infinite_sessions": {"enabled": False},
         }
+        if tool_context is not None:
+            def _pre_tool_use(input_data: Any, _session: Any) -> Any:
+                return self._handle_pre_tool_use(input_data, tool_context.workspace_root)
+
+            def _post_tool_use(input_data: Any, _session: Any) -> None:
+                self._handle_post_tool_use(input_data, tool_context.workspace_root)
+
+            session_config["on_permission_request"] = self._allow_read_permission
+            session_config["hooks"] = {
+                "on_pre_tool_use": _pre_tool_use,
+                "on_post_tool_use": _post_tool_use,
+            }
+            session_config["working_directory"] = tool_context.workspace_root
+        else:
+            session_config["on_permission_request"] = getattr(self, "_permission_handler", None)
         if self.model and self.model.lower() != "auto":
             session_config["model"] = self.model
 
-        session = await client.create_session(session_config)
+        session = await client.create_session(**session_config)
         self._active_session = session
 
-        full_text: list[str] = []
-        idle_event = asyncio.Event()
+        final_response: str = ""
 
         def on_event(event: Any) -> None:
             etype = (
@@ -314,19 +622,19 @@ class CopilotBackend(AIBackend):
                     except Exception:
                         # Never let a GUI callback error break the backend.
                         pass
-            elif etype == "assistant.message":
-                content = getattr(event.data, "content", None) or ""
-                full_text.append(content)
-            elif etype == "session.idle":
-                idle_event.set()
 
         session.on(on_event)
 
         try:
-            await session.send({"prompt": user_message})
-            await asyncio.wait_for(idle_event.wait(), timeout=self.timeout)
+            response = await session.send_and_wait(user_message, timeout=self.timeout)
+            if response is not None:
+                final_response = (getattr(response.data, "content", None) or "").strip()
         except asyncio.TimeoutError:
             return "Error: GitHub Copilot timed out."
+        except TimeoutError:
+            return "Error: GitHub Copilot timed out."
+        except Exception as exc:
+            return f"Error: {exc}"
         finally:
             self._active_session = None
             try:
@@ -334,13 +642,30 @@ class CopilotBackend(AIBackend):
             except Exception:
                 pass
 
-        result = "".join(full_text).strip()
+        result = final_response
+        if tool_context is not None:
+            audit = self._ensure_tool_access_audit()
+            if audit.file_read_count == 0:
+                audit.fallback_reason = "tool-aware review completed without any file-read tool usage"
+                return "Error: Tool-aware file access was not used by the selected model."
         return result or "Error: No output from GitHub Copilot."
 
-    def _run_sdk(self, system_prompt: str, user_message: str) -> str:
+    def _run_sdk(
+        self,
+        system_prompt: str,
+        user_message: str,
+        *,
+        tool_context: ToolReviewContext | None = None,
+    ) -> str:
         """Synchronous wrapper around :meth:`_run_sdk_async`."""
         try:
-            return self._submit(self._run_sdk_async(system_prompt, user_message))
+            return self._submit(
+                self._run_sdk_async(
+                    system_prompt,
+                    user_message,
+                    tool_context=tool_context,
+                )
+            )
         except (TimeoutError, concurrent.futures.TimeoutError):
             return "Error: GitHub Copilot timed out."
         except Exception as exc:

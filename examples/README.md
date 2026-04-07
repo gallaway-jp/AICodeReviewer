@@ -7,6 +7,7 @@ Use the main docs for setup and reference:
 - [Documentation Hub](../docs/README.md)
 - [Getting Started](../docs/getting-started.md)
 - [CLI Guide](../docs/cli.md)
+- [Addons Guide](../docs/addons.md)
 - [Review Types Reference](../docs/review-types.md)
 
 ## What Is Here
@@ -41,3 +42,5 @@ Expected outputs are described in the walkthrough and quick-reference documents.
 - `addon-secure-defaults/` shows the manifest shape for review-pack contributions.
 - `addon-echo-backend/` shows a code-backed addon that registers an in-process backend provider through `entry_points.backend_providers` and contributes a Settings surface through `entry_points.ui_contributors`.
 - `addon-editor-hooks/` shows a code-backed addon that registers editor hooks through `entry_points.editor_hooks`, returns diagnostics for the popup editor and diff preview, and observes lifecycle plus staged-preview events.
+
+Use [docs/addons.md](../docs/addons.md) for the maintained contract and discovery rules behind these examples.
