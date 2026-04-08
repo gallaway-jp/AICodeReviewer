@@ -18,6 +18,7 @@ pip-delete-this-directory.txt
 dist/
 build/
 *.spec
+!AICodeReviewer.spec
 *.exe
 
 # IDE
