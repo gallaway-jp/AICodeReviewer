@@ -42,6 +42,22 @@ _SKIP_DIRS = {
     ".tox",
 }
 
+_NON_PRIMARY_DIR_NAMES = {
+    "artifact",
+    "artifacts",
+    "benchmark",
+    "benchmarks",
+    "demo",
+    "demos",
+    "example",
+    "examples",
+    "fixture",
+    "fixtures",
+    "sample",
+    "samples",
+    "testdata",
+}
+
 _MANIFEST_PATTERNS = (
     "pyproject.toml",
     "requirements.txt",
@@ -189,6 +205,7 @@ def analyze_repository(project_path: str | Path) -> RepositoryCapabilityProfile:
     test_harnesses = _detect_test_harnesses(root)
     style_signals = _detect_style_signals(root, context.naming_convention, context.tools)
     recommended_review_types = _recommend_review_types(context.frameworks, context.tools, manifests)
+    file_counts, total_files = _count_primary_files(root)
 
     return RepositoryCapabilityProfile(
         project_path=str(root),
@@ -200,8 +217,8 @@ def analyze_repository(project_path: str | Path) -> RepositoryCapabilityProfile:
         manifests=tuple(manifests),
         style_signals=tuple(style_signals),
         naming_convention=context.naming_convention,
-        total_files=context.total_files,
-        file_counts=dict(context.file_counts),
+        total_files=total_files,
+        file_counts=file_counts,
         source_file_count=len(source_files),
         recommended_review_types=tuple(recommended_review_types),
     )
@@ -274,7 +291,7 @@ def _discover_source_files(root: Path) -> list[str]:
     for path in root.rglob("*"):
         if not path.is_file():
             continue
-        if any(part in _SKIP_DIRS for part in path.parts):
+        if _should_exclude_path(root, path):
             continue
         if path.suffix.lower() in _SOURCE_SUFFIXES:
             source_files.append(str(path))
@@ -288,7 +305,7 @@ def _detect_manifests(root: Path) -> list[str]:
         for path in sorted(root.rglob(pattern)):
             if not path.is_file():
                 continue
-            if any(part in _SKIP_DIRS for part in path.parts):
+            if _should_exclude_path(root, path):
                 continue
             relative = path.relative_to(root).as_posix()
             if relative not in seen:
@@ -315,6 +332,20 @@ def _detect_test_harnesses(root: Path) -> list[str]:
         harnesses.append("junit")
 
     return _dedupe(harnesses)
+
+
+def _count_primary_files(root: Path) -> tuple[dict[str, int], int]:
+    file_counts: dict[str, int] = {}
+    total_files = 0
+    for path in root.rglob("*"):
+        if not path.is_file():
+            continue
+        if _should_exclude_path(root, path):
+            continue
+        suffix = path.suffix or "(no ext)"
+        file_counts[suffix] = file_counts.get(suffix, 0) + 1
+        total_files += 1
+    return file_counts, total_files
 
 
 def _detect_style_signals(root: Path, naming_convention: str, tools: list[str]) -> list[str]:
@@ -474,6 +505,19 @@ def _load_json(path: Path) -> dict[str, Any]:
     except json.JSONDecodeError:
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def _should_exclude_path(root: Path, path: Path) -> bool:
+    try:
+        relative_parts = path.relative_to(root).parts[:-1]
+    except ValueError:
+        relative_parts = path.parts[:-1]
+
+    for part in relative_parts:
+        lowered = part.lower()
+        if lowered in _SKIP_DIRS or lowered in _NON_PRIMARY_DIR_NAMES:
+            return True
+    return False
 
 
 def _collect_package_json_tokens(payload: dict[str, Any]) -> set[str]:

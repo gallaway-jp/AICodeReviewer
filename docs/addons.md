@@ -62,6 +62,8 @@ The command currently writes:
 - `<addon-id>/addon.json`
 - `<addon-id>/review-pack.json`
 
+The analyzer now biases the capability profile toward primary repository content. Nested example, fixture, benchmark, sample, demo, and artifact trees are excluded so generated previews do not inherit framework noise from embedded reference projects.
+
 The generated scaffold is preview-only. Review and edit the output before pointing `addons.paths` at it or copying it into a real addon directory.
 
 ## Manifest Shape

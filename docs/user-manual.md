@@ -629,6 +629,8 @@ Use these examples as starting points:
 
 The generated `analyze-repo` scaffold is also a valid starting point when you want a repository-specific review-pack preview instead of a generic example.
 
+The generated profile is intentionally biased toward the primary repository. Nested example, fixture, benchmark, sample, demo, and artifact trees are ignored so preview bundles stay focused on the codebase you actually maintain.
+
 Use [Addons Guide](addons.md) for the maintained manifest contract and discovery rules.
 
 ## Local HTTP Workflow

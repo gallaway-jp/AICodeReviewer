@@ -701,6 +701,19 @@ Current status:
 - the repository now includes a conservative `analyze-repo` tool-mode command that scans a target repository, emits a capability profile, and writes a preview addon scaffold without activating it
 - the first slice writes `capability-profile.json`, `summary.txt`, `addon.json`, and `review-pack.json`, then validates the generated manifest against the existing addon loader
 - focused tests now cover repository analysis, generated scaffold validity, and CLI JSON output for the new command
+- the analyzer now excludes nested example, fixture, benchmark, sample, demo, and artifact trees from the primary profile and no longer treats import text embedded inside test snippets as real framework usage
+
+#### Recent Validation
+
+- focused pytest coverage for `tests/test_addon_generator.py` and `tests/test_cli_tool_mode.py` passed after the filtering change
+- a real `analyze-repo` self-run against this repository now emits a clean JSON envelope and reports only `pytest` instead of framework noise from embedded sample content
+
+#### Remaining Milestone 16 Gaps
+
+- add a maintainer-facing HITL review and approval flow before generated addons can be enabled
+- validate the heuristic accuracy on more representative external repositories, not just this repo and synthetic fixtures
+- gather evidence that generated bundles improve relevance compared with the default review definitions
+
 
 #### Implementation Notes
 

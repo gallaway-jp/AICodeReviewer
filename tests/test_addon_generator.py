@@ -71,3 +71,47 @@ def test_generate_addon_preview_writes_valid_manifest_and_review_pack(tmp_path: 
     assert preview.review_key in {definition.key for definition in registry.list_all()}
     assert any(preset.key == preview.preset_key for preset in presets)
     assert preview.review_pack["review_presets"][0]["review_types"][0] == preview.review_key
+
+
+def test_analyze_repository_ignores_nested_fixture_and_example_projects(tmp_path: Path) -> None:
+    project_root = tmp_path / "primary_repo"
+    project_root.mkdir()
+    (project_root / "pyproject.toml").write_text(
+        "[project]\nname = 'primary-repo'\nversion = '0.1.0'\n",
+        encoding="utf-8",
+    )
+    src_dir = project_root / "src"
+    src_dir.mkdir()
+    (src_dir / "api.py").write_text(
+        "from fastapi import FastAPI\n\napp = FastAPI()\n",
+        encoding="utf-8",
+    )
+
+    example_dir = project_root / "examples" / "react_demo" / "src"
+    example_dir.mkdir(parents=True)
+    (project_root / "examples" / "react_demo" / "package.json").write_text(
+        json.dumps({"dependencies": {"react": "18.0.0"}}),
+        encoding="utf-8",
+    )
+    (example_dir / "App.tsx").write_text(
+        "import React from 'react';\nexport function App() { return <div />; }\n",
+        encoding="utf-8",
+    )
+
+    fixture_dir = project_root / "benchmarks" / "fixtures" / "demo_service" / "project"
+    fixture_dir.mkdir(parents=True)
+    (fixture_dir / "manage.py").write_text("import django\n", encoding="utf-8")
+
+    tests_dir = project_root / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_prompts.py").write_text(
+        "EXAMPLE = \"from flask import Flask\\nimport react\\n\"\n",
+        encoding="utf-8",
+    )
+
+    profile = analyze_repository(project_root)
+
+    assert profile.frameworks == ("fastapi",)
+    assert profile.manifests == ("pyproject.toml",)
+    assert profile.source_file_count == 2
+    assert profile.total_files == 3
