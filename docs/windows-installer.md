@@ -57,7 +57,7 @@ Pros:
 Cons:
 
 - Windows-only toolchain
-- signing and CI integration still need explicit follow-through outside the basic local build script
+- certificate provisioning and signed-artifact validation still need explicit follow-through outside the checked-in signing scaffold
 - less aligned with enterprise deployment policy than MSI-based approaches
 
 Decision:
@@ -111,11 +111,36 @@ That workflow:
 - runs on `windows-latest`
 - installs Inno Setup 6 through Chocolatey
 - installs the Python package with GUI extras
+- optionally decodes a signing certificate from GitHub Actions secrets when one is configured
 - runs `build_installer.bat`
 - uses `actions/upload-artifact@v7`
 - uploads the produced installer plus the packaged EXE and checksum as workflow artifacts
 
 That CI path is now validated end to end.
+
+## Optional Signing Scaffold
+
+The repository now includes an opt-in signing helper at `tools/sign_windows_binary.ps1`.
+
+Unsigned builds remain the default. Signing activates only when `WINDOWS_SIGN_CERT_PATH` points to a `.pfx` certificate file.
+
+Optional signing environment variables:
+
+- `WINDOWS_SIGN_CERT_PATH` for the `.pfx` file to use
+- `WINDOWS_SIGN_CERT_PASSWORD` for the certificate password when needed
+- `WINDOWS_SIGN_TIMESTAMP_URL` to override the default timestamp server (`https://timestamp.digicert.com`)
+- `WINDOWS_SIGNTOOL_PATH` to override `signtool.exe` discovery if the Windows SDK is installed in a nonstandard location
+
+When certificate configuration is present:
+
+- `build_exe.bat` signs `dist/AICodeReviewer.exe` before generating the SHA256 checksum
+- `build_installer.bat` signs `dist/installer/AICodeReviewer-Setup-<version>.exe` after Inno Setup finishes packaging it
+- `.github/workflows/windows-installer.yml` can sign both artifacts when `WINDOWS_SIGN_CERT_BASE64` and `WINDOWS_SIGN_CERT_PASSWORD` are configured as repository or organization secrets
+
+Local validation on this machine for the unsigned default path:
+
+- `cmd /c build_exe.bat` succeeded with no signing certificate configured, and the helper skipped signing before checksum generation as intended
+- `cmd /c build_installer.bat` still stopped at the known missing-Inno-Setup prerequisite, which confirms the signing scaffold did not change the existing local compiler gate
 
 Verified baseline:
 
@@ -209,12 +234,12 @@ Open follow-on work:
 
 - perform an elevated all-users interactive validation pass from a produced installer artifact, including GUI launch, CLI launch, and uninstall behavior from the default `Program Files` path
 - add installer and uninstall instructions to the task-oriented user manual once the build is validated end to end
-- decide whether installer signing should be wired into the local script, the CI workflow, or both
-- document update and rollback expectations after the all-users interactive path and signing plan are settled
+- provision a real signing certificate and secret-management path, then validate the signed EXE and installer artifacts in CI and on a Windows machine
+- document update and rollback expectations after the all-users interactive path and signed-artifact validation are settled
 
 Current CI limitation:
 
-- the checked-in workflow produces an unsigned installer artifact baseline only; signing is still explicitly pending
+- the checked-in workflow signs artifacts only when `WINDOWS_SIGN_CERT_BASE64` and `WINDOWS_SIGN_CERT_PASSWORD` are configured; otherwise it still produces the unsigned baseline by design
 
 Current local-maintainer limitation on this machine:
 
@@ -226,7 +251,7 @@ Use this checklist against a produced installer artifact before treating the ins
 
 Maintainer helpers for this step now live under `tools/manual_checks/installer/`:
 
-- `inspect_installer_artifact.ps1` for checksum, version, and signing preflight
+- `inspect_installer_artifact.ps1` for checksum, version, and EXE-plus-installer signing preflight
 - `run_installer_smoke_validation.ps1` for current-user or all-users silent install, CLI launch, and preserve/remove-data uninstall smoke validation
 - `validation-log-template.md` for recording the manual install and uninstall results
 
@@ -259,6 +284,7 @@ Validation status for this automation path:
 - packaged CLI help output no longer crashes on Windows console code pages because `src/aicodereviewer/main.py` now reconfigures stdout and stderr with replacement-safe encoding behavior before printing localized help text
 - feature-branch workflow run `24119245773` produced a fresh installer artifact containing the current-user override support and CLI help fix
 - a non-admin current-user smoke-validation run against `artifacts/installer-ci-24119245773` completed successfully, confirming checksum match, `FileVersion 0.2.0.0`, `ProductVersion 0.2.0`, both Start Menu shortcuts after install, and passing preserve-data plus remove-data uninstall paths
+- the artifact-inspection and smoke-validation helpers now report both EXE and installer signature status so signed runs can be verified without a separate ad hoc check
 
 1. Install `AICodeReviewer-Setup-<version>.exe` with default options.
 2. Confirm the application lands under `Program Files\AICodeReviewer`.

@@ -18,6 +18,9 @@ Use this template when validating a produced Windows installer artifact by hand.
 - Expected EXE SHA256:
 - Actual EXE SHA256:
 - Checksum match:
+- EXE file version:
+- EXE product version:
+- EXE signature status:
 - Installer SHA256:
 - Installer file version:
 - Installer product version:

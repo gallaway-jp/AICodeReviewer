@@ -68,6 +68,7 @@ $checksumMatches = $expectedHash -eq $exeHash
 
 $exeVersion = (Get-Item -LiteralPath $exePath).VersionInfo
 $installerVersion = (Get-Item -LiteralPath $installer.FullName).VersionInfo
+$exeSignature = Get-AuthenticodeSignature -FilePath $exePath
 $installerSignature = Get-AuthenticodeSignature -FilePath $installer.FullName
 
 $runId = $null
@@ -89,6 +90,7 @@ $result = [pscustomobject]@{
     InstallerSha256 = $installerHash
     ExeFileVersion = $exeVersion.FileVersion
     ExeProductVersion = $exeVersion.ProductVersion
+    ExeSignatureStatus = $exeSignature.Status.ToString()
     InstallerFileVersion = $installerVersion.FileVersion
     InstallerProductVersion = $installerVersion.ProductVersion
     InstallerSignatureStatus = $installerSignature.Status.ToString()

@@ -198,6 +198,7 @@ $summary = @(
     "- EXE checksum match: $($artifactJson.ExeChecksumMatches)"
     "- EXE file version: $($artifactJson.ExeFileVersion)"
     "- EXE product version: $($artifactJson.ExeProductVersion)"
+    "- EXE signature status: $($artifactJson.ExeSignatureStatus)"
     "- Installer signature status: $($artifactJson.InstallerSignatureStatus)"
     "- GUI shortcut present after install: $guiShortcutPresentAfterInstall"
     "- CLI shortcut present after install: $cliShortcutPresentAfterInstall"
