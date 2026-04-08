@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$ArtifactRoot,
+    [string]$RunId,
+    [string]$Branch,
     [ValidateSet('Auto', 'CurrentUser', 'AllUsers')]
     [string]$InstallMode = 'Auto',
     [string]$InstallDir,
@@ -89,6 +91,10 @@ if (-not (Test-IsAdministrator)) {
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $inspectScript = Join-Path $PSScriptRoot 'inspect_installer_artifact.ps1'
 
+if (($RunId -or $Branch) -and $ArtifactRoot) {
+    throw 'Use either -ArtifactRoot or -RunId/-Branch, not both.'
+}
+
 if ($InstallMode -eq 'Auto') {
     if ($isAdministrator) {
         $effectiveInstallMode = 'AllUsers'
@@ -118,7 +124,20 @@ if (-not $LogDir) {
 
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
-$artifactJson = & pwsh -File $inspectScript -ArtifactRoot $ArtifactRoot -Json | ConvertFrom-Json
+$inspectArgs = @{
+    Json = $true
+}
+if ($ArtifactRoot) {
+    $inspectArgs.ArtifactRoot = $ArtifactRoot
+}
+if ($RunId) {
+    $inspectArgs.RunId = $RunId
+}
+if ($Branch) {
+    $inspectArgs.Branch = $Branch
+}
+
+$artifactJson = & pwsh -File $inspectScript @inspectArgs | ConvertFrom-Json
 $installerPath = $artifactJson.InstallerPath
 
 Test-PathExists -LiteralPath $installerPath -Label 'Installer executable'

@@ -276,6 +276,18 @@ pwsh -File tools/manual_checks/installer/download_installer_artifact.ps1 -Branch
 
 The helper path has been validated against workflow run `24130238872`: after download, `artifacts/installer-ci-24130238872/windows-installer/` was immediately consumable by `inspect_installer_artifact.ps1`, which still reported `ExeChecksumMatches = True` and `InstallerChecksumStatus = Match`.
 
+The inspection and smoke-validation helpers can now resolve artifacts through that download helper directly. For example:
+
+```powershell
+pwsh -File tools/manual_checks/installer/inspect_installer_artifact.ps1 -RunId 24130238872
+```
+
+```powershell
+pwsh -File tools/manual_checks/installer/run_installer_smoke_validation.ps1 -RunId 24130238872 -InstallMode CurrentUser
+```
+
+That direct smoke-validation path has now also been validated on this machine: it completed successfully against workflow run `24130238872` and recorded a passing summary at `artifacts/manual-installer-validation/20260408-195928/summary.md` with `InstallerChecksumStatus = Match`, both Start Menu shortcuts present after install, and passing preserve/remove-data uninstall paths.
+
 For an elevated unattended smoke pass on a Windows machine, run:
 
 ```powershell
@@ -308,6 +320,7 @@ Validation status for this automation path:
 - the artifact-inspection and smoke-validation helpers now report both EXE and installer signature status so signed runs can be verified without a separate ad hoc check
 - the installer build path now also emits a published installer checksum file, and the inspection plus smoke-validation helpers validate that checksum when present while remaining backward-compatible with older artifacts that predate it
 - feature-branch workflow run `24130238872` validated the published installer checksum path end to end: the artifact contained `AICodeReviewer-Setup-0.2.0.exe.sha256`, the EXE checksum still matched, and the installer checksum inspected as `Match`
+- the direct `-RunId` validation path is now also proven end to end: `run_installer_smoke_validation.ps1 -RunId 24130238872 -InstallMode CurrentUser` completed successfully and reused the helper-produced artifact layout without a separate manual download step
 
 1. Install `AICodeReviewer-Setup-<version>.exe` with default options.
 2. Confirm the application lands under `Program Files\AICodeReviewer`.

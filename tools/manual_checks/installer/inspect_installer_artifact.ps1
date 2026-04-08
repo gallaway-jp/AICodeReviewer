@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$ArtifactRoot,
+    [string]$RunId,
+    [string]$Branch,
     [switch]$Json
 )
 
@@ -35,6 +37,26 @@ function Require-Path {
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $artifactsDir = Join-Path $repoRoot 'artifacts'
+$downloadScript = Join-Path $PSScriptRoot 'download_installer_artifact.ps1'
+
+if (($RunId -or $Branch) -and $ArtifactRoot) {
+    throw 'Use either -ArtifactRoot or -RunId/-Branch, not both.'
+}
+
+if ($RunId -or $Branch) {
+    $downloadArgs = @{
+        Json = $true
+    }
+    if ($RunId) {
+        $downloadArgs.RunId = $RunId
+    }
+    if ($Branch) {
+        $downloadArgs.Branch = $Branch
+    }
+
+    $downloadResult = & pwsh -File $downloadScript @downloadArgs | ConvertFrom-Json
+    $ArtifactRoot = $downloadResult.ArtifactRoot
+}
 
 if (-not $ArtifactRoot) {
     $ArtifactRoot = Get-LatestArtifactRoot -ArtifactsDir $artifactsDir
