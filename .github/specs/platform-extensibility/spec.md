@@ -629,6 +629,7 @@ Current status:
 - checked-in installer scaffolding now exists via `build_installer.bat`, `installer/AICodeReviewer.iss`, and `installer/default-config.ini`
 - the Windows CI packaging job at `.github/workflows/windows-installer.yml` has now completed successfully in workflow run `24111725510`, building and uploading the installer artifact on `windows-latest` using Inno Setup plus the checked-in batch entry point
 - the CI validation pass closed three concrete packaging gaps: fragile batch version parsing, implicit working-directory assumptions in the batch scripts, and an ignored-but-required `AICodeReviewer.spec` build input
+- the first successful workflow artifact has now also been downloaded and inspected: it contains the packaged EXE, checksum, and `AICodeReviewer-Setup-0.2.0.exe`, with the checksum matching and the installer still unsigned as expected
 - the installer baseline is intentionally layered on top of the validated PyInstaller EXE path rather than replacing it
 - end-to-end install and uninstall validation is still pending, and installer signing plus user-manual install/uninstall guidance remain follow-on work before Milestone 15 can be treated as complete
 

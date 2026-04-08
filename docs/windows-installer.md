@@ -135,6 +135,22 @@ The installer currently packages:
 - `README.md`
 - a clean default `config.ini` derived from a sanitized installer template rather than the maintainer's working copy
 
+## Verified CI Artifact Snapshot
+
+The first validated installer workflow artifact was downloaded and inspected from GitHub Actions workflow run `24111725510`.
+
+Observed payload:
+
+- `windows-installer/AICodeReviewer.exe`
+- `windows-installer/AICodeReviewer.exe.sha256`
+- `windows-installer/installer/AICodeReviewer-Setup-0.2.0.exe`
+
+Observed properties:
+
+- the checksum file matches the packaged EXE payload
+- the installer file reports version `0.2.0`
+- the installer is currently unsigned (`NotSigned`), which matches the current documented CI limitation
+
 ## Install And Uninstall Behavior
 
 The current Inno Setup baseline installs to `Program Files\AICodeReviewer` and creates:
@@ -171,6 +187,20 @@ Current CI limitation:
 Current local-maintainer limitation on this machine:
 
 - `build_installer.bat` now gets through version detection correctly, but local installer compilation still stops until Inno Setup 6 is installed or `INNO_SETUP_COMPILER` is set
+
+## Manual Validation Checklist
+
+Use this checklist against a produced installer artifact before treating the install and uninstall path as fully validated.
+
+1. Install `AICodeReviewer-Setup-<version>.exe` with default options.
+2. Confirm the application lands under `Program Files\AICodeReviewer`.
+3. Launch the GUI from the Start Menu shortcut and confirm the desktop window opens successfully.
+4. Launch the CLI entry point from the Start Menu shortcut or install directory and run `AICodeReviewer.exe --help`.
+5. Confirm `config.ini` is present in the install directory and is the sanitized installer default rather than a maintainer-local working copy.
+6. Create or modify `config.ini`, `aicodereviewer.log`, and `aicodereviewer-audit.log` to exercise uninstall preservation behavior.
+7. Run the uninstaller once and choose to preserve user data; confirm those files remain.
+8. Reinstall if needed, rerun the uninstaller, choose removal, and confirm those files are deleted.
+9. Record any SmartScreen, permission, or signing warnings observed during install or launch.
 
 ## Recommendation
 
