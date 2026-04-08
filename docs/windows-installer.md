@@ -227,7 +227,28 @@ Use this checklist against a produced installer artifact before treating the ins
 Maintainer helpers for this step now live under `tools/manual_checks/installer/`:
 
 - `inspect_installer_artifact.ps1` for checksum, version, and signing preflight
+- `run_installer_smoke_validation.ps1` for elevated silent install, CLI launch, and preserve/remove-data uninstall smoke validation
 - `validation-log-template.md` for recording the manual install and uninstall results
+
+For an elevated unattended smoke pass on a Windows machine, run:
+
+```powershell
+pwsh -File tools/manual_checks/installer/run_installer_smoke_validation.ps1 -ArtifactRoot artifacts/installer-ci-24117477221
+```
+
+The smoke script does not replace the full interactive checklist. It is designed to validate:
+
+- silent install to a controlled validation directory
+- CLI launch via `AICodeReviewer.exe --help`
+- preserve-data uninstall behavior via `/PRESERVEUSERDATA`
+- remove-data uninstall behavior via `/REMOVEUSERDATA`
+
+The Inno Setup uninstaller now recognizes those silent uninstall flags. In silent mode without an explicit flag, it defaults to preserving user data.
+
+Validation status for this automation path:
+
+- local non-admin shells fail fast with a clear elevation requirement message
+- feature-branch workflow run `24117818915` confirmed the updated installer definition still builds successfully in CI
 
 1. Install `AICodeReviewer-Setup-<version>.exe` with default options.
 2. Confirm the application lands under `Program Files\AICodeReviewer`.
