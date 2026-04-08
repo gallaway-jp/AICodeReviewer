@@ -30,6 +30,7 @@ The goal of this docs set is simple:
 - [Contributing](contributing.md)
 - [Repository Maintenance Plan](repository-maintenance.md)
 - [Release Process](release-process.md)
+- [Windows Installer Guide](windows-installer.md)
 
 ## Documentation Principles
 
@@ -66,6 +67,7 @@ Use these guides if you are:
 - Planning repository cleanup and release normalization: read [Repository Maintenance Plan](repository-maintenance.md)
 - Understanding addon/runtime internals: read [Architecture](architecture.md)
 - Preparing and documenting a release: read [Release Process](release-process.md)
+- Working on the native Windows installer path: read [Windows Installer Guide](windows-installer.md)
 
 ## Scope of This Revamp
 

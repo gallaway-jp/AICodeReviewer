@@ -622,6 +622,14 @@ Current status:
 
 - provide a native Windows installer and uninstaller for the desktop application that bundles the runtime and dependencies where appropriate
 
+Current status:
+- initial Milestone 15 foundation is now in progress in the current repository baseline
+- installer trade-off analysis is documented in `docs/windows-installer.md`
+- Inno Setup is the chosen first implementation path for the native Windows installer flow
+- checked-in installer scaffolding now exists via `build_installer.bat`, `installer/AICodeReviewer.iss`, and `installer/default-config.ini`
+- the installer baseline is intentionally layered on top of the validated PyInstaller EXE path rather than replacing it
+- end-to-end installer build validation is still pending on a Windows machine with Inno Setup 6 installed, and installer signing plus user-manual install/uninstall guidance remain follow-on work before Milestone 15 can be treated as complete
+
 #### Deliverables
 
 - an installer trade-off analysis (MSI vs NSIS vs Inno Setup vs MSIX) with chosen approach and rationale
