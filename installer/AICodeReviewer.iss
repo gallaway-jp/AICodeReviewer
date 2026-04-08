@@ -42,6 +42,8 @@ Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
+PrivilegesRequiredOverridesAllowed=commandline
+UsePreviousPrivileges=no
 DisableProgramGroupPage=yes
 VersionInfoVersion={#AppVersion}
 

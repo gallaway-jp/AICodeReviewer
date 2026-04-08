@@ -74,6 +74,18 @@ def _print_console(text: str, end: str = "\n") -> None:
         print(payload, end="")
 
 
+def _configure_console_streams() -> None:
+    """Avoid console encoding crashes when localized or rich help text is printed."""
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if stream is None or not hasattr(stream, "reconfigure"):
+            continue
+        try:
+            stream.reconfigure(errors="replace")
+        except Exception:
+            continue
+
+
 def _determine_target_lang(argv: Sequence[str]) -> str:
     """Resolve locale before building the full parser so help is localized."""
     parser = argparse.ArgumentParser(add_help=False)
@@ -142,6 +154,8 @@ def _build_epilog() -> str:
 
 def main(argv: Sequence[str] | None = None) -> int:
     argv = list(argv) if argv is not None else sys.argv[1:]
+
+    _configure_console_streams()
 
     addon_runtime = install_addon_runtime()
     invocation_review_packs = _extract_review_pack_paths(argv)

@@ -207,10 +207,10 @@ Milestone 15 is not fully complete yet.
 
 Open follow-on work:
 
-- perform manual install, GUI launch, CLI launch, uninstall, and preserve/remove-data validation from a produced installer artifact
+- perform an elevated all-users interactive validation pass from a produced installer artifact, including GUI launch, CLI launch, and uninstall behavior from the default `Program Files` path
 - add installer and uninstall instructions to the task-oriented user manual once the build is validated end to end
 - decide whether installer signing should be wired into the local script, the CI workflow, or both
-- document update and rollback expectations after the first successful installer build is validated
+- document update and rollback expectations after the all-users interactive path and signing plan are settled
 
 Current CI limitation:
 
@@ -227,13 +227,19 @@ Use this checklist against a produced installer artifact before treating the ins
 Maintainer helpers for this step now live under `tools/manual_checks/installer/`:
 
 - `inspect_installer_artifact.ps1` for checksum, version, and signing preflight
-- `run_installer_smoke_validation.ps1` for elevated silent install, CLI launch, and preserve/remove-data uninstall smoke validation
+- `run_installer_smoke_validation.ps1` for current-user or all-users silent install, CLI launch, and preserve/remove-data uninstall smoke validation
 - `validation-log-template.md` for recording the manual install and uninstall results
 
 For an elevated unattended smoke pass on a Windows machine, run:
 
 ```powershell
-pwsh -File tools/manual_checks/installer/run_installer_smoke_validation.ps1 -ArtifactRoot artifacts/installer-ci-24117477221
+pwsh -File tools/manual_checks/installer/run_installer_smoke_validation.ps1 -ArtifactRoot artifacts/installer-ci-24119245773
+```
+
+For a non-admin current-user smoke pass, run:
+
+```powershell
+pwsh -File tools/manual_checks/installer/run_installer_smoke_validation.ps1 -ArtifactRoot artifacts/installer-ci-24119245773 -InstallMode CurrentUser
 ```
 
 The smoke script does not replace the full interactive checklist. It is designed to validate:
@@ -245,10 +251,14 @@ The smoke script does not replace the full interactive checklist. It is designed
 
 The Inno Setup uninstaller now recognizes those silent uninstall flags. In silent mode without an explicit flag, it defaults to preserving user data.
 
+The installer itself now allows command-line privilege overrides, so the smoke script can use `/CURRENTUSER` in non-admin sessions and `/ALLUSERS` in elevated sessions.
+
 Validation status for this automation path:
 
-- local non-admin shells fail fast with a clear elevation requirement message
-- feature-branch workflow run `24117818915` confirmed the updated installer definition still builds successfully in CI
+- local non-admin shells can now use `-InstallMode CurrentUser` for a per-user smoke pass
+- packaged CLI help output no longer crashes on Windows console code pages because `src/aicodereviewer/main.py` now reconfigures stdout and stderr with replacement-safe encoding behavior before printing localized help text
+- feature-branch workflow run `24119245773` produced a fresh installer artifact containing the current-user override support and CLI help fix
+- a non-admin current-user smoke-validation run against `artifacts/installer-ci-24119245773` completed successfully, confirming checksum match, `FileVersion 0.2.0.0`, `ProductVersion 0.2.0`, both Start Menu shortcuts after install, and passing preserve-data plus remove-data uninstall paths
 
 1. Install `AICodeReviewer-Setup-<version>.exe` with default options.
 2. Confirm the application lands under `Program Files\AICodeReviewer`.
