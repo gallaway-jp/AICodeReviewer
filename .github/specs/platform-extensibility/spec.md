@@ -702,17 +702,27 @@ Current status:
 - the first slice writes `capability-profile.json`, `summary.txt`, `addon.json`, and `review-pack.json`, then validates the generated manifest against the existing addon loader
 - focused tests now cover repository analysis, generated scaffold validity, and CLI JSON output for the new command
 - the analyzer now excludes nested example, fixture, benchmark, sample, demo, and artifact trees from the primary profile and no longer treats import text embedded inside test snippets as real framework usage
+- generated previews now also emit `approval-request.json` and `review-checklist.md`, and the new `approve-addon-preview` command records an explicit maintainer decision before optionally installing the addon
+- the repository now includes `tools/validate_generated_addons.py` plus a curated external-repository catalog to measure heuristic detection quality and the first generated-vs-default bundle relevance delta
 
 #### Recent Validation
 
 - focused pytest coverage for `tests/test_addon_generator.py` and `tests/test_cli_tool_mode.py` passed after the filtering change
 - a real `analyze-repo` self-run against this repository now emits a clean JSON envelope and reports only `pytest` instead of framework noise from embedded sample content
+- focused pytest coverage for `tests/test_addon_approval.py`, `tests/test_addon_validation.py`, and the expanded CLI tool-mode tests now passes for the approval gate, installation path, and relevance scoring contract
 
 #### Remaining Milestone 16 Gaps
 
-- add a maintainer-facing HITL review and approval flow before generated addons can be enabled
-- validate the heuristic accuracy on more representative external repositories, not just this repo and synthetic fixtures
-- gather evidence that generated bundles improve relevance compared with the default review definitions
+- expand the maintainer approval flow into a richer diff-first UI or GUI surface instead of the current CLI approval packet and command gate
+- broaden the curated external repository sample set beyond the initial small catalog and rerun validation periodically
+- move the relevance measurement beyond heuristic bundle overlap into judged review-output quality on representative repositories
+
+#### Validation Artifacts
+
+- `analyze-repo` now emits reviewable approval artifacts: `approval-request.json` and `review-checklist.md`
+- `approve-addon-preview` writes `approval-decision.json` and installs approved previews into the default discovered addon directory unless the maintainer overrides the install path
+- `tools/validate_generated_addons.py` writes per-repository preview outputs plus a JSON summary covering heuristic precision/recall and generated-vs-default bundle relevance
+
 
 
 #### Implementation Notes

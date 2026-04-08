@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import re
 import tomllib
+from datetime import datetime, timezone
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
@@ -80,6 +82,7 @@ _MANIFEST_PATTERNS = (
 _FRONTEND_FRAMEWORKS = frozenset({"react", "next.js", "vue", "angular"})
 _SERVICE_FRAMEWORKS = frozenset({"fastapi", "flask", "django", "express", "spring_boot", "rails"})
 _STYLE_TOOLS = frozenset({"ruff", "black", "mypy", "eslint", "prettier", "flake8"})
+_DEFAULT_BUNDLE_REVIEW_TYPES = ("best_practices", "maintainability", "testing")
 
 _FRAMEWORK_GUIDANCE: dict[str, dict[str, tuple[str, ...] | str]] = {
     "react": {
@@ -171,12 +174,15 @@ class GeneratedAddonPreview:
     addon_root: Path
     capability_profile_path: Path
     summary_path: Path
+    approval_request_path: Path
+    review_checklist_path: Path
     manifest_path: Path
     review_pack_path: Path
     review_key: str
     preset_key: str
     addon_manifest: dict[str, Any]
     review_pack: dict[str, Any]
+    approval_request: dict[str, Any]
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -186,6 +192,8 @@ class GeneratedAddonPreview:
             "addon_root": str(self.addon_root),
             "capability_profile_path": str(self.capability_profile_path),
             "summary_path": str(self.summary_path),
+            "approval_request_path": str(self.approval_request_path),
+            "review_checklist_path": str(self.review_checklist_path),
             "manifest_path": str(self.manifest_path),
             "review_pack_path": str(self.review_pack_path),
             "review_key": self.review_key,
@@ -269,6 +277,31 @@ def generate_addon_preview(
 
     load_addon_manifest(manifest_path)
 
+    approval_request = _build_approval_request(
+        profile,
+        resolved_output_dir,
+        addon_root,
+        normalized_addon_id,
+        resolved_addon_name,
+        capability_profile_path,
+        summary_path,
+        manifest_path,
+        review_pack_path,
+        review_key,
+        preset_key,
+    )
+    approval_request_path = resolved_output_dir / "approval-request.json"
+    approval_request_path.write_text(
+        json.dumps(approval_request, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    review_checklist_path = resolved_output_dir / "review-checklist.md"
+    review_checklist_path.write_text(
+        _render_review_checklist(approval_request),
+        encoding="utf-8",
+    )
+
     return GeneratedAddonPreview(
         profile=profile,
         addon_id=normalized_addon_id,
@@ -277,12 +310,15 @@ def generate_addon_preview(
         addon_root=addon_root,
         capability_profile_path=capability_profile_path,
         summary_path=summary_path,
+        approval_request_path=approval_request_path,
+        review_checklist_path=review_checklist_path,
         manifest_path=manifest_path,
         review_pack_path=review_pack_path,
         review_key=review_key,
         preset_key=preset_key,
         addon_manifest=addon_manifest,
         review_pack=review_pack,
+        approval_request=approval_request,
     )
 
 
@@ -416,6 +452,68 @@ def _build_review_pack(
     }
 
 
+def _build_approval_request(
+    profile: RepositoryCapabilityProfile,
+    output_dir: Path,
+    addon_root: Path,
+    addon_id: str,
+    addon_name: str,
+    capability_profile_path: Path,
+    summary_path: Path,
+    manifest_path: Path,
+    review_pack_path: Path,
+    review_key: str,
+    preset_key: str,
+) -> dict[str, Any]:
+    bundle_comparison = _build_bundle_comparison(profile)
+    reviewed_files = {
+        "capability_profile": _sha256_path(capability_profile_path),
+        "summary": _sha256_path(summary_path),
+        "manifest": _sha256_path(manifest_path),
+        "review_pack": _sha256_path(review_pack_path),
+    }
+    return {
+        "schema_version": 1,
+        "status": "pending_review",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "preview_only": True,
+        "addon_id": addon_id,
+        "addon_name": addon_name,
+        "output_dir": str(output_dir),
+        "addon_root": str(addon_root),
+        "capability_profile_path": str(capability_profile_path),
+        "summary_path": str(summary_path),
+        "manifest_path": str(manifest_path),
+        "review_pack_path": str(review_pack_path),
+        "generated_review_key": review_key,
+        "generated_preset_key": preset_key,
+        "bundle_comparison": bundle_comparison,
+        "profile": profile.to_dict(),
+        "reviewed_files": reviewed_files,
+        "review_checklist": [
+            f"Inspect {summary_path.name} for the detected language, framework, and review-type summary.",
+            f"Inspect {capability_profile_path.name} for false positives or missing repository signals.",
+            f"Review {manifest_path.relative_to(output_dir).as_posix()} for addon metadata and compatibility.",
+            f"Review {review_pack_path.relative_to(output_dir).as_posix()} for prompt append text, context rules, and preset review types.",
+            "Edit the generated files if the repository needs narrower prompts or a different review bundle.",
+            "Approve the preview only after the generated bundle matches the maintainer's intent.",
+        ],
+    }
+
+
+def _build_bundle_comparison(profile: RepositoryCapabilityProfile) -> dict[str, list[str]]:
+    baseline = list(_DEFAULT_BUNDLE_REVIEW_TYPES)
+    generated = ["best_practices"]
+    generated.extend(review_type for review_type in profile.recommended_review_types if review_type != "best_practices")
+    generated = _dedupe(generated)
+    return {
+        "default_review_types": baseline,
+        "generated_review_types": generated,
+        "added_review_types": [review_type for review_type in generated if review_type not in baseline],
+        "removed_review_types": [review_type for review_type in baseline if review_type not in generated],
+    }
+
+
 def _build_prompt_append(profile: RepositoryCapabilityProfile) -> str:
     parts = [
         "Repository capability profile:",
@@ -479,6 +577,34 @@ def _render_summary(
     return "\n".join(lines) + "\n"
 
 
+def _render_review_checklist(approval_request: dict[str, Any]) -> str:
+    bundle_comparison = approval_request.get("bundle_comparison", {})
+    generated_review_types = ", ".join(bundle_comparison.get("generated_review_types", [])) or "none"
+    added_review_types = ", ".join(bundle_comparison.get("added_review_types", [])) or "none"
+    lines = [
+        "# Generated Addon Review Checklist",
+        "",
+        f"Addon id: {approval_request.get('addon_id', '')}",
+        f"Addon name: {approval_request.get('addon_name', '')}",
+        f"Generated review types: {generated_review_types}",
+        f"Additional focus beyond the default bundle: {added_review_types}",
+        "",
+        "## Review Steps",
+    ]
+    for item in approval_request.get("review_checklist", []):
+        lines.append(f"- {item}")
+    lines.extend(
+        [
+            "",
+            "## Approval Command",
+            "",
+            f"aicodereviewer approve-addon-preview \"{approval_request.get('output_dir', '')}\" --reviewer <name> --decision approve",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def _normalize_addon_id(raw_addon_id: str) -> str:
     normalized = re.sub(r"[^a-z0-9]+", "-", raw_addon_id.strip().lower()).strip("-")
     if not normalized:
@@ -505,6 +631,14 @@ def _load_json(path: Path) -> dict[str, Any]:
     except json.JSONDecodeError:
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def _sha256_path(path: Path) -> str:
+    digest = sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _should_exclude_path(root: Path, path: Path) -> bool:

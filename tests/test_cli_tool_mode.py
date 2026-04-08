@@ -623,6 +623,55 @@ def test_tool_analyze_repo_outputs_generated_preview(tmp_path, capsys):
     assert "pytest" in payload["profile"]["test_harnesses"]
     assert Path(payload["manifest_path"]).is_file()
     assert Path(payload["review_pack_path"]).is_file()
+    assert Path(payload["approval_request_path"]).is_file()
+    assert Path(payload["review_checklist_path"]).is_file()
+    assert payload["approval_status"] == "pending_review"
+
+
+def test_tool_approve_addon_preview_installs_generated_addon(tmp_path, capsys):
+    project_root = tmp_path / "demo_repo"
+    project_root.mkdir()
+    (project_root / "pyproject.toml").write_text(
+        "[project]\nname = 'demo-repo'\nversion = '0.1.0'\n\n[tool.pytest.ini_options]\naddopts = '-q'\n",
+        encoding="utf-8",
+    )
+    (project_root / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+    src_dir = project_root / "src"
+    src_dir.mkdir()
+    (src_dir / "api.py").write_text(
+        "from fastapi import FastAPI\n\napp = FastAPI()\n",
+        encoding="utf-8",
+    )
+
+    output_dir = tmp_path / "generated"
+    install_dir = tmp_path / "installed-addons"
+    analyze_exit_code = run_main_with_args([
+        "analyze-repo",
+        str(project_root),
+        "--output-dir",
+        str(output_dir),
+        "--addon-id",
+        "demo-fastapi-addon",
+    ])
+    assert analyze_exit_code == 0
+    capsys.readouterr()
+
+    exit_code = run_main_with_args([
+        "approve-addon-preview",
+        str(output_dir),
+        "--reviewer",
+        "Colin",
+        "--install-dir",
+        str(install_dir),
+    ])
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert exit_code == 0
+    assert payload["command"] == "approve-addon-preview"
+    assert payload["status"] == "approved"
+    assert payload["approved"] is True
+    assert Path(payload["approval_decision_path"]).is_file()
+    assert Path(payload["install_path"]).is_dir()
 
 
 def test_tool_review_accepts_backend_alias(monkeypatch, capsys):

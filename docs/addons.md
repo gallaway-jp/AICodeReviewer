@@ -59,12 +59,30 @@ The command currently writes:
 
 - `capability-profile.json` with detected languages, frameworks, tools, manifests, test harnesses, and recommended review types
 - `summary.txt` with a compact human-readable profile
+- `approval-request.json` with the maintainer review packet, generated bundle diff, and file hashes
+- `review-checklist.md` with the explicit approval checklist and follow-up command
 - `<addon-id>/addon.json`
 - `<addon-id>/review-pack.json`
 
 The analyzer now biases the capability profile toward primary repository content. Nested example, fixture, benchmark, sample, demo, and artifact trees are excluded so generated previews do not inherit framework noise from embedded reference projects.
 
-The generated scaffold is preview-only. Review and edit the output before pointing `addons.paths` at it or copying it into a real addon directory.
+The generated scaffold is preview-only. Review and edit the output before approving it.
+
+Approve or reject the preview explicitly:
+
+```bash
+aicodereviewer approve-addon-preview artifacts/generated-addon-preview --reviewer <name> --decision approve
+```
+
+Approvals write `approval-decision.json` and install the addon into the default discovered `addons/` directory unless you override `--install-dir`. Rejections keep the preview inactive and record the decision without installing it.
+
+Milestone 16 also includes a small external-repository validation harness that clones a curated catalog, runs `analyze-repo` against those repositories, and compares the generated bundle against the default bundle:
+
+```bash
+d:/Development/Python/AICodeReviewer/.venv/Scripts/python.exe tools/validate_generated_addons.py --json-out artifacts/generated-addon-validation/summary.json
+```
+
+The validation summary reports heuristic precision/recall on the curated external sample set and the initial relevance delta between the generated bundle and the default `best_practices + maintainability + testing` bundle.
 
 ## Manifest Shape
 
