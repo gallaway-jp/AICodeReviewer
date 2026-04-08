@@ -266,10 +266,12 @@ The conservative update and rollback policy is now documented in this guide and 
 Current CI limitation:
 
 - the checked-in workflow signs artifacts only when `WINDOWS_SIGN_CERT_BASE64` and `WINDOWS_SIGN_CERT_PASSWORD` are configured; otherwise it still produces the unsigned baseline by design
+- milestone-branch workflow run `24133425649` revalidated on 2026-04-08 that this limitation is still active: the workflow log reported `No signing certificate configured; continuing with unsigned artifact output.`, and artifact inspection reported `ExeSignatureStatus = NotSigned` plus `InstallerSignatureStatus = NotSigned`
 
 Current local-maintainer limitation on this machine:
 
 - `build_installer.bat` now gets through version detection correctly, but local installer compilation still stops until Inno Setup 6 is installed or `INNO_SETUP_COMPILER` is set
+- the current shell is still not elevated, so `run_installer_smoke_validation.ps1 -InstallMode AllUsers` exits immediately with the documented elevated-session guard instead of running the remaining all-users validation path
 
 ## Manual Validation Checklist
 

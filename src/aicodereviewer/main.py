@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Callable, Sequence, cast
 
 from aicodereviewer.addons import AddonRuntime, get_active_addon_runtime, install_addon_runtime
+from aicodereviewer.addon_generator import generate_addon_preview
 from aicodereviewer.auth import get_system_language, set_profile_name, clear_profile
 from aicodereviewer.backends import create_backend, get_backend_choices, resolve_backend_type
 from aicodereviewer.backends.health import check_backend, HealthReport
@@ -45,7 +46,7 @@ from aicodereviewer.review_presets import REVIEW_TYPE_PRESETS, format_review_typ
 logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 1
-TOOL_COMMANDS = {"review", "health", "fix-plan", "apply-fixes", "resume", "serve-api"}
+TOOL_COMMANDS = {"review", "health", "fix-plan", "apply-fixes", "resume", "serve-api", "analyze-repo"}
 EXIT_OK = 0
 EXIT_FAILURE = 1
 EXIT_CANCELLED = 3
@@ -440,6 +441,16 @@ def _build_tool_parser() -> argparse.ArgumentParser:
     serve_api_parser.add_argument("--review-pack", action="append", default=[], metavar="FILE")
     _add_runtime_override_args(serve_api_parser)
 
+    analyze_repo_parser = subparsers.add_parser(
+        "analyze-repo",
+        help="Analyze a repository and generate a preview addon scaffold",
+    )
+    analyze_repo_parser.add_argument("path", metavar="PATH")
+    analyze_repo_parser.add_argument("--output-dir", required=True, metavar="DIR")
+    analyze_repo_parser.add_argument("--addon-id", metavar="ID")
+    analyze_repo_parser.add_argument("--addon-name", metavar="NAME")
+    analyze_repo_parser.add_argument("--json-out", metavar="FILE")
+
     return parser
 
 
@@ -514,7 +525,60 @@ def _run_tool_command(
         return _run_resume_tool_mode(args)
     if args.command == "serve-api":
         return _run_serve_api_tool_mode(args)
+    if args.command == "analyze-repo":
+        return _run_analyze_repo_tool_mode(args)
     raise ValueError(f"Unsupported tool command: {args.command}")
+
+
+def _run_analyze_repo_tool_mode(args: argparse.Namespace) -> int:
+    """Analyze a repository and emit a generated addon preview envelope."""
+    payload: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "command": "analyze-repo",
+        "path": args.path,
+        "output_dir": args.output_dir,
+        "success": False,
+        "exit_code": EXIT_FAILURE,
+    }
+
+    context_logger = logging.getLogger("aicodereviewer.context_collector")
+    previous_context_level = context_logger.level
+    try:
+        context_logger.setLevel(logging.WARNING)
+        preview = generate_addon_preview(
+            args.path,
+            args.output_dir,
+            addon_id=args.addon_id,
+            addon_name=args.addon_name,
+        )
+    except Exception as exc:
+        payload.update({
+            "status": "error",
+            "error": _error_payload(str(exc), diagnostic=diagnostic_from_exception(exc, origin="analyze_repo")),
+        })
+        context_logger.setLevel(previous_context_level)
+        _write_json_result(payload, args.json_out)
+        return EXIT_FAILURE
+
+    context_logger.setLevel(previous_context_level)
+    payload.update({
+        "status": "generated",
+        "success": True,
+        "exit_code": EXIT_OK,
+        "addon_id": preview.addon_id,
+        "addon_name": preview.addon_name,
+        "addon_root": str(preview.addon_root),
+        "manifest_path": str(preview.manifest_path),
+        "review_pack_path": str(preview.review_pack_path),
+        "capability_profile_path": str(preview.capability_profile_path),
+        "summary_path": str(preview.summary_path),
+        "generated_review_key": preview.review_key,
+        "generated_preset_key": preview.preset_key,
+        "profile": preview.profile.to_dict(),
+        "preview_only": True,
+    })
+    _write_json_result(payload, args.json_out)
+    return EXIT_OK
 
 
 def _run_serve_api_tool_mode(args: argparse.Namespace) -> int:

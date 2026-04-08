@@ -652,6 +652,8 @@ Current status:
 - the installer documentation now also defines the current conservative update and rollback policy: uninstall the current build, choose preserve or remove for install-directory user data, install the target build, and rerun the existing GUI/CLI/config first-launch checks instead of assuming an unvalidated in-place upgrade contract
 - the unsigned default path was revalidated locally after the signing scaffold landed: `build_exe.bat` still succeeds with signing skipped when no certificate is configured, and `build_installer.bat` still stops only on the known missing-Inno-Setup prerequisite on this machine
 - the installer baseline is intentionally layered on top of the validated PyInstaller EXE path rather than replacing it
+- milestone-branch workflow run `24133425649` revalidated on 2026-04-08 that the CI signing path still lacks `WINDOWS_SIGN_CERT_BASE64`: the workflow logged `No signing certificate configured; continuing with unsigned artifact output.`, and artifact inspection reported `ExeSignatureStatus = NotSigned` and `InstallerSignatureStatus = NotSigned`
+- local `AllUsers` smoke validation is still externally blocked on this machine by lack of elevation: `run_installer_smoke_validation.ps1 -RunId 24130238872 -InstallMode AllUsers` exits immediately with the elevated-session guard
 - the remaining Milestone 15 gap is now concentrated in elevated all-users interactive validation and real certificate provisioning plus signed-artifact validation
 
 #### Deliverables
@@ -692,6 +694,13 @@ Current status:
 3. The HITL flow allows a maintainer to accept or edit generated prompts and definitions before the addon becomes active.
 4. In representative sample runs, the generated addon improves review relevance or reduces obviously irrelevant findings compared to a baseline (measured by developer adjudication or benchmark fixtures).
 5. The generated addon path remains conservative and reversible, with preview and approval before activation.
+
+#### Current Status
+
+- initial Milestone 16 foundation is now in progress on `milestone/16-adaptive-addon-generator`
+- the repository now includes a conservative `analyze-repo` tool-mode command that scans a target repository, emits a capability profile, and writes a preview addon scaffold without activating it
+- the first slice writes `capability-profile.json`, `summary.txt`, `addon.json`, and `review-pack.json`, then validates the generated manifest against the existing addon loader
+- focused tests now cover repository analysis, generated scaffold validity, and CLI JSON output for the new command
 
 #### Implementation Notes
 
