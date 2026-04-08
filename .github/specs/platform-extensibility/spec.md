@@ -635,8 +635,10 @@ Current status:
 - the PyInstaller spec on the active Milestone 15 branch now also stamps Windows version-resource metadata onto `AICodeReviewer.exe`; both a local rebuild and feature-branch workflow run `24117477221` confirmed `FileVersion 0.2.0.0` and `ProductVersion 0.2.0`
 - the installer definition on the active Milestone 15 branch now supports silent uninstall control flags (`/PRESERVEUSERDATA`, `/REMOVEUSERDATA`), and `tools/manual_checks/installer/run_installer_smoke_validation.ps1` can execute an elevated install plus preserve/remove-data uninstall smoke pass against a downloaded CI artifact
 - the installer now also allows command-line privilege overrides (`/CURRENTUSER`, `/ALLUSERS`) for validation runs, and the smoke-validation script can choose a non-admin current-user install path when elevation is not available
+- the packaged CLI help path on Windows no longer crashes on legacy console encodings because the CLI now reconfigures stdout and stderr with replacement-safe error handling before printing localized help text
+- feature-branch workflow run `24119245773` built a fresh installer artifact with the current-user override and CLI help fixes, and a non-admin smoke-validation run against `artifacts/installer-ci-24119245773` passed with checksum verification, `FileVersion 0.2.0.0`, `ProductVersion 0.2.0`, both Start Menu shortcuts present after install, and passing preserve/remove-data uninstall paths
 - the installer baseline is intentionally layered on top of the validated PyInstaller EXE path rather than replacing it
-- end-to-end install and uninstall validation is still pending, and installer signing plus user-manual install/uninstall guidance remain follow-on work before Milestone 15 can be treated as complete
+- the remaining Milestone 15 gap is now concentrated in elevated all-users interactive validation, installer signing, and user-manual install/uninstall guidance
 
 #### Deliverables
 
