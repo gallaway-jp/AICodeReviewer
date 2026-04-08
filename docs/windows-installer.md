@@ -165,7 +165,23 @@ Observed properties:
 - the checksum file matches the packaged EXE payload
 - the installer file reports version `0.2.0`
 - the installer is currently unsigned (`NotSigned`), which matches the current documented CI limitation
-- the packaged EXE currently has blank Windows file/product version metadata, so version-resource polish remains a follow-on packaging improvement
+- the original inspected CI artifact had blank EXE version metadata, which was later addressed by the checked-in PyInstaller version-resource update
+
+## EXE Version Metadata
+
+The checked-in `AICodeReviewer.spec` now stamps Windows version-resource metadata onto the packaged EXE using the version from `pyproject.toml`.
+
+Local validation on the current Milestone 15 branch produced:
+
+- `FileVersion = 0.2.0.0`
+- `ProductVersion = 0.2.0`
+
+CI validation on workflow run `24117477221` produced the same EXE metadata in the downloaded `windows-installer` artifact:
+
+- `ExeFileVersion = 0.2.0.0`
+- `ExeProductVersion = 0.2.0`
+
+This closes the earlier packaging-polish gap where the installer had version metadata but the packaged EXE did not.
 
 ## Install And Uninstall Behavior
 
