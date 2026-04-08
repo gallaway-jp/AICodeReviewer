@@ -112,6 +112,20 @@ That workflow:
 - runs `build_installer.bat`
 - uploads the produced installer plus the packaged EXE and checksum as workflow artifacts
 
+That CI path is now validated end to end.
+
+Verified baseline:
+
+- GitHub Actions workflow run `24111725510`
+- commit `1d38689` on `main`
+- successful artifact upload for the installer plus the packaged EXE and checksum
+
+The validation pass required three concrete fixes in the checked-in packaging path:
+
+- replace fragile batch `for /f` version parsing with a temp-file read from `pyproject.toml`
+- make `build_exe.bat` and `build_installer.bat` use explicit repository-root paths instead of implicit working-directory assumptions
+- track the required checked-in `AICodeReviewer.spec` file in git instead of letting `.gitignore` exclude it from CI checkouts
+
 The installer currently packages:
 
 - `AICodeReviewer.exe`
@@ -145,8 +159,7 @@ Milestone 15 is not fully complete yet.
 
 Open follow-on work:
 
-- validate a full successful installer build on a machine with Inno Setup installed
-- verify install, GUI launch, CLI launch, uninstall, and preserve/remove-data flows end to end
+- perform manual install, GUI launch, CLI launch, uninstall, and preserve/remove-data validation from a produced installer artifact
 - add installer and uninstall instructions to the task-oriented user manual once the build is validated end to end
 - decide whether installer signing should be wired into the local script, the CI workflow, or both
 - document update and rollback expectations after the first successful installer build is validated
@@ -154,6 +167,10 @@ Open follow-on work:
 Current CI limitation:
 
 - the checked-in workflow produces an unsigned installer artifact baseline only; signing is still explicitly pending
+
+Current local-maintainer limitation on this machine:
+
+- `build_installer.bat` now gets through version detection correctly, but local installer compilation still stops until Inno Setup 6 is installed or `INNO_SETUP_COMPILER` is set
 
 ## Recommendation
 
