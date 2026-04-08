@@ -632,6 +632,7 @@ Current status:
 - the first successful workflow artifact has now also been downloaded and inspected: it contains the packaged EXE, checksum, and `AICodeReviewer-Setup-0.2.0.exe`, with the checksum matching and the installer still unsigned as expected
 - the workflow has also been refreshed to current GitHub Actions major versions (`actions/checkout@v6`, `actions/setup-python@v6`, `actions/upload-artifact@v7`) and revalidated successfully in run `24115382363`
 - installer manual-validation prep now exists via `tools/manual_checks/installer/inspect_installer_artifact.ps1` and `tools/manual_checks/installer/validation-log-template.md`, so the remaining install and uninstall gap is structured and repeatable rather than ad hoc
+- the PyInstaller spec on the active Milestone 15 branch now also stamps Windows version-resource metadata onto `AICodeReviewer.exe`; a local rebuild confirmed `FileVersion 0.2.0.0` and `ProductVersion 0.2.0`
 - the installer baseline is intentionally layered on top of the validated PyInstaller EXE path rather than replacing it
 - end-to-end install and uninstall validation is still pending, and installer signing plus user-manual install/uninstall guidance remain follow-on work before Milestone 15 can be treated as complete
 
