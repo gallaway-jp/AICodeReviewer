@@ -457,11 +457,11 @@ The Milestone 7 acceptance criteria are now satisfied for the current Copilot-fi
 - allow detachable desktop windows for non-Review pages that can be snapped back into the main application
 
 Current baseline status:
-- in progress; the current Milestone 10 baseline supports detaching the Output Log, Settings, and Benchmarks pages into their own desktop windows with explicit redock behavior
-- the detached Output Log window still shares the same underlying log stream as the main tab, the detached Settings page preserves unsaved form state across detach and redock by rebuilding the canonical Settings surface in the active host window, and the detached Benchmark page preserves its loaded browser/compare surface state across detach and redock through snapshot-and-restore of the active benchmark view
-- persisted detached-page state now restores multiple windows after restart through shared `gui.detached_pages` tracking plus per-page geometry keys for log, settings, and benchmark windows
+- in progress; the current Milestone 10 baseline supports detaching the Output Log, Settings, Benchmarks, and Addon Review pages into their own desktop windows with explicit redock behavior
+- the detached Output Log window still shares the same underlying log stream as the main tab, the detached Settings page preserves unsaved form state across detach and redock by rebuilding the canonical Settings surface in the active host window, the detached Benchmark page preserves its loaded browser/compare surface state across detach and redock through snapshot-and-restore of the active benchmark view, and the detached Addon Review page preserves the loaded preview review state across detach and redock through the same snapshot-and-restore pattern
+- persisted detached-page state now restores multiple windows after restart through shared `gui.detached_pages` tracking plus per-page geometry keys for log, settings, benchmark, and addon-review windows
 - the keyboard portion of the Milestone 10 workflow now uses `Ctrl+Shift+O` to open the currently selected detachable page in a window, and detached pages standardize on `Ctrl+W` for redocking back into the main app
-- targeted regression coverage now exercises detach, redock, restart restore, shortcut-handler dispatch, and three-page restore for the log-plus-settings-plus-benchmark baseline without breaking the existing single-window workflows for those pages
+- targeted regression coverage now exercises detach, redock, restart restore, shortcut-handler dispatch, and four-page restore for the log-plus-settings-plus-benchmark-plus-addon-review baseline without breaking the existing single-window workflows for those pages
 - Milestone 10 no longer treats literal drag-out tab gestures as a blocking requirement; explicit Open In Window actions plus `Ctrl+Shift+O` and `Ctrl+W` satisfy the detachable-window acceptance path, while true drag-out remains optional future UX polish
 - remaining Milestone 10 work is optional expansion to additional approved non-Review pages such as Results if broader detachable coverage is still desired
 
@@ -707,6 +707,9 @@ Current status:
 - the repository now includes `review-addon-preview`, a richer diff-first interactive review surface that renders generated-vs-default and installed-vs-generated addon diffs before approval
 - the external repository catalog has expanded beyond the initial three samples, and `.github/workflows/generated-addon-validation.yml` now reruns that catalog on a weekly schedule plus manual dispatch
 - the relevance baseline has moved to judged review-output quality via `tools/evaluate_generated_addon_review_quality.py` and representative repository fixtures under `benchmarks/addon_generation/review_quality/fixtures`
+- the diff-first approval path now also exists as a dedicated desktop Addon Review page with detachable-window support, so maintainers can inspect generated previews, rendered diffs, checklist state, and approval decisions directly inside the GUI instead of using Settings as an interim host surface
+- the judged runner now persists backend-specific history, emits markdown trend summaries, and is scheduled through `.github/workflows/generated-addon-judged-quality.yml`, which restores the prior backend history artifact before rerunning the representative judged fixture set on a provisioned runner
+- the judged representative fixture set has expanded beyond the initial FastAPI and React pair into a broader cross-stack baseline including Flask, Express, Django, and Vue coverage
 
 #### Recent Validation
 
@@ -714,12 +717,13 @@ Current status:
 - a real `analyze-repo` self-run against this repository now emits a clean JSON envelope and reports only `pytest` instead of framework noise from embedded sample content
 - focused pytest coverage for `tests/test_addon_approval.py`, `tests/test_addon_validation.py`, and the expanded CLI tool-mode tests now passes for the approval gate, installation path, and relevance scoring contract
 - focused pytest coverage now also passes for `tests/test_addon_review_surface.py` and `tests/test_addon_review_quality.py`, covering the interactive review surface and judged score-delta runner
+- targeted GUI and judged-quality regression coverage now also passes for the dedicated desktop Addon Review surface, detach/redock workflows, detached-page restart restore, and the judged history trend reporting slice: `13 passed`
 
 #### Remaining Milestone 16 Gaps
 
-- expand the diff-first review surface from the current terminal interaction into a dedicated GUI surface when the addon workflow moves into the desktop app
 - continue broadening the curated external repository sample set and refine expectations as upstream repositories drift
-- extend the judged review-quality runner from the first representative repository set into a larger cross-stack suite and backend-comparison history
+- continue broadening the judged representative repository suite and backend coverage beyond the current provisioned-runner scheduled baseline
+- decide whether the judged workflow should eventually publish longer-lived trend dashboards beyond uploaded history artifacts and markdown step summaries
 
 #### Validation Artifacts
 
@@ -728,6 +732,8 @@ Current status:
 - `tools/validate_generated_addons.py` writes per-repository preview outputs plus a JSON summary covering heuristic precision/recall and generated-vs-default bundle relevance
 - `review-addon-preview` renders the diff-first approval surface and can also record a maintainer decision in the same interactive path
 - `tools/evaluate_generated_addon_review_quality.py` writes judged default-vs-generated score deltas against representative repository fixtures and is the current Milestone 16 relevance baseline
+- the desktop Addon Review page now exposes the same generated-preview review path inside the GUI and can be detached/redocked like the other approved non-Review surfaces
+- `.github/workflows/generated-addon-judged-quality.yml` restores the last backend history artifact, reruns the judged fixture catalog, appends the new backend history entry, publishes a markdown trend summary, and uploads the updated history artifact set
 
 
 

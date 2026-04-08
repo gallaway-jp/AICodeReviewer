@@ -51,6 +51,9 @@ class AppShellLayoutHelper:
             t("gui.tab.benchmarks"): self._callable_refreshers(
                 getattr(self.host, "_refresh_benchmark_tab_layout", None),
             ),
+            t("gui.tab.addon_review"): self._callable_refreshers(
+                getattr(self.host, "_refresh_addon_review_tab_layout", None),
+            ),
             t("gui.tab.settings"): self._callable_refreshers(
                 getattr(self.host, "_refresh_settings_layout", None),
             ),
@@ -67,6 +70,7 @@ class AppShellLayoutHelper:
             getattr(self.host, "_refresh_results_layout", None),
             getattr(self.host, "_refresh_settings_layout", None),
             getattr(self.host, "_refresh_benchmark_tab_layout", None),
+            getattr(self.host, "_refresh_addon_review_tab_layout", None),
             getattr(self.host, "_refresh_log_tab_layout", None),
         )
 

@@ -36,6 +36,8 @@ class SettingsTabMixin:
 
         if hasattr(self, "_settings_addon_intro_label"):
             self._settings_addon_intro_label.configure(wraplength=layout.wraplength)
+        if hasattr(self, "_settings_addon_review_launcher_label"):
+            self._settings_addon_review_launcher_label.configure(wraplength=layout.wraplength)
         if hasattr(self, "_settings_note_label"):
             self._settings_note_label.configure(wraplength=layout.wraplength)
         if hasattr(self, "local_http_status_label"):
@@ -315,11 +317,12 @@ class SettingsTabMixin:
     def _populate_addon_contributions(self) -> None:
         self._settings_addon_renderer().populate_contributions(self.addon_contributions_frame)
 
-    def _refresh_addon_diagnostics(self) -> None:
+    def _refresh_addon_diagnostics(self, *, show_toast: bool = True) -> None:
         install_addon_runtime()
         install_review_registry(merge_review_pack_paths(get_active_review_pack_paths()))
         self._populate_addon_diagnostics()
-        self._show_toast(t("gui.settings.addons_refreshed"))
+        if show_toast:
+            self._show_toast(t("gui.settings.addons_refreshed"))
 
     def _auto_populate_models(self):
         """Auto-populate Copilot and Bedrock models when Settings tab opens."""

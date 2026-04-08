@@ -16,6 +16,7 @@ Provides full feature parity with the CLI:
 The implementation is decomposed into mixins for maintainability:
 
 * :class:`ReviewTabMixin`   - Review tab UI, validation, review execution
+* :class:`AddonReviewTabMixin` - Addon review tab and detached window
 * :class:`ResultsTabMixin`  - Results tab, issue cards, AI Fix, sessions
 * :class:`SettingsTabMixin`  - Settings tab, save / reset
 * :class:`HealthMixin`       - Backend health checks, model refresh
@@ -28,6 +29,7 @@ from aicodereviewer.execution import ReviewExecutionRuntime
 from aicodereviewer.http_api import create_local_http_app, start_local_http_server
 from aicodereviewer.i18n import t
 
+from .addon_review_mixin import AddonReviewTabMixin
 from .app_composition import AppCompositionHelper
 from .benchmark_mixin import BenchmarkTabMixin
 from .review_mixin import ReviewTabMixin
@@ -55,6 +57,7 @@ __all__ = [
 
 class App(
     ReviewTabMixin,
+    AddonReviewTabMixin,
     BenchmarkTabMixin,
     ResultsTabMixin,
     SettingsTabMixin,
@@ -218,6 +221,12 @@ class App(
 
     def _redock_detached_benchmark_window(self) -> None:
         self._benchmark_redock_detached_window()
+
+    def _open_detached_addon_review_window(self, *, restoring: bool = False) -> None:
+        self._addon_review_open_detached_window(restoring=restoring)
+
+    def _redock_detached_addon_review_window(self) -> None:
+        self._addon_review_redock_detached_window()
 
     def _detach_current_page_shortcut(self, event: Any = None) -> str | None:
         return self._app_helpers().surfaces().detach_current_page_into_window(event)
