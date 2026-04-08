@@ -627,8 +627,9 @@ Current status:
 - installer trade-off analysis is documented in `docs/windows-installer.md`
 - Inno Setup is the chosen first implementation path for the native Windows installer flow
 - checked-in installer scaffolding now exists via `build_installer.bat`, `installer/AICodeReviewer.iss`, and `installer/default-config.ini`
+- a first Windows CI packaging job now exists at `.github/workflows/windows-installer.yml` and builds the installer artifact on `windows-latest` using Inno Setup plus the checked-in batch entry point
 - the installer baseline is intentionally layered on top of the validated PyInstaller EXE path rather than replacing it
-- end-to-end installer build validation is still pending on a Windows machine with Inno Setup 6 installed, and installer signing plus user-manual install/uninstall guidance remain follow-on work before Milestone 15 can be treated as complete
+- end-to-end install and uninstall validation is still pending, and installer signing plus user-manual install/uninstall guidance remain follow-on work before Milestone 15 can be treated as complete
 
 #### Deliverables
 

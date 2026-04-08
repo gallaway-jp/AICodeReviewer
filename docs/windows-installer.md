@@ -102,6 +102,16 @@ The maintainer flow is:
 4. let the script stage the release payload and invoke the checked-in Inno Setup definition
 5. collect the installer output from `dist/installer/`
 
+The repository also now includes a first CI baseline at `.github/workflows/windows-installer.yml`.
+
+That workflow:
+
+- runs on `windows-latest`
+- installs Inno Setup 6 through Chocolatey
+- installs the Python package with GUI extras
+- runs `build_installer.bat`
+- uploads the produced installer plus the packaged EXE and checksum as workflow artifacts
+
 The installer currently packages:
 
 - `AICodeReviewer.exe`
@@ -138,8 +148,12 @@ Open follow-on work:
 - validate a full successful installer build on a machine with Inno Setup installed
 - verify install, GUI launch, CLI launch, uninstall, and preserve/remove-data flows end to end
 - add installer and uninstall instructions to the task-oriented user manual once the build is validated end to end
-- decide whether installer signing should be wired into a local script, CI, or both
+- decide whether installer signing should be wired into the local script, the CI workflow, or both
 - document update and rollback expectations after the first successful installer build is validated
+
+Current CI limitation:
+
+- the checked-in workflow produces an unsigned installer artifact baseline only; signing is still explicitly pending
 
 ## Recommendation
 

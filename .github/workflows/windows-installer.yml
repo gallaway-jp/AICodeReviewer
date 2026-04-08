@@ -1,0 +1,44 @@
+name: Windows Installer
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install system prerequisites
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+
+      - name: Install Python dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[gui]"
+
+      - name: Build installer
+        shell: cmd
+        run: build_installer.bat
+
+      - name: Upload installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: |
+            dist/installer/*.exe
+            dist/AICodeReviewer.exe
+            dist/AICodeReviewer.exe.sha256
