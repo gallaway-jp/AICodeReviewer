@@ -148,6 +148,12 @@ The installer currently packages:
 
 The first validated installer workflow artifact was downloaded and inspected from GitHub Actions workflow run `24111725510`.
 
+You can repeat the same artifact preflight locally with:
+
+```powershell
+pwsh -File tools/manual_checks/installer/inspect_installer_artifact.ps1 -ArtifactRoot artifacts/installer-ci-24111725510
+```
+
 Observed payload:
 
 - `windows-installer/AICodeReviewer.exe`
@@ -159,6 +165,7 @@ Observed properties:
 - the checksum file matches the packaged EXE payload
 - the installer file reports version `0.2.0`
 - the installer is currently unsigned (`NotSigned`), which matches the current documented CI limitation
+- the packaged EXE currently has blank Windows file/product version metadata, so version-resource polish remains a follow-on packaging improvement
 
 ## Install And Uninstall Behavior
 
@@ -200,6 +207,11 @@ Current local-maintainer limitation on this machine:
 ## Manual Validation Checklist
 
 Use this checklist against a produced installer artifact before treating the install and uninstall path as fully validated.
+
+Maintainer helpers for this step now live under `tools/manual_checks/installer/`:
+
+- `inspect_installer_artifact.ps1` for checksum, version, and signing preflight
+- `validation-log-template.md` for recording the manual install and uninstall results
 
 1. Install `AICodeReviewer-Setup-<version>.exe` with default options.
 2. Confirm the application lands under `Program Files\AICodeReviewer`.
