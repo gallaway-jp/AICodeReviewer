@@ -239,9 +239,10 @@ Milestone 15 is not fully complete yet.
 Open follow-on work:
 
 - perform an elevated all-users interactive validation pass from a produced installer artifact, including GUI launch, CLI launch, and uninstall behavior from the default `Program Files` path
-- add installer and uninstall instructions to the task-oriented user manual once the build is validated end to end
 - provision a real signing certificate and secret-management path, then validate the signed EXE and installer artifacts in CI and on a Windows machine
 - document update and rollback expectations after the all-users interactive path and signed-artifact validation are settled
+
+The task-oriented packaged install and uninstall workflow is now documented in `docs/user-manual.md`.
 
 Current CI limitation:
 
