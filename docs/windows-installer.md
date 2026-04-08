@@ -257,9 +257,24 @@ Use this checklist against a produced installer artifact before treating the ins
 
 Maintainer helpers for this step now live under `tools/manual_checks/installer/`:
 
+- `download_installer_artifact.ps1` for downloading and extracting a GitHub Actions `windows-installer` artifact into the normalized local `artifacts/installer-ci-<runid>/windows-installer/` layout
 - `inspect_installer_artifact.ps1` for EXE checksum validation, installer checksum validation when published, version inspection, and EXE-plus-installer signing preflight
 - `run_installer_smoke_validation.ps1` for current-user or all-users silent install, CLI launch, and preserve/remove-data uninstall smoke validation
 - `validation-log-template.md` for recording the manual install and uninstall results
+
+To download and normalize a specific workflow artifact locally, run:
+
+```powershell
+pwsh -File tools/manual_checks/installer/download_installer_artifact.ps1 -RunId 24130238872
+```
+
+To download the latest successful installer artifact for a branch, run:
+
+```powershell
+pwsh -File tools/manual_checks/installer/download_installer_artifact.ps1 -Branch milestone/15-windows-installer
+```
+
+The helper path has been validated against workflow run `24130238872`: after download, `artifacts/installer-ci-24130238872/windows-installer/` was immediately consumable by `inspect_installer_artifact.ps1`, which still reported `ExeChecksumMatches = True` and `InstallerChecksumStatus = Match`.
 
 For an elevated unattended smoke pass on a Windows machine, run:
 
