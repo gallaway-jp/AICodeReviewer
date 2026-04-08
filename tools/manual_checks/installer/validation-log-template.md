@@ -17,11 +17,13 @@ Use this template when validating a produced Windows installer artifact by hand.
 - [ ] Run `pwsh -File tools/manual_checks/installer/inspect_installer_artifact.ps1 -ArtifactRoot <artifact-dir>`
 - Expected EXE SHA256:
 - Actual EXE SHA256:
-- Checksum match:
+- EXE checksum match:
+- Expected installer SHA256:
+- Actual installer SHA256:
+- Installer checksum status:
 - EXE file version:
 - EXE product version:
 - EXE signature status:
-- Installer SHA256:
 - Installer file version:
 - Installer product version:
 - Installer signature status:

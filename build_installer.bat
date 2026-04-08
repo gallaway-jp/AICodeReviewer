@@ -87,6 +87,10 @@ echo Signing installer if certificate configuration is available...
 "%POWERSHELL_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%ROOT_DIR%\tools\sign_windows_binary.ps1" -FilePath "%INSTALLER_PATH%"
 if errorlevel 1 goto :error
 
+echo Writing installer SHA256 checksum...
+"%PYTHON%" -c "from pathlib import Path; import hashlib; installer_path = Path(r'%INSTALLER_PATH%'); digest = hashlib.sha256(installer_path.read_bytes()).hexdigest().upper(); Path(f'{installer_path}.sha256').write_text(f'{digest}  {installer_path.name}', encoding='ascii')"
+if errorlevel 1 goto :error
+
 echo Installer build complete. Output is in dist\installer
 exit /b 0
 

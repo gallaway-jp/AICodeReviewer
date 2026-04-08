@@ -196,6 +196,7 @@ $summary = @(
     "- Installer path: $installerPath"
     "- Install directory: $InstallDir"
     "- EXE checksum match: $($artifactJson.ExeChecksumMatches)"
+    "- Installer checksum status: $($artifactJson.InstallerChecksumStatus)"
     "- EXE file version: $($artifactJson.ExeFileVersion)"
     "- EXE product version: $($artifactJson.ExeProductVersion)"
     "- EXE signature status: $($artifactJson.ExeSignatureStatus)"

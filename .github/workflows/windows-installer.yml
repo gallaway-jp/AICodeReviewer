@@ -50,6 +50,7 @@ jobs:
           name: windows-installer
           path: |
             dist/installer/*.exe
+            dist/installer/*.exe.sha256
             dist/AICodeReviewer.exe
             dist/AICodeReviewer.exe.sha256
 
