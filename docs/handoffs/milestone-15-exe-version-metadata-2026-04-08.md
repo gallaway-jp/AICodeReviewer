@@ -22,6 +22,15 @@ Observed version metadata on `dist/AICodeReviewer.exe`:
 
 The PyInstaller log also confirmed the resource step explicitly with `Copying version information to EXE`.
 
+CI validation also succeeded:
+
+- workflow run: `24117477221`
+- branch: `feature/installer-exe-version-metadata`
+- downloaded artifact inspection reported:
+	- `ExeFileVersion = 0.2.0.0`
+	- `ExeProductVersion = 0.2.0`
+	- checksum match = `True`
+
 ## Notes
 
 - the first inspected CI artifact still reflects the earlier pre-fix state, where the EXE had blank version metadata

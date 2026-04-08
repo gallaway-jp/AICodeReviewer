@@ -176,6 +176,11 @@ Local validation on the current Milestone 15 branch produced:
 - `FileVersion = 0.2.0.0`
 - `ProductVersion = 0.2.0`
 
+CI validation on workflow run `24117477221` produced the same EXE metadata in the downloaded `windows-installer` artifact:
+
+- `ExeFileVersion = 0.2.0.0`
+- `ExeProductVersion = 0.2.0`
+
 This closes the earlier packaging-polish gap where the installer had version metadata but the packaged EXE did not.
 
 ## Install And Uninstall Behavior
