@@ -84,10 +84,19 @@ if (-not $OutputDir) {
 }
 
 if ((Test-Path -LiteralPath $OutputDir) -and (-not $Force) -and (Test-DownloadedArtifactLayout -ArtifactRoot $OutputDir)) {
+    if (-not $selectedRun) {
+        $selectedRun = Invoke-GhCommand -Arguments @(
+            'run', 'view', $resolvedRunId,
+            '--json', 'databaseId,displayTitle,headBranch,headSha,status,conclusion,createdAt'
+        ) -ExpectJson
+    }
+
     $result = [pscustomobject]@{
         RunId = $resolvedRunId
         Repository = $Repository
         ArtifactName = $ArtifactName
+        HeadBranch = $selectedRun.headBranch
+        HeadSha = $selectedRun.headSha
         ArtifactRoot = (Resolve-Path $OutputDir).Path
         PayloadRoot = (Resolve-Path (Join-Path $OutputDir 'windows-installer')).Path
         ReusedExisting = $true

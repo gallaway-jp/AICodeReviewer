@@ -124,20 +124,18 @@ if (-not $LogDir) {
 
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
-$inspectArgs = @{
-    Json = $true
-}
+$inspectArgs = @('-NoProfile', '-File', $inspectScript, '-Json')
 if ($ArtifactRoot) {
-    $inspectArgs.ArtifactRoot = $ArtifactRoot
+    $inspectArgs += @('-ArtifactRoot', $ArtifactRoot)
 }
 if ($RunId) {
-    $inspectArgs.RunId = $RunId
+    $inspectArgs += @('-RunId', $RunId)
 }
 if ($Branch) {
-    $inspectArgs.Branch = $Branch
+    $inspectArgs += @('-Branch', $Branch)
 }
 
-$artifactJson = & pwsh -File $inspectScript @inspectArgs | ConvertFrom-Json
+$artifactJson = & pwsh @inspectArgs | ConvertFrom-Json
 $installerPath = $artifactJson.InstallerPath
 
 Test-PathExists -LiteralPath $installerPath -Label 'Installer executable'

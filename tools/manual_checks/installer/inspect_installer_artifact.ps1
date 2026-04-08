@@ -44,17 +44,15 @@ if (($RunId -or $Branch) -and $ArtifactRoot) {
 }
 
 if ($RunId -or $Branch) {
-    $downloadArgs = @{
-        Json = $true
-    }
+    $downloadArgs = @('-NoProfile', '-File', $downloadScript, '-Json')
     if ($RunId) {
-        $downloadArgs.RunId = $RunId
+        $downloadArgs += @('-RunId', $RunId)
     }
     if ($Branch) {
-        $downloadArgs.Branch = $Branch
+        $downloadArgs += @('-Branch', $Branch)
     }
 
-    $downloadResult = & pwsh -File $downloadScript @downloadArgs | ConvertFrom-Json
+    $downloadResult = & pwsh @downloadArgs | ConvertFrom-Json
     $ArtifactRoot = $downloadResult.ArtifactRoot
 }
 
