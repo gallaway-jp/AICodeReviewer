@@ -232,6 +232,24 @@ Current user-data definition for the installer flow:
 
 This is intentionally scoped to the current application behavior, where the default config and log paths are relative to the working directory or install directory rather than an AppData-only layout.
 
+## Current Update And Rollback Policy
+
+The currently documented packaged-build policy is conservative: treat both updates and rollbacks as uninstall-plus-reinstall flows.
+
+Supported workflow:
+
+1. close the GUI and any CLI sessions running from the install directory
+2. uninstall the current build
+3. choose preserve-data if you want to keep `config.ini`, `aicodereviewer.log`, and `aicodereviewer-audit.log` for the next install; choose remove-data if you want a clean reset
+4. install the target build, whether it is newer for an update or older for a rollback
+5. rerun the first-launch checks: GUI launch, CLI `AICodeReviewer.exe --help`, and `config.ini` presence in the install directory
+
+Why this is the documented baseline:
+
+- the installer already has validated preserve/remove-data uninstall behavior
+- `config.ini` is packaged with `onlyifdoesntexist uninsneveruninstall`, so preserved configuration survives the uninstall and is not overwritten on reinstall
+- this avoids claiming an in-place update contract that has not yet been separately validated on this machine
+
 ## Current Limitations
 
 Milestone 15 is not fully complete yet.
@@ -240,9 +258,10 @@ Open follow-on work:
 
 - perform an elevated all-users interactive validation pass from a produced installer artifact, including GUI launch, CLI launch, and uninstall behavior from the default `Program Files` path
 - provision a real signing certificate and secret-management path, then validate the signed EXE and installer artifacts in CI and on a Windows machine
-- document update and rollback expectations after the all-users interactive path and signed-artifact validation are settled
 
 The task-oriented packaged install and uninstall workflow is now documented in `docs/user-manual.md`.
+
+The conservative update and rollback policy is now documented in this guide and summarized in `docs/user-manual.md`.
 
 Current CI limitation:
 
