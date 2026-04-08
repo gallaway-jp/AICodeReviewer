@@ -114,7 +114,7 @@ That workflow:
 - optionally decodes a signing certificate from GitHub Actions secrets when one is configured
 - runs `build_installer.bat`
 - uses `actions/upload-artifact@v7`
-- uploads the produced installer plus the packaged EXE and checksum as workflow artifacts
+- uploads the produced installer, installer checksum, packaged EXE, and EXE checksum as workflow artifacts
 
 That CI path is now validated end to end.
 
@@ -169,6 +169,8 @@ The installer currently packages:
 - `README.md`
 - a clean default `config.ini` derived from a sanitized installer template rather than the maintainer's working copy
 
+The local installer output now also includes `dist/installer/AICodeReviewer-Setup-<version>.exe.sha256`, generated after optional signing so the published checksum matches the final installer binary.
+
 ## Verified CI Artifact Snapshot
 
 The first validated installer workflow artifact was downloaded and inspected from GitHub Actions workflow run `24111725510`.
@@ -184,6 +186,10 @@ Observed payload:
 - `windows-installer/AICodeReviewer.exe`
 - `windows-installer/AICodeReviewer.exe.sha256`
 - `windows-installer/installer/AICodeReviewer-Setup-0.2.0.exe`
+
+The current milestone branch extends that artifact contract with `windows-installer/installer/AICodeReviewer-Setup-<version>.exe.sha256` so future installer artifacts publish a checksum for the installer binary itself rather than relying only on an inspection-time recomputed hash.
+
+That checksum path has now been validated in GitHub Actions workflow run `24130238872` on the active Milestone 15 branch: the downloaded artifact included `AICodeReviewer-Setup-0.2.0.exe.sha256`, and local inspection of `artifacts/installer-ci-24130238872` reported `InstallerChecksumStatus = Match`.
 
 Observed properties:
 
@@ -251,7 +257,7 @@ Use this checklist against a produced installer artifact before treating the ins
 
 Maintainer helpers for this step now live under `tools/manual_checks/installer/`:
 
-- `inspect_installer_artifact.ps1` for checksum, version, and EXE-plus-installer signing preflight
+- `inspect_installer_artifact.ps1` for EXE checksum validation, installer checksum validation when published, version inspection, and EXE-plus-installer signing preflight
 - `run_installer_smoke_validation.ps1` for current-user or all-users silent install, CLI launch, and preserve/remove-data uninstall smoke validation
 - `validation-log-template.md` for recording the manual install and uninstall results
 
@@ -285,6 +291,8 @@ Validation status for this automation path:
 - feature-branch workflow run `24119245773` produced a fresh installer artifact containing the current-user override support and CLI help fix
 - a non-admin current-user smoke-validation run against `artifacts/installer-ci-24119245773` completed successfully, confirming checksum match, `FileVersion 0.2.0.0`, `ProductVersion 0.2.0`, both Start Menu shortcuts after install, and passing preserve-data plus remove-data uninstall paths
 - the artifact-inspection and smoke-validation helpers now report both EXE and installer signature status so signed runs can be verified without a separate ad hoc check
+- the installer build path now also emits a published installer checksum file, and the inspection plus smoke-validation helpers validate that checksum when present while remaining backward-compatible with older artifacts that predate it
+- feature-branch workflow run `24130238872` validated the published installer checksum path end to end: the artifact contained `AICodeReviewer-Setup-0.2.0.exe.sha256`, the EXE checksum still matched, and the installer checksum inspected as `Match`
 
 1. Install `AICodeReviewer-Setup-<version>.exe` with default options.
 2. Confirm the application lands under `Program Files\AICodeReviewer`.
