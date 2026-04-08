@@ -579,12 +579,19 @@ aicodereviewer apply-fixes --plan-file artifacts/fix-plan.json --json-out artifa
 aicodereviewer resume --artifact-file artifacts/fix-plan.json
 ```
 
+5. Generate a preview addon scaffold for a repository-specific review bundle when you want to tune future runs without editing core files.
+
+```bash
+aicodereviewer analyze-repo . --output-dir artifacts/generated-addon-preview --addon-id my-repo-adaptive-review
+```
+
 Use this path when you want:
 
 - machine-readable review envelopes
 - resumable automation
 - separated review and apply phases
 - retry and diagnostic metadata for failures
+- a preview addon scaffold derived from the current repository shape
 
 Use [CLI Guide](cli.md) and [Reports and Outputs](reports.md) for the full tool-mode contract.
 
@@ -594,7 +601,12 @@ Use this path when you want to add a review pack, backend provider, Settings con
 
 Fastest starter path:
 
-1. Copy one of the checked-in examples under `examples/`.
+1. Either generate a preview scaffold or copy one of the checked-in examples under `examples/`.
+
+```bash
+aicodereviewer analyze-repo . --output-dir artifacts/generated-addon-preview --addon-id my-repo-adaptive-review
+```
+
 2. Point `addons.paths` at the addon directory or manifest.
 3. Run addon discovery.
 
@@ -614,6 +626,8 @@ Use these examples as starting points:
 - `examples/addon-secure-defaults/` for manifest-only review-pack contributions
 - `examples/addon-echo-backend/` for backend provider plus Settings-surface contribution
 - `examples/addon-editor-hooks/` for popup-editor and staged-preview hooks
+
+The generated `analyze-repo` scaffold is also a valid starting point when you want a repository-specific review-pack preview instead of a generic example.
 
 Use [Addons Guide](addons.md) for the maintained manifest contract and discovery rules.
 

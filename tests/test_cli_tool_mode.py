@@ -1,6 +1,7 @@
 import json
 import sys
 from datetime import datetime
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -585,6 +586,43 @@ def test_tool_health_accepts_backend_alias(monkeypatch, capsys):
     assert payload["backend"] == "local"
     assert ("backend", "type", "local") in seen
     assert ("local_llm", "api_type", "ollama") in seen
+
+
+def test_tool_analyze_repo_outputs_generated_preview(tmp_path, capsys):
+    project_root = tmp_path / "demo_repo"
+    project_root.mkdir()
+    (project_root / "pyproject.toml").write_text(
+        "[project]\nname = 'demo-repo'\nversion = '0.1.0'\n\n[tool.pytest.ini_options]\naddopts = '-q'\n",
+        encoding="utf-8",
+    )
+    (project_root / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+    src_dir = project_root / "src"
+    src_dir.mkdir()
+    (src_dir / "api.py").write_text(
+        "from fastapi import FastAPI\n\napp = FastAPI()\n",
+        encoding="utf-8",
+    )
+
+    output_dir = tmp_path / "generated"
+    exit_code = run_main_with_args([
+        "analyze-repo",
+        str(project_root),
+        "--output-dir",
+        str(output_dir),
+        "--addon-id",
+        "demo-fastapi-addon",
+    ])
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert exit_code == 0
+    assert payload["command"] == "analyze-repo"
+    assert payload["status"] == "generated"
+    assert payload["preview_only"] is True
+    assert payload["addon_id"] == "demo-fastapi-addon"
+    assert "fastapi" in payload["profile"]["frameworks"]
+    assert "pytest" in payload["profile"]["test_harnesses"]
+    assert Path(payload["manifest_path"]).is_file()
+    assert Path(payload["review_pack_path"]).is_file()
 
 
 def test_tool_review_accepts_backend_alias(monkeypatch, capsys):

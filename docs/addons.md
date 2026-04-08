@@ -45,6 +45,25 @@ paths = examples/addon-echo-backend
 
 Addon-provided review packs are loaded from the manifest and then merged into the normal review-definition discovery flow. Standalone review-pack search paths configured through `review_packs.paths` continue to work separately.
 
+## Generated Addon Preview
+
+Milestone 16 now includes a conservative repository analyzer that can generate a preview addon scaffold without activating it.
+
+Use it when you want a starting point for a repository-specific review pack:
+
+```bash
+aicodereviewer analyze-repo . --output-dir artifacts/generated-addon-preview --addon-id my-repo-adaptive-review
+```
+
+The command currently writes:
+
+- `capability-profile.json` with detected languages, frameworks, tools, manifests, test harnesses, and recommended review types
+- `summary.txt` with a compact human-readable profile
+- `<addon-id>/addon.json`
+- `<addon-id>/review-pack.json`
+
+The generated scaffold is preview-only. Review and edit the output before pointing `addons.paths` at it or copying it into a real addon directory.
+
 ## Manifest Shape
 
 Each addon is rooted by an `addon.json` manifest.
@@ -105,6 +124,7 @@ Use this path when you want to:
 - add review types or presets without Python code
 - ship opinionated project defaults
 - keep an addon entirely data-driven
+- start from a generated scaffold and then refine it by hand for a specific repository
 
 Reference example:
 
