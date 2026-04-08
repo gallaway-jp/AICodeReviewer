@@ -52,6 +52,12 @@ Use this one-time normalization plan:
 4. On that release branch, align `pyproject.toml`, `RELEASE_NOTES.md`, and the final git tag to the same `0.2.0` version before merging back to `main`.
 5. After `v0.2.0`, continue future maintained releases from aligned `release/<version>` branches and matching tags on the pre-1.0 line until the project is ready for a deliberate `1.0.0` cutover.
 
+Current normalized baseline:
+
+- the one-time release normalization is complete in the current repository state
+- `main` is aligned to the published `v0.2.0` release
+- the GitHub release for `v0.2.0` now carries the validated Windows asset pair `AICodeReviewer.exe` and `AICodeReviewer.exe.sha256`
+
 ## Pre-Release Checklist
 
 1. Confirm the target version and update `pyproject.toml` if needed.
@@ -133,6 +139,12 @@ After the merge and tag steps are complete, confirm the matching tag exists loca
 python tools/check_release_metadata.py --target-version 0.2.0 --check-git --require-release-tag
 ```
 
+After pushing the release to the remote, confirm the published release page and attached assets as well:
+
+```bash
+gh release view v0.2.0 --json url,assets
+```
+
 ## Changelog Rules
 
 Keep `RELEASE_NOTES.md` focused on:
@@ -155,6 +167,8 @@ If you publish a release:
 5. create the matching tag from the merged `main` commit
 6. run `build_exe.bat` and confirm the regenerated `dist/AICodeReviewer.exe` plus `dist/AICodeReviewer.exe.sha256` pair matches the release commit you are publishing
 7. push the branch and tag, then publish the release artifact set according to your team process
+
+For the current normalized baseline, those steps have already been executed for `v0.2.0`; use the same sequence for future maintained releases instead of repeating the historical normalization work.
 
 If packaging workflows evolve later, extend this document rather than scattering release instructions across unrelated docs.
 

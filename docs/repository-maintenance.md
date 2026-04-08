@@ -331,14 +331,14 @@ Current repository baseline:
 - `pyproject.toml` and `RELEASE_NOTES.md` are now aligned to `0.2.0` in-repo
 - `tools/check_release_metadata.py` can now also report local branch/tag readiness for `release/0.2.0` and `v0.2.0`
 - the Windows packaging path has now been validated again on the current baseline: `build_exe.bat` rebuilds `dist/AICodeReviewer.exe`, regenerates `dist/AICodeReviewer.exe.sha256`, and smoke-tests cleanly via `dist/AICodeReviewer.exe --help`
-- the remaining operational release steps are the explicit `release/0.2.0` branch cut, merge, and matching `v0.2.0` tag creation
+- the release-normalization path has now been executed end to end: `release/0.2.0` was cut, validated, merged into `main`, tagged as `v0.2.0`, pushed to `origin`, and published with the validated Windows asset pair
 
 Current git preflight baseline:
 
-- current branch: `release/0.2.0`
-- local `release/0.2.0` branch: present
-- local `v0.2.0` tag: not present yet
-- currently observed local tag set still begins with the historical `v0.1.0` tag only
+- current branch: `main`
+- local `release/0.2.0` branch: merged and no longer required for the published baseline
+- local and remote `v0.2.0` tag: present
+- current release publication state: the GitHub `v0.2.0` release is live with `AICodeReviewer.exe` and `AICodeReviewer.exe.sha256`
 
 ### Phase 4: Retention And Archive Rules
 
