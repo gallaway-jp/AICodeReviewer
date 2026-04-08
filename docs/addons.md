@@ -68,10 +68,28 @@ The analyzer now biases the capability profile toward primary repository content
 
 The generated scaffold is preview-only. Review and edit the output before approving it.
 
+Use the richer diff-first review surface when you want to inspect the generated bundle before deciding:
+
+```bash
+aicodereviewer review-addon-preview artifacts/generated-addon-preview --diff-only
+```
+
+That command renders:
+
+- a bundle diff between the default review bundle and the generated bundle
+- prompt and context-rule additions introduced by the generated review type
+- installed-vs-generated addon diffs when a version of the same addon is already present
+
 Approve or reject the preview explicitly:
 
 ```bash
 aicodereviewer approve-addon-preview artifacts/generated-addon-preview --reviewer <name> --decision approve
+```
+
+Or combine the review surface with a non-interactive decision in one command:
+
+```bash
+aicodereviewer review-addon-preview artifacts/generated-addon-preview --decision approve --reviewer <name>
 ```
 
 Approvals write `approval-decision.json` and install the addon into the default discovered `addons/` directory unless you override `--install-dir`. Rejections keep the preview inactive and record the decision without installing it.
@@ -82,7 +100,15 @@ Milestone 16 also includes a small external-repository validation harness that c
 d:/Development/Python/AICodeReviewer/.venv/Scripts/python.exe tools/validate_generated_addons.py --json-out artifacts/generated-addon-validation/summary.json
 ```
 
-The validation summary reports heuristic precision/recall on the curated external sample set and the initial relevance delta between the generated bundle and the default `best_practices + maintainability + testing` bundle.
+The repository now reruns that external validation catalog periodically through `.github/workflows/generated-addon-validation.yml`.
+
+For judged review-output quality, use the representative-repository runner:
+
+```bash
+d:/Development/Python/AICodeReviewer/.venv/Scripts/python.exe tools/evaluate_generated_addon_review_quality.py --backend <backend> --json-out artifacts/generated-addon-review-quality/summary.json
+```
+
+That runner compares real review reports from the default bundle and the generated bundle against judged expectations on representative FastAPI and React repository fixtures. Treat this judged runner as the primary relevance baseline; the external catalog remains a secondary heuristic signal for repository-shape detection.
 
 ## Manifest Shape
 

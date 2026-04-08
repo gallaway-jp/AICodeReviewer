@@ -8,7 +8,27 @@
       "expected": {
         "languages": ["Python"],
         "frameworks": ["flask", "pytest"],
-        "tools": [],
+        "tools": ["github_actions"],
+        "test_harnesses": ["pytest"],
+        "manifests": ["pyproject.toml"],
+        "relevant_review_types": [
+          "best_practices",
+          "maintainability",
+          "testing",
+          "api_design",
+          "data_validation",
+          "error_handling"
+        ]
+      }
+    },
+    {
+      "id": "tiangolo-fastapi",
+      "repo_url": "https://github.com/fastapi/fastapi.git",
+      "checkout_dir": "tiangolo-fastapi",
+      "expected": {
+        "languages": ["Python"],
+        "frameworks": ["fastapi", "pytest"],
+        "tools": ["github_actions"],
         "test_harnesses": ["pytest"],
         "manifests": ["pyproject.toml"],
         "relevant_review_types": [
@@ -28,7 +48,7 @@
       "expected": {
         "languages": ["JavaScript"],
         "frameworks": ["express"],
-        "tools": [],
+        "tools": ["github_actions"],
         "test_harnesses": [],
         "manifests": ["package.json"],
         "relevant_review_types": [
@@ -48,7 +68,7 @@
       "expected": {
         "languages": ["JavaScript"],
         "frameworks": ["react"],
-        "tools": [],
+        "tools": ["github_actions"],
         "test_harnesses": [],
         "manifests": ["package.json"],
         "relevant_review_types": [
@@ -57,6 +77,40 @@
           "testing",
           "ui_ux",
           "accessibility"
+        ]
+      }
+    },
+    {
+      "id": "pydantic-pydantic",
+      "repo_url": "https://github.com/pydantic/pydantic.git",
+      "checkout_dir": "pydantic-pydantic",
+      "expected": {
+        "languages": ["Python"],
+        "frameworks": ["pytest"],
+        "tools": ["github_actions"],
+        "test_harnesses": ["pytest"],
+        "manifests": ["pyproject.toml"],
+        "relevant_review_types": [
+          "best_practices",
+          "maintainability",
+          "testing"
+        ]
+      }
+    },
+    {
+      "id": "psf-requests",
+      "repo_url": "https://github.com/psf/requests.git",
+      "checkout_dir": "psf-requests",
+      "expected": {
+        "languages": ["Python"],
+        "frameworks": ["pytest"],
+        "tools": ["github_actions"],
+        "test_harnesses": ["pytest"],
+        "manifests": ["pyproject.toml", "requirements-dev.txt"],
+        "relevant_review_types": [
+          "best_practices",
+          "maintainability",
+          "testing"
         ]
       }
     }

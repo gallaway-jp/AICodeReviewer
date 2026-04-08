@@ -1,0 +1,6 @@
+[project]
+name = "fastapi-patch-contract-drift"
+version = "0.1.0"
+
+[tool.pytest.ini_options]
+addopts = "-q"
