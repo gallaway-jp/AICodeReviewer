@@ -37,3 +37,8 @@ The PowerShell script:
 - run the smoke-validation script from an elevated Windows shell
 - run the full interactive checklist and capture GUI-launch observations
 - decide whether signing should be introduced before or after the full validation pass is repeated on a signed installer
+
+## Validation Notes
+
+- running `run_installer_smoke_validation.ps1` from the current non-elevated shell correctly fails fast with the expected admin-privilege requirement message
+- feature-branch workflow run `24117818915` succeeded, which confirms the updated Inno Setup script still compiles and packages correctly in CI

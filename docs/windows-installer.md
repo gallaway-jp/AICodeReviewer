@@ -245,6 +245,11 @@ The smoke script does not replace the full interactive checklist. It is designed
 
 The Inno Setup uninstaller now recognizes those silent uninstall flags. In silent mode without an explicit flag, it defaults to preserving user data.
 
+Validation status for this automation path:
+
+- local non-admin shells fail fast with a clear elevation requirement message
+- feature-branch workflow run `24117818915` confirmed the updated installer definition still builds successfully in CI
+
 1. Install `AICodeReviewer-Setup-<version>.exe` with default options.
 2. Confirm the application lands under `Program Files\AICodeReviewer`.
 3. Launch the GUI from the Start Menu shortcut and confirm the desktop window opens successfully.

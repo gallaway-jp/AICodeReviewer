@@ -634,6 +634,7 @@ Current status:
 - installer manual-validation prep now exists via `tools/manual_checks/installer/inspect_installer_artifact.ps1` and `tools/manual_checks/installer/validation-log-template.md`, so the remaining install and uninstall gap is structured and repeatable rather than ad hoc
 - the PyInstaller spec on the active Milestone 15 branch now also stamps Windows version-resource metadata onto `AICodeReviewer.exe`; both a local rebuild and feature-branch workflow run `24117477221` confirmed `FileVersion 0.2.0.0` and `ProductVersion 0.2.0`
 - the installer definition on the active Milestone 15 branch now supports silent uninstall control flags (`/PRESERVEUSERDATA`, `/REMOVEUSERDATA`), and `tools/manual_checks/installer/run_installer_smoke_validation.ps1` can execute an elevated install plus preserve/remove-data uninstall smoke pass against a downloaded CI artifact
+- the smoke-validation automation path has been partially validated: the script fails fast in non-elevated shells as intended, and feature-branch workflow run `24117818915` confirmed the updated installer definition still builds successfully in CI
 - the installer baseline is intentionally layered on top of the validated PyInstaller EXE path rather than replacing it
 - end-to-end install and uninstall validation is still pending, and installer signing plus user-manual install/uninstall guidance remain follow-on work before Milestone 15 can be treated as complete
 
