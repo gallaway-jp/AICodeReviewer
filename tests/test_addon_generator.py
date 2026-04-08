@@ -68,9 +68,17 @@ def test_generate_addon_preview_writes_valid_manifest_and_review_pack(tmp_path: 
     assert manifest.addon_id == "frontend-preview-addon"
     assert preview.capability_profile_path.is_file()
     assert preview.summary_path.is_file()
+    assert preview.approval_request_path.is_file()
+    assert preview.review_checklist_path.is_file()
     assert preview.review_key in {definition.key for definition in registry.list_all()}
     assert any(preset.key == preview.preset_key for preset in presets)
     assert preview.review_pack["review_presets"][0]["review_types"][0] == preview.review_key
+    assert preview.approval_request["status"] == "pending_review"
+    assert preview.approval_request["bundle_comparison"]["default_review_types"] == [
+        "best_practices",
+        "maintainability",
+        "testing",
+    ]
 
 
 def test_analyze_repository_ignores_nested_fixture_and_example_projects(tmp_path: Path) -> None:

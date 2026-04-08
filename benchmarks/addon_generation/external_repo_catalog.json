@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "repositories": [
+    {
+      "id": "pallets-flask",
+      "repo_url": "https://github.com/pallets/flask.git",
+      "checkout_dir": "pallets-flask",
+      "expected": {
+        "languages": ["Python"],
+        "frameworks": ["flask", "pytest"],
+        "tools": [],
+        "test_harnesses": ["pytest"],
+        "manifests": ["pyproject.toml"],
+        "relevant_review_types": [
+          "best_practices",
+          "maintainability",
+          "testing",
+          "api_design",
+          "data_validation",
+          "error_handling"
+        ]
+      }
+    },
+    {
+      "id": "expressjs-express",
+      "repo_url": "https://github.com/expressjs/express.git",
+      "checkout_dir": "expressjs-express",
+      "expected": {
+        "languages": ["JavaScript"],
+        "frameworks": ["express"],
+        "tools": [],
+        "test_harnesses": [],
+        "manifests": ["package.json"],
+        "relevant_review_types": [
+          "best_practices",
+          "maintainability",
+          "testing",
+          "api_design",
+          "data_validation",
+          "error_handling"
+        ]
+      }
+    },
+    {
+      "id": "streamich-react-use",
+      "repo_url": "https://github.com/streamich/react-use.git",
+      "checkout_dir": "streamich-react-use",
+      "expected": {
+        "languages": ["JavaScript"],
+        "frameworks": ["react"],
+        "tools": [],
+        "test_harnesses": [],
+        "manifests": ["package.json"],
+        "relevant_review_types": [
+          "best_practices",
+          "maintainability",
+          "testing",
+          "ui_ux",
+          "accessibility"
+        ]
+      }
+    }
+  ]
+}

@@ -585,6 +585,12 @@ aicodereviewer resume --artifact-file artifacts/fix-plan.json
 aicodereviewer analyze-repo . --output-dir artifacts/generated-addon-preview --addon-id my-repo-adaptive-review
 ```
 
+6. Review the generated `approval-request.json` and `review-checklist.md`, edit the generated addon files if needed, and approve the preview explicitly before enabling it.
+
+```bash
+aicodereviewer approve-addon-preview artifacts/generated-addon-preview --reviewer <name> --decision approve
+```
+
 Use this path when you want:
 
 - machine-readable review envelopes
@@ -592,6 +598,7 @@ Use this path when you want:
 - separated review and apply phases
 - retry and diagnostic metadata for failures
 - a preview addon scaffold derived from the current repository shape
+- an explicit maintainer approval gate before the generated addon becomes active
 
 Use [CLI Guide](cli.md) and [Reports and Outputs](reports.md) for the full tool-mode contract.
 
@@ -630,6 +637,14 @@ Use these examples as starting points:
 The generated `analyze-repo` scaffold is also a valid starting point when you want a repository-specific review-pack preview instead of a generic example.
 
 The generated profile is intentionally biased toward the primary repository. Nested example, fixture, benchmark, sample, demo, and artifact trees are ignored so preview bundles stay focused on the codebase you actually maintain.
+
+If you want to inspect how the generator behaves on the curated external sample set used for Milestone 16 validation, run:
+
+```bash
+d:/Development/Python/AICodeReviewer/.venv/Scripts/python.exe tools/validate_generated_addons.py --json-out artifacts/generated-addon-validation/summary.json
+```
+
+That report summarizes both heuristic signal detection and whether the generated review bundle is more relevant than the default bundle on the sampled repositories.
 
 Use [Addons Guide](addons.md) for the maintained manifest contract and discovery rules.
 
