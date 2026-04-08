@@ -26,7 +26,14 @@ if not defined ISCC (
 	exit /b 1
 )
 
-for /f "usebackq delims=" %%V in (`"%PYTHON%" -c "from pathlib import Path; import re; text = Path('src/aicodereviewer/__init__.py').read_text(encoding='utf-8'); match = re.search(r'__version__\s*=\s*\"([^\"]+)\"', text); print(match.group(1) if match else '')"`) do set "APP_VERSION=%%V"
+set "VERSION_FILE=%TEMP%\aicodereviewer_version.txt"
+if exist "%VERSION_FILE%" del "%VERSION_FILE%"
+
+"%PYTHON%" -c "import pathlib, tomllib; payload = tomllib.loads(pathlib.Path('pyproject.toml').read_text(encoding='utf-8')); print(payload['project']['version'])" > "%VERSION_FILE%"
+if errorlevel 1 goto :error
+
+set /p APP_VERSION=<"%VERSION_FILE%"
+del "%VERSION_FILE%" >nul 2>nul
 
 if not defined APP_VERSION (
 	echo ERROR: Could not determine application version.
