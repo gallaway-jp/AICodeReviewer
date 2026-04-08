@@ -8,6 +8,7 @@ Use it when you want the shortest path to a working review flow without reading 
 
 Start here based on what you want to do:
 
+- Install or remove the packaged Windows app: go to [Windows Installer Workflow](#windows-installer-workflow)
 - Run your first review from the terminal: go to [CLI First Review](#cli-first-review)
 - Review only a diff or change range: go to [Diff Review Workflow](#diff-review-workflow)
 - Review only part of a project with selected files or diff filters: go to [Partial Project Workflow](#partial-project-workflow)
@@ -25,11 +26,13 @@ Start here based on what you want to do:
 
 ## Before You Start
 
-You need:
+For source-based installs, you need:
 
 - Python 3.11 or newer
 - one configured backend: Bedrock, Kiro, Copilot, or Local LLM
 - a project or diff target you want to review
+
+If you are using the packaged Windows installer, skip the Python requirement and start with [Windows Installer Workflow](#windows-installer-workflow).
 
 Install the desktop build:
 
@@ -46,6 +49,50 @@ pip install -e .
 ```
 
 If you have not chosen a backend yet, read [Backend Guide](backends.md) first.
+
+## Windows Installer Workflow
+
+Use this path when you have `AICodeReviewer-Setup-<version>.exe` and want the packaged Windows GUI and CLI without setting up Python first.
+
+What the installer sets up:
+
+- the application under `Program Files\AICodeReviewer` by default
+- a Start Menu `AICodeReviewer` shortcut for the GUI
+- a Start Menu `AICodeReviewer CLI` shortcut for the CLI entry point
+- an optional desktop shortcut for the GUI
+- the packaged `config.ini`, `LICENSE`, `THIRD_PARTY_NOTICES.md`, and `README.md` files in the install directory
+
+### Install the packaged build
+
+1. Download `AICodeReviewer-Setup-<version>.exe` from the release or maintainer-provided artifact.
+2. If Windows shows a SmartScreen or unknown publisher warning, verify the source and version before continuing. Unsigned preview builds can still trigger that warning until signed release packaging is in place.
+3. Run the installer, review the license, keep the default install directory unless you have a specific reason to change it, and choose the desktop shortcut task only if you want a desktop icon.
+4. Leave the post-install launch option enabled if you want the GUI to open immediately; otherwise start it later from the Start Menu `AICodeReviewer` shortcut.
+5. Open Settings in the GUI or edit `config.ini` in the install directory to choose your backend, then continue with [GUI First Session](#gui-first-session) or [CLI First Review](#cli-first-review).
+
+### Verify the install
+
+1. Launch the GUI from the Start Menu and confirm the desktop window opens.
+2. Launch the CLI from the Start Menu `AICodeReviewer CLI` shortcut or run `AICodeReviewer.exe --help` from the install directory.
+3. Confirm `config.ini` exists in the install directory and update backend settings if you have not configured them yet.
+4. If you installed an unsigned preview build, note any SmartScreen or publisher warnings so you can distinguish packaging trust prompts from application problems.
+
+### Uninstall and choose whether to keep data
+
+1. Close the GUI and any terminal sessions running from the install directory.
+2. Open Windows Installed apps or Apps & features and uninstall `AICodeReviewer`.
+3. When the uninstaller asks whether to preserve user data in the install directory, choose based on whether you want to keep your local configuration and logs.
+4. Choose preserve if you plan to reinstall and reuse your backend settings; choose removal if you want a clean local reset.
+
+The current installer treats these files as user data:
+
+- `config.ini`
+- `aicodereviewer.log`
+- `aicodereviewer-audit.log`
+
+If you preserve those files and reinstall later, the installer keeps the existing `config.ini` instead of overwriting it with the default template.
+
+Use [Windows Installer Guide](windows-installer.md) when you need maintainer-facing build, signing, artifact-inspection, or manual-validation details.
 
 ## CLI First Review
 
@@ -910,6 +957,7 @@ Try these in order:
 
 ## Recommended Reading By Goal
 
+- packaged Windows install or uninstall: [Windows Installer Guide](windows-installer.md)
 - first install and first review: [Getting Started](getting-started.md)
 - backend setup: [Backend Guide](backends.md)
 - diff and specification review flags: [CLI Guide](cli.md)
