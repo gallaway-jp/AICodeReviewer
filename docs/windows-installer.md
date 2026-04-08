@@ -260,6 +260,7 @@ Maintainer helpers for this step now live under `tools/manual_checks/installer/`
 - `download_installer_artifact.ps1` for downloading and extracting a GitHub Actions `windows-installer` artifact into the normalized local `artifacts/installer-ci-<runid>/windows-installer/` layout
 - `inspect_installer_artifact.ps1` for EXE checksum validation, installer checksum validation when published, version inspection, and EXE-plus-installer signing preflight
 - `run_installer_smoke_validation.ps1` for current-user or all-users silent install, CLI launch, and preserve/remove-data uninstall smoke validation
+- `start_installer_manual_validation_session.ps1` for generating a prefilled manual validation log from a workflow run or local artifact root
 - `validation-log-template.md` for recording the manual install and uninstall results
 
 To download and normalize a specific workflow artifact locally, run:
@@ -285,6 +286,16 @@ pwsh -File tools/manual_checks/installer/inspect_installer_artifact.ps1 -RunId 2
 ```powershell
 pwsh -File tools/manual_checks/installer/run_installer_smoke_validation.ps1 -RunId 24130238872 -InstallMode CurrentUser
 ```
+
+To start an interactive manual-validation session log from a workflow run, run:
+
+```powershell
+pwsh -File tools/manual_checks/installer/start_installer_manual_validation_session.ps1 -RunId 24130238872 -Operator Colin
+```
+
+That session-bootstrap path is now validated on this machine as well. Running the helper against workflow run `24130238872` generated `artifacts/manual-installer-validation-prep/20260408-202542/validation-log.md` with the workflow branch (`feature/installer-checksum-artifact`), commit (`ba6ebb21712aef30a506c8092212810c0a037ec3`), matching EXE and installer checksums, `FileVersion 0.2.0.0`, `ProductVersion 0.2.0`, unsigned signature status for both binaries, and the expected follow-up inspection plus smoke-validation commands.
+
+The helper now also preserves workflow branch and commit metadata when it reuses an existing `artifacts/installer-ci-<runid>/` download instead of fetching the artifact again, so repeated prep runs still produce a fully populated session log.
 
 That direct smoke-validation path has now also been validated on this machine: it completed successfully against workflow run `24130238872` and recorded a passing summary at `artifacts/manual-installer-validation/20260408-195928/summary.md` with `InstallerChecksumStatus = Match`, both Start Menu shortcuts present after install, and passing preserve/remove-data uninstall paths.
 
@@ -321,6 +332,7 @@ Validation status for this automation path:
 - the installer build path now also emits a published installer checksum file, and the inspection plus smoke-validation helpers validate that checksum when present while remaining backward-compatible with older artifacts that predate it
 - feature-branch workflow run `24130238872` validated the published installer checksum path end to end: the artifact contained `AICodeReviewer-Setup-0.2.0.exe.sha256`, the EXE checksum still matched, and the installer checksum inspected as `Match`
 - the direct `-RunId` validation path is now also proven end to end: `run_installer_smoke_validation.ps1 -RunId 24130238872 -InstallMode CurrentUser` completed successfully and reused the helper-produced artifact layout without a separate manual download step
+- the manual session-bootstrap path is now also proven end to end: `start_installer_manual_validation_session.ps1 -RunId 24130238872 -Operator Colin` generated a prefilled log with captured workflow metadata, checksum and version preflight, signature status, and follow-up commands even when the underlying artifact download was reused from the normalized local cache
 
 1. Install `AICodeReviewer-Setup-<version>.exe` with default options.
 2. Confirm the application lands under `Program Files\AICodeReviewer`.
