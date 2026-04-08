@@ -32,6 +32,16 @@ Observed files:
 - the repository now has evidence that the green workflow produced the expected installer payload rather than only a nominal success status
 - this closes the build-artifact inspection slice for Milestone 15 and narrows the remaining work to manual install/uninstall validation, signing, and user-facing documentation
 
+## Follow-On Workflow Maintenance
+
+After the artifact inspection slice, the workflow was updated to current GitHub Actions major versions:
+
+- `actions/checkout@v6`
+- `actions/setup-python@v6`
+- `actions/upload-artifact@v7`
+
+That maintained workflow was rerun successfully in GitHub Actions workflow run `24115382363` on commit `f6bc077`.
+
 ## Remaining Work
 
 - run the installer on a Windows machine and execute the install, launch, uninstall, and preserve/remove-data checklist

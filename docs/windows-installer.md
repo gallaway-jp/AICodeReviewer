@@ -106,10 +106,13 @@ The repository also now includes a first CI baseline at `.github/workflows/windo
 
 That workflow:
 
+- uses `actions/checkout@v6`
+- uses `actions/setup-python@v6`
 - runs on `windows-latest`
 - installs Inno Setup 6 through Chocolatey
 - installs the Python package with GUI extras
 - runs `build_installer.bat`
+- uses `actions/upload-artifact@v7`
 - uploads the produced installer plus the packaged EXE and checksum as workflow artifacts
 
 That CI path is now validated end to end.
@@ -119,6 +122,12 @@ Verified baseline:
 - GitHub Actions workflow run `24111725510`
 - commit `1d38689` on `main`
 - successful artifact upload for the installer plus the packaged EXE and checksum
+
+Post-maintenance revalidation:
+
+- GitHub Actions workflow run `24115382363`
+- commit `f6bc077` on `main`
+- successful rerun after updating the workflow to current action majors to clear the observed Node 20 deprecation warning
 
 The validation pass required three concrete fixes in the checked-in packaging path:
 
