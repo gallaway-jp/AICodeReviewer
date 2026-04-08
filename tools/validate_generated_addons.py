@@ -8,9 +8,11 @@ from pathlib import Path
 from typing import Sequence
 
 from aicodereviewer.addon_validation import (
+    evaluate_external_repository_thresholds,
     ensure_repository_checkout,
     evaluate_external_repository,
     load_external_repository_catalog,
+    render_external_repository_summary_markdown,
     summarize_external_repository_results,
 )
 
@@ -38,6 +40,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--refresh", action="store_true")
     parser.add_argument("--skip-clone", action="store_true")
     parser.add_argument("--json-out")
+    parser.add_argument("--markdown-summary-out")
+    parser.add_argument("--fail-on-thresholds", action="store_true")
     return parser
 
 
@@ -78,11 +82,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         summary["status"] = "completed"
 
+    summary["thresholds"] = evaluate_external_repository_thresholds(summary)
+    if summary["thresholds"]["failures"] and summary["status"] == "completed":
+        summary["status"] = "threshold_alert"
+
     rendered = json.dumps(summary, indent=2)
     print(rendered)
     if args.json_out:
         Path(args.json_out).write_text(rendered + "\n", encoding="utf-8")
-    return 1 if failures else 0
+    if args.markdown_summary_out:
+        Path(args.markdown_summary_out).write_text(render_external_repository_summary_markdown(summary), encoding="utf-8")
+    if failures:
+        return 1
+    if args.fail_on_thresholds and summary["thresholds"]["failures"]:
+        return 1
+    return 0
 
 
 if __name__ == "__main__":

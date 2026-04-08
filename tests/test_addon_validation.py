@@ -5,8 +5,10 @@ from pathlib import Path
 
 from aicodereviewer.addon_validation import (
     ExternalRepositoryTarget,
+    evaluate_external_repository_thresholds,
     evaluate_external_repository,
     load_external_repository_catalog,
+    render_external_repository_summary_markdown,
     summarize_external_repository_results,
 )
 
@@ -79,3 +81,38 @@ def test_evaluate_external_repository_scores_generated_bundle_against_default(tm
 
     summary = summarize_external_repository_results([result])
     assert summary["bundle_relevance_summary"]["repositories_generated_better"] == 1
+
+
+def test_external_repository_thresholds_and_markdown_summary() -> None:
+    summary = {
+        "status": "completed",
+        "repositories_evaluated": 2,
+        "heuristic_summary": {
+            "languages": {"average_precision": 1.0, "average_recall": 1.0, "average_f1": 1.0},
+            "frameworks": {"average_precision": 0.5, "average_recall": 0.5, "average_f1": 0.5},
+            "tools": {"average_precision": 0.4, "average_recall": 0.4, "average_f1": 0.4},
+            "test_harnesses": {"average_precision": 1.0, "average_recall": 0.5, "average_f1": 0.6667},
+            "manifests": {"average_precision": 1.0, "average_recall": 0.9, "average_f1": 0.9474},
+        },
+        "bundle_relevance_summary": {
+            "generated_average_f1": 0.7,
+            "default_average_f1": 0.72,
+            "generated_average_recall": 0.8,
+            "default_average_recall": 0.8,
+            "average_f1_delta": -0.02,
+            "average_recall_delta": 0.0,
+            "repositories_generated_better": 0,
+            "repositories_tied": 1,
+            "repositories_default_better": 1,
+        },
+        "failures": [{"repo_id": "demo", "error": "clone failed"}],
+    }
+
+    thresholds = evaluate_external_repository_thresholds(summary)
+    rendered = render_external_repository_summary_markdown({**summary, "thresholds": thresholds})
+
+    assert thresholds["passed"] is False
+    assert any(item["key"] == "frameworks_f1" for item in thresholds["failures"])
+    assert any(item["key"] == "tools_f1" for item in thresholds["warnings"])
+    assert "Threshold Failures" in rendered
+    assert "Repository Failures" in rendered

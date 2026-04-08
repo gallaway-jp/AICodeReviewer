@@ -662,6 +662,8 @@ d:/Development/Python/AICodeReviewer/.venv/Scripts/python.exe tools/evaluate_gen
 
 That runner compares default-bundle and generated-bundle review reports against judged expectations on representative FastAPI and React repositories. Use it as the primary relevance baseline when evaluating whether generated addons actually improve review output quality.
 
+The repository also ships `.github/workflows/generated-addon-judged-quality.yml` for this judged path. That workflow restores the most recent backend history artifact, reruns the judged fixture set, appends the backend's history entry, and publishes a markdown trend summary. It expects a runner where the chosen backend is already installed and authenticated.
+
 Use [Addons Guide](addons.md) for the maintained manifest contract and discovery rules.
 
 ## Local HTTP Workflow

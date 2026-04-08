@@ -1,0 +1,19 @@
+{
+  "id": "vue-accessibility-form-label",
+  "title": "Vue Accessibility Form Label",
+  "description": "A Vue settings form renders icon-only controls and placeholder-only inputs without persistent labels, so assistive technology users lose the form meaning.",
+  "scope": "project",
+  "review_types": ["accessibility"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "placeholder-without-label",
+      "description_keywords": ["label", "placeholder"],
+      "file_path_contains_any": ["NotificationSettings.vue"],
+      "issue_type": "accessibility",
+      "minimum_severity": "medium",
+      "evidence_basis_contains": "placeholder=\"Email address\""
+    }
+  ]
+}

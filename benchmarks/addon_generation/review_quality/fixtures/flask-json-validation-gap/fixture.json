@@ -1,0 +1,19 @@
+{
+  "id": "flask-json-validation-gap",
+  "title": "Flask JSON Validation Gap",
+  "description": "A Flask JSON endpoint trusts request payload fields and types without validation, so malformed orders reach business logic and fail late.",
+  "scope": "project",
+  "review_types": ["data_validation"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "request-json-not-validated",
+      "description_keywords": ["validate", "json"],
+      "file_path_contains_any": ["orders.py"],
+      "issue_type": "data_validation",
+      "minimum_severity": "medium",
+      "evidence_basis_contains": "request.get_json"
+    }
+  ]
+}

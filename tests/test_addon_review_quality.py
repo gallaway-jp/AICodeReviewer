@@ -136,3 +136,141 @@ def test_evaluate_review_quality_target_scores_generated_bundle_against_default(
 
     summary = review_quality.summarize_review_quality_results([result])
     assert summary["generated_better_count"] == 1
+
+
+def test_summarize_review_quality_results_groups_by_stack() -> None:
+    summary = review_quality.summarize_review_quality_results(
+        [
+            {
+                "stack": "fastapi",
+                "default": {"score": 0.0},
+                "generated": {"score": 1.0},
+                "score_delta": 1.0,
+            },
+            {
+                "stack": "react",
+                "default": {"score": 1.0},
+                "generated": {"score": 1.0},
+                "score_delta": 0.0,
+            },
+        ]
+    )
+
+    assert summary["stack_summary"]["fastapi"]["generated_better_count"] == 1
+    assert summary["stack_summary"]["react"]["ties"] == 1
+
+
+def test_update_review_quality_history_tracks_runs_by_backend(tmp_path: Path) -> None:
+    history_path = tmp_path / "history.json"
+    summary = {
+        "targets_evaluated": 2,
+        "generated_average_score": 0.75,
+        "default_average_score": 0.5,
+        "average_score_delta": 0.25,
+        "generated_better_count": 1,
+        "default_better_count": 0,
+        "ties": 1,
+        "stack_summary": {"fastapi": {"targets_evaluated": 2, "average_score_delta": 0.25}},
+    }
+
+    payload = review_quality.update_review_quality_history(
+        history_path,
+        backend_name="copilot",
+        summary=summary,
+        recorded_at="2026-04-08T00:00:00+00:00",
+    )
+    payload = review_quality.update_review_quality_history(
+        history_path,
+        backend_name="copilot",
+        summary=summary,
+        recorded_at="2026-04-09T00:00:00+00:00",
+        max_runs=2,
+    )
+
+    assert len(payload["backends"]["copilot"]["runs"]) == 2
+    assert payload["backends"]["copilot"]["runs"][-1]["recorded_at"] == "2026-04-09T00:00:00+00:00"
+
+
+def test_build_review_quality_trend_compares_against_previous_run(tmp_path: Path) -> None:
+    history_path = tmp_path / "history.json"
+    first_summary = {
+        "targets_evaluated": 2,
+        "generated_average_score": 0.5,
+        "default_average_score": 0.4,
+        "average_score_delta": 0.1,
+        "generated_better_count": 1,
+        "default_better_count": 0,
+        "ties": 1,
+        "stack_summary": {"fastapi": {"targets_evaluated": 2, "average_score_delta": 0.1}},
+    }
+    second_summary = {
+        "targets_evaluated": 2,
+        "generated_average_score": 0.8,
+        "default_average_score": 0.5,
+        "average_score_delta": 0.3,
+        "generated_better_count": 2,
+        "default_better_count": 0,
+        "ties": 0,
+        "stack_summary": {"fastapi": {"targets_evaluated": 2, "average_score_delta": 0.3}},
+    }
+
+    review_quality.update_review_quality_history(
+        history_path,
+        backend_name="copilot",
+        summary=first_summary,
+        recorded_at="2026-04-08T00:00:00+00:00",
+    )
+    payload = review_quality.update_review_quality_history(
+        history_path,
+        backend_name="copilot",
+        summary=second_summary,
+        recorded_at="2026-04-09T00:00:00+00:00",
+    )
+
+    trend = review_quality.build_review_quality_trend(payload, backend_name="copilot")
+
+    assert trend["run_count"] == 2
+    assert trend["change_since_previous"]["generated_average_score"] == 0.3
+    assert trend["change_since_previous"]["average_score_delta"] == 0.2
+    assert trend["stack_changes"]["fastapi"]["average_score_delta_change"] == 0.2
+
+
+def test_render_review_quality_markdown_includes_stack_trends() -> None:
+    summary = {
+        "targets_evaluated": 2,
+        "generated_average_score": 0.8,
+        "default_average_score": 0.5,
+        "average_score_delta": 0.3,
+        "generated_better_count": 2,
+        "default_better_count": 0,
+        "ties": 0,
+    }
+    trend = {
+        "backend": "copilot",
+        "run_count": 2,
+        "latest": {"recorded_at": "2026-04-09T00:00:00+00:00"},
+        "previous": {"recorded_at": "2026-04-08T00:00:00+00:00"},
+        "change_since_previous": {
+            "generated_average_score": 0.3,
+            "default_average_score": 0.1,
+            "average_score_delta": 0.2,
+        },
+        "stack_changes": {
+            "fastapi": {
+                "latest_average_score_delta": 0.3,
+                "previous_average_score_delta": 0.1,
+                "average_score_delta_change": 0.2,
+                "latest_targets_evaluated": 2,
+            }
+        },
+    }
+
+    markdown = review_quality.render_review_quality_markdown(
+        backend_name="copilot",
+        summary=summary,
+        trend=trend,
+    )
+
+    assert "# Generated Addon Review Quality" in markdown
+    assert "Change vs previous score delta: `+0.2000`" in markdown
+    assert "| fastapi | +0.3000 | +0.1000 | +0.2000 | 2 |" in markdown

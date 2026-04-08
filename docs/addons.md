@@ -108,6 +108,12 @@ For judged review-output quality, use the representative-repository runner:
 d:/Development/Python/AICodeReviewer/.venv/Scripts/python.exe tools/evaluate_generated_addon_review_quality.py --backend <backend> --json-out artifacts/generated-addon-review-quality/summary.json
 ```
 
+The judged runner now writes backend-specific history to `artifacts/generated-addon-review-quality/history.json` by default. Each run appends the selected backend's aggregate score deltas and per-stack summaries so you can track whether Copilot, Bedrock, Kiro, or Local LLM quality is improving or regressing over time. Override the location with `--history-file` when you want to publish or compare a different history series.
+
+The repository now also includes `.github/workflows/generated-addon-judged-quality.yml`. That workflow restores the latest uploaded history artifact for the selected backend, reruns the judged fixture catalog, appends the new history entry, and publishes a markdown trend summary to the workflow run. It is configured for a provisioned runner because the chosen backend must already be installed and authenticated on that machine.
+
+The scheduled external validation workflow now publishes a markdown summary and fails when core heuristic drift crosses the current thresholds: language recall below `0.95`, manifest recall below `0.85`, framework F1 below `0.65`, or average generated-bundle F1 performing worse than the default bundle. Tooling and test-harness drift still show up as warnings in the summary even when they do not fail the run.
+
 That runner compares real review reports from the default bundle and the generated bundle against judged expectations on representative FastAPI and React repository fixtures. Treat this judged runner as the primary relevance baseline; the external catalog remains a secondary heuristic signal for repository-shape detection.
 
 ## Manifest Shape

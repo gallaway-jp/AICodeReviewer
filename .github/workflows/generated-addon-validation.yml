@@ -26,9 +26,20 @@ jobs:
       - name: Run external generated-addon validation
         run: |
           mkdir -p artifacts/generated-addon-validation
-          python tools/validate_generated_addons.py --json-out artifacts/generated-addon-validation/summary.json
+          python tools/validate_generated_addons.py \
+            --json-out artifacts/generated-addon-validation/summary.json \
+            --markdown-summary-out artifacts/generated-addon-validation/summary.md \
+            --fail-on-thresholds
+
+      - name: Publish validation summary
+        if: always()
+        run: |
+          if [ -f artifacts/generated-addon-validation/summary.md ]; then
+            cat artifacts/generated-addon-validation/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload validation artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: generated-addon-validation-${{ github.run_id }}

@@ -21,6 +21,58 @@ _EXPECTED_FIELDS = (
     "relevant_review_types",
 )
 
+_DEFAULT_THRESHOLD_RULES: tuple[dict[str, Any], ...] = (
+    {
+        "key": "languages_recall",
+        "label": "Language recall",
+        "metric_path": ("heuristic_summary", "languages", "average_recall"),
+        "minimum": 0.95,
+        "severity": "failure",
+    },
+    {
+        "key": "frameworks_f1",
+        "label": "Framework F1",
+        "metric_path": ("heuristic_summary", "frameworks", "average_f1"),
+        "minimum": 0.65,
+        "severity": "failure",
+    },
+    {
+        "key": "manifests_recall",
+        "label": "Manifest recall",
+        "metric_path": ("heuristic_summary", "manifests", "average_recall"),
+        "minimum": 0.85,
+        "severity": "failure",
+    },
+    {
+        "key": "tools_f1",
+        "label": "Tooling F1",
+        "metric_path": ("heuristic_summary", "tools", "average_f1"),
+        "minimum": 0.60,
+        "severity": "warning",
+    },
+    {
+        "key": "test_harness_recall",
+        "label": "Test harness recall",
+        "metric_path": ("heuristic_summary", "test_harnesses", "average_recall"),
+        "minimum": 0.60,
+        "severity": "warning",
+    },
+    {
+        "key": "bundle_f1_delta",
+        "label": "Bundle relevance F1 delta",
+        "metric_path": ("bundle_relevance_summary", "average_f1_delta"),
+        "minimum": 0.0,
+        "severity": "failure",
+    },
+    {
+        "key": "bundle_recall_delta",
+        "label": "Bundle relevance recall delta",
+        "metric_path": ("bundle_relevance_summary", "average_recall_delta"),
+        "minimum": 0.0,
+        "severity": "warning",
+    },
+)
+
 
 @dataclass(frozen=True)
 class ExternalRepositoryTarget:
@@ -179,6 +231,142 @@ def summarize_external_repository_results(results: Sequence[dict[str, Any]]) -> 
         "repositories_default_better": sum(1 for row in relevance_rows if row["f1_delta"] < 0),
     }
     return summary
+
+
+def evaluate_external_repository_thresholds(summary: dict[str, Any]) -> dict[str, Any]:
+    failures: list[dict[str, Any]] = []
+    warnings: list[dict[str, Any]] = []
+
+    for rule in _DEFAULT_THRESHOLD_RULES:
+        actual = _resolve_summary_metric(summary, rule["metric_path"])
+        if not isinstance(actual, (int, float)):
+            target = failures if rule["severity"] == "failure" else warnings
+            target.append(
+                {
+                    "key": rule["key"],
+                    "label": rule["label"],
+                    "severity": rule["severity"],
+                    "message": f"Metric {'.'.join(rule['metric_path'])} was unavailable.",
+                }
+            )
+            continue
+        if float(actual) >= float(rule["minimum"]):
+            continue
+        target = failures if rule["severity"] == "failure" else warnings
+        target.append(
+            {
+                "key": rule["key"],
+                "label": rule["label"],
+                "severity": rule["severity"],
+                "actual": round(float(actual), 4),
+                "minimum": round(float(rule["minimum"]), 4),
+                "message": f"{rule['label']} dropped to {float(actual):.4f} (minimum {float(rule['minimum']):.4f}).",
+            }
+        )
+
+    generated_better = int(summary.get("bundle_relevance_summary", {}).get("repositories_generated_better", 0) or 0)
+    default_better = int(summary.get("bundle_relevance_summary", {}).get("repositories_default_better", 0) or 0)
+    if generated_better < default_better:
+        failures.append(
+            {
+                "key": "bundle_win_balance",
+                "label": "Bundle win balance",
+                "severity": "failure",
+                "actual": generated_better - default_better,
+                "minimum": 0,
+                "message": (
+                    "Generated bundles underperformed the default bundle on more repositories than they improved. "
+                    f"Generated-better: {generated_better}, default-better: {default_better}."
+                ),
+            }
+        )
+
+    return {
+        "passed": not failures,
+        "failures": failures,
+        "warnings": warnings,
+    }
+
+
+def render_external_repository_summary_markdown(summary: dict[str, Any]) -> str:
+    lines = [
+        "# Generated Addon External Validation",
+        "",
+        f"- Status: {summary.get('status', 'unknown')}",
+        f"- Repositories evaluated: {summary.get('repositories_evaluated', 0)}",
+    ]
+
+    threshold_summary = summary.get("thresholds", {})
+    if threshold_summary:
+        lines.extend(
+            [
+                f"- Thresholds passed: {'yes' if threshold_summary.get('passed') else 'no'}",
+                "",
+            ]
+        )
+
+    heuristic_summary = summary.get("heuristic_summary", {})
+    if heuristic_summary:
+        lines.extend(
+            [
+                "## Heuristic Summary",
+                "",
+                "| Signal | Avg Precision | Avg Recall | Avg F1 |",
+                "| --- | ---: | ---: | ---: |",
+            ]
+        )
+        for signal_name in ("languages", "frameworks", "tools", "test_harnesses", "manifests"):
+            signal = heuristic_summary.get(signal_name, {})
+            lines.append(
+                f"| {signal_name} | {signal.get('average_precision', 0):.4f} | {signal.get('average_recall', 0):.4f} | {signal.get('average_f1', 0):.4f} |"
+            )
+        lines.append("")
+
+    bundle_summary = summary.get("bundle_relevance_summary", {})
+    if bundle_summary:
+        lines.extend(
+            [
+                "## Bundle Relevance",
+                "",
+                f"- Generated average F1: {bundle_summary.get('generated_average_f1', 0):.4f}",
+                f"- Default average F1: {bundle_summary.get('default_average_f1', 0):.4f}",
+                f"- Average F1 delta: {bundle_summary.get('average_f1_delta', 0):+.4f}",
+                f"- Average recall delta: {bundle_summary.get('average_recall_delta', 0):+.4f}",
+                f"- Generated better / tied / default better: {bundle_summary.get('repositories_generated_better', 0)} / {bundle_summary.get('repositories_tied', 0)} / {bundle_summary.get('repositories_default_better', 0)}",
+                "",
+            ]
+        )
+
+    failures = list(threshold_summary.get("failures", []))
+    warnings = list(threshold_summary.get("warnings", []))
+    checkout_failures = list(summary.get("failures", []))
+
+    if failures:
+        lines.extend(["## Threshold Failures", ""])
+        lines.extend(f"- {item['message']}" for item in failures)
+        lines.append("")
+
+    if warnings:
+        lines.extend(["## Threshold Warnings", ""])
+        lines.extend(f"- {item['message']}" for item in warnings)
+        lines.append("")
+
+    if checkout_failures:
+        lines.extend(["## Repository Failures", ""])
+        for failure in checkout_failures:
+            lines.append(f"- {failure.get('repo_id', 'unknown')}: {failure.get('error', 'unknown error')}")
+        lines.append("")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _resolve_summary_metric(summary: dict[str, Any], metric_path: Sequence[str]) -> Any:
+    current: Any = summary
+    for key in metric_path:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return current
 
 
 def _normalize_generated_bundle(preview: GeneratedAddonPreview) -> list[str]:
