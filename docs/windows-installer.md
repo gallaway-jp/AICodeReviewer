@@ -189,6 +189,8 @@ Observed payload:
 
 The current milestone branch extends that artifact contract with `windows-installer/installer/AICodeReviewer-Setup-<version>.exe.sha256` so future installer artifacts publish a checksum for the installer binary itself rather than relying only on an inspection-time recomputed hash.
 
+That checksum path has now been validated in GitHub Actions workflow run `24130238872` on the active Milestone 15 branch: the downloaded artifact included `AICodeReviewer-Setup-0.2.0.exe.sha256`, and local inspection of `artifacts/installer-ci-24130238872` reported `InstallerChecksumStatus = Match`.
+
 Observed properties:
 
 - the checksum file matches the packaged EXE payload
@@ -290,6 +292,7 @@ Validation status for this automation path:
 - a non-admin current-user smoke-validation run against `artifacts/installer-ci-24119245773` completed successfully, confirming checksum match, `FileVersion 0.2.0.0`, `ProductVersion 0.2.0`, both Start Menu shortcuts after install, and passing preserve-data plus remove-data uninstall paths
 - the artifact-inspection and smoke-validation helpers now report both EXE and installer signature status so signed runs can be verified without a separate ad hoc check
 - the installer build path now also emits a published installer checksum file, and the inspection plus smoke-validation helpers validate that checksum when present while remaining backward-compatible with older artifacts that predate it
+- feature-branch workflow run `24130238872` validated the published installer checksum path end to end: the artifact contained `AICodeReviewer-Setup-0.2.0.exe.sha256`, the EXE checksum still matched, and the installer checksum inspected as `Match`
 
 1. Install `AICodeReviewer-Setup-<version>.exe` with default options.
 2. Confirm the application lands under `Program Files\AICodeReviewer`.

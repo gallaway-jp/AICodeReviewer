@@ -28,10 +28,15 @@ Promote the installer SHA256 from an inspection-only derived value into a first-
 
 - local batch syntax and PowerShell validation passed for the updated build and inspection scripts
 - `pwsh -File tools/manual_checks/installer/inspect_installer_artifact.ps1 -ArtifactRoot artifacts/installer-ci-24119245773 -Json` succeeded against the latest existing artifact and reported `InstallerChecksumStatus = NotPublished`, which confirms backward compatibility for artifacts created before this slice
+- GitHub Actions workflow run `24130238872` on `feature/installer-checksum-artifact` completed successfully after a follow-up workflow fix for the optional signing gate
+- the downloaded artifact at `artifacts/installer-ci-24130238872` included `installer/AICodeReviewer-Setup-0.2.0.exe.sha256`
+- local inspection of that downloaded artifact reported:
+  - `ExeChecksumMatches = True`
+  - `InstallerChecksumPublished = True`
+  - `InstallerChecksumStatus = Match`
+  - `InstallerChecksumMatches = True`
 - full installer checksum generation still depends on the existing local prerequisite gap: this machine does not currently have Inno Setup available, so `build_installer.bat` still stops before the packaging step
 
 ## Remaining Work
 
-- run the installer workflow again so the new installer checksum file is produced and uploaded in CI
-- download that updated artifact and validate the published installer checksum path end to end
 - continue with elevated all-users interactive validation, real certificate provisioning, and user-manual installer guidance
