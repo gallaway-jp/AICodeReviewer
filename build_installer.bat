@@ -3,6 +3,8 @@ setlocal EnableExtensions
 set "SCRIPT_DIR=%~dp0"
 cd /d "%SCRIPT_DIR%"
 set "ROOT_DIR=%CD%"
+set "POWERSHELL_EXE=pwsh"
+where /q "%POWERSHELL_EXE%" || set "POWERSHELL_EXE=powershell"
 
 set "PYTHON=%ROOT_DIR%\.venv\Scripts\python.exe"
 if not exist "%PYTHON%" set "PYTHON=python"
@@ -73,6 +75,16 @@ copy /y "%ROOT_DIR%\installer\default-config.ini" "%STAGING_DIR%\config.ini" >nu
 if errorlevel 1 goto :error
 
 "%ISCC%" "/DAppVersion=%APP_VERSION%" "/DSourceDir=%ROOT_DIR%" "/DStagingDir=%STAGING_DIR%" "/DOutputDir=%OUTPUT_DIR%" "%ROOT_DIR%\installer\AICodeReviewer.iss"
+if errorlevel 1 goto :error
+
+set "INSTALLER_PATH=%OUTPUT_DIR%\AICodeReviewer-Setup-%APP_VERSION%.exe"
+if not exist "%INSTALLER_PATH%" (
+	echo ERROR: Build did not produce %INSTALLER_PATH%
+	goto :error
+)
+
+echo Signing installer if certificate configuration is available...
+"%POWERSHELL_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%ROOT_DIR%\tools\sign_windows_binary.ps1" -FilePath "%INSTALLER_PATH%"
 if errorlevel 1 goto :error
 
 echo Installer build complete. Output is in dist\installer

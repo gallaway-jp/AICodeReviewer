@@ -637,8 +637,11 @@ Current status:
 - the installer now also allows command-line privilege overrides (`/CURRENTUSER`, `/ALLUSERS`) for validation runs, and the smoke-validation script can choose a non-admin current-user install path when elevation is not available
 - the packaged CLI help path on Windows no longer crashes on legacy console encodings because the CLI now reconfigures stdout and stderr with replacement-safe error handling before printing localized help text
 - feature-branch workflow run `24119245773` built a fresh installer artifact with the current-user override and CLI help fixes, and a non-admin smoke-validation run against `artifacts/installer-ci-24119245773` passed with checksum verification, `FileVersion 0.2.0.0`, `ProductVersion 0.2.0`, both Start Menu shortcuts present after install, and passing preserve/remove-data uninstall paths
+- the Windows packaging path now includes an opt-in signing scaffold: `tools/sign_windows_binary.ps1` signs the packaged EXE and installer when a PFX certificate is configured, `build_exe.bat` and `build_installer.bat` invoke that helper without regressing the unsigned default path, and `.github/workflows/windows-installer.yml` can consume `WINDOWS_SIGN_CERT_BASE64` plus `WINDOWS_SIGN_CERT_PASSWORD` secrets to sign CI artifacts
+- installer artifact inspection and smoke-validation summaries now report both EXE and installer signature status so signed builds have a first-class validation path instead of an ad hoc maintainer check
+- the unsigned default path was revalidated locally after the signing scaffold landed: `build_exe.bat` still succeeds with signing skipped when no certificate is configured, and `build_installer.bat` still stops only on the known missing-Inno-Setup prerequisite on this machine
 - the installer baseline is intentionally layered on top of the validated PyInstaller EXE path rather than replacing it
-- the remaining Milestone 15 gap is now concentrated in elevated all-users interactive validation, installer signing, and user-manual install/uninstall guidance
+- the remaining Milestone 15 gap is now concentrated in elevated all-users interactive validation, real certificate provisioning plus signed-artifact validation, and user-manual install/uninstall guidance
 
 #### Deliverables
 
