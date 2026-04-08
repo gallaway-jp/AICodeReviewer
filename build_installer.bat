@@ -1,8 +1,10 @@
 @echo off
 setlocal EnableExtensions
-cd /d "%~dp0"
+set "SCRIPT_DIR=%~dp0"
+cd /d "%SCRIPT_DIR%"
+set "ROOT_DIR=%CD%"
 
-set "PYTHON=%CD%\.venv\Scripts\python.exe"
+set "PYTHON=%ROOT_DIR%\.venv\Scripts\python.exe"
 if not exist "%PYTHON%" set "PYTHON=python"
 
 set "ISCC=%INNO_SETUP_COMPILER%"
@@ -29,7 +31,7 @@ if not defined ISCC (
 set "VERSION_FILE=%TEMP%\aicodereviewer_version.txt"
 if exist "%VERSION_FILE%" del "%VERSION_FILE%"
 
-"%PYTHON%" -c "import pathlib, tomllib; payload = tomllib.loads(pathlib.Path('pyproject.toml').read_text(encoding='utf-8')); print(payload['project']['version'])" > "%VERSION_FILE%"
+"%PYTHON%" -c "import pathlib, tomllib; payload = tomllib.loads(pathlib.Path(r'%ROOT_DIR%\pyproject.toml').read_text(encoding='utf-8')); print(payload['project']['version'])" > "%VERSION_FILE%"
 if errorlevel 1 goto :error
 
 set /p APP_VERSION=<"%VERSION_FILE%"
@@ -44,11 +46,11 @@ echo Building AICodeReviewer installer for version %APP_VERSION%...
 echo Using Python: %PYTHON%
 echo Using Inno Setup compiler: %ISCC%
 
-call build_exe.bat
+call "%ROOT_DIR%\build_exe.bat"
 if errorlevel 1 goto :error
 
-set "STAGING_DIR=%CD%\build\installer_payload"
-set "OUTPUT_DIR=%CD%\dist\installer"
+set "STAGING_DIR=%ROOT_DIR%\build\installer_payload"
+set "OUTPUT_DIR=%ROOT_DIR%\dist\installer"
 
 if exist "%STAGING_DIR%" rmdir /s /q "%STAGING_DIR%"
 mkdir "%STAGING_DIR%"
@@ -57,20 +59,20 @@ if errorlevel 1 goto :error
 if not exist "%OUTPUT_DIR%" mkdir "%OUTPUT_DIR%"
 if errorlevel 1 goto :error
 
-copy /y "dist\AICodeReviewer.exe" "%STAGING_DIR%\AICodeReviewer.exe" >nul
+copy /y "%ROOT_DIR%\dist\AICodeReviewer.exe" "%STAGING_DIR%\AICodeReviewer.exe" >nul
 if errorlevel 1 goto :error
-copy /y "dist\AICodeReviewer.exe.sha256" "%STAGING_DIR%\AICodeReviewer.exe.sha256" >nul
+copy /y "%ROOT_DIR%\dist\AICodeReviewer.exe.sha256" "%STAGING_DIR%\AICodeReviewer.exe.sha256" >nul
 if errorlevel 1 goto :error
-copy /y "LICENSE" "%STAGING_DIR%\LICENSE" >nul
+copy /y "%ROOT_DIR%\LICENSE" "%STAGING_DIR%\LICENSE" >nul
 if errorlevel 1 goto :error
-copy /y "THIRD_PARTY_NOTICES.md" "%STAGING_DIR%\THIRD_PARTY_NOTICES.md" >nul
+copy /y "%ROOT_DIR%\THIRD_PARTY_NOTICES.md" "%STAGING_DIR%\THIRD_PARTY_NOTICES.md" >nul
 if errorlevel 1 goto :error
-copy /y "README.md" "%STAGING_DIR%\README.md" >nul
+copy /y "%ROOT_DIR%\README.md" "%STAGING_DIR%\README.md" >nul
 if errorlevel 1 goto :error
-copy /y "installer\default-config.ini" "%STAGING_DIR%\config.ini" >nul
+copy /y "%ROOT_DIR%\installer\default-config.ini" "%STAGING_DIR%\config.ini" >nul
 if errorlevel 1 goto :error
 
-"%ISCC%" "/DAppVersion=%APP_VERSION%" "/DSourceDir=%CD%" "/DStagingDir=%STAGING_DIR%" "/DOutputDir=%OUTPUT_DIR%" "installer\AICodeReviewer.iss"
+"%ISCC%" "/DAppVersion=%APP_VERSION%" "/DSourceDir=%ROOT_DIR%" "/DStagingDir=%STAGING_DIR%" "/DOutputDir=%OUTPUT_DIR%" "%ROOT_DIR%\installer\AICodeReviewer.iss"
 if errorlevel 1 goto :error
 
 echo Installer build complete. Output is in dist\installer
