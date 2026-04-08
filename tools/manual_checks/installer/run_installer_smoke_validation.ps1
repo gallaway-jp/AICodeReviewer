@@ -31,7 +31,9 @@ function Invoke-Executable {
         [string]$FilePath,
         [string[]]$ArgumentList,
         [string]$StepName,
-        [string]$WorkingDirectory = $null
+        [string]$WorkingDirectory = $null,
+        [string]$RedirectStandardOutput = $null,
+        [string]$RedirectStandardError = $null
     )
 
     $processArgs = @{
@@ -44,6 +46,12 @@ function Invoke-Executable {
 
     if ($WorkingDirectory) {
         $processArgs.WorkingDirectory = $WorkingDirectory
+    }
+    if ($RedirectStandardOutput) {
+        $processArgs.RedirectStandardOutput = $RedirectStandardOutput
+    }
+    if ($RedirectStandardError) {
+        $processArgs.RedirectStandardError = $RedirectStandardError
     }
 
     $process = Start-Process @processArgs
@@ -119,6 +127,7 @@ $installLog = Join-Path $LogDir 'install.log'
 $preserveUninstallLog = Join-Path $LogDir 'uninstall-preserve.log'
 $removeUninstallLog = Join-Path $LogDir 'uninstall-remove.log'
 $cliHelpLog = Join-Path $LogDir 'cli-help.txt'
+$cliHelpErrorLog = Join-Path $LogDir 'cli-help.stderr.txt'
 $summaryPath = Join-Path $LogDir 'summary.md'
 
 $exePath = Join-Path $InstallDir 'AICodeReviewer.exe'
@@ -150,7 +159,10 @@ Test-PathExists -LiteralPath $uninstallerPath -Label 'Installed uninstaller'
 Test-PathExists -LiteralPath $guiShortcut -Label 'Start Menu GUI shortcut'
 Test-PathExists -LiteralPath $cliShortcut -Label 'Start Menu CLI shortcut'
 
-& $exePath --help | Out-File -LiteralPath $cliHelpLog -Encoding utf8
+$guiShortcutPresentAfterInstall = $true
+$cliShortcutPresentAfterInstall = $true
+
+Invoke-Executable -FilePath $exePath -ArgumentList @('--help') -StepName 'CLI help validation' -WorkingDirectory $InstallDir -RedirectStandardOutput $cliHelpLog -RedirectStandardError $cliHelpErrorLog
 
 Set-Content -LiteralPath $configPath -Value "[backend]`nprovider=local`n" -Encoding ascii
 Set-Content -LiteralPath $logPath -Value 'installer preserve-data smoke log' -Encoding utf8
@@ -187,8 +199,8 @@ $summary = @(
     "- EXE file version: $($artifactJson.ExeFileVersion)"
     "- EXE product version: $($artifactJson.ExeProductVersion)"
     "- Installer signature status: $($artifactJson.InstallerSignatureStatus)"
-    "- GUI shortcut present: $(Test-Path -LiteralPath $guiShortcut)"
-    "- CLI shortcut present: $(Test-Path -LiteralPath $cliShortcut)"
+    "- GUI shortcut present after install: $guiShortcutPresentAfterInstall"
+    "- CLI shortcut present after install: $cliShortcutPresentAfterInstall"
     '- Preserve-data uninstall: passed'
     '- Remove-data uninstall: passed'
     ''
@@ -197,6 +209,7 @@ $summary = @(
     "- $preserveUninstallLog"
     "- $removeUninstallLog"
     "- $cliHelpLog"
+    "- $cliHelpErrorLog"
  )
 
 $summary | Set-Content -LiteralPath $summaryPath -Encoding utf8
