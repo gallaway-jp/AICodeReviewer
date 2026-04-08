@@ -649,9 +649,10 @@ Current status:
 - the session-bootstrap helper is now validated end to end on workflow run `24130238872`: `start_installer_manual_validation_session.ps1 -RunId 24130238872 -Operator Colin` generated `artifacts/manual-installer-validation-prep/20260408-202542/validation-log.md` with workflow branch and commit metadata, matching EXE and installer checksums, version metadata, unsigned signature status, and suggested follow-up commands
 - the download-plus-bootstrap path now also preserves workflow branch and commit metadata when it reuses an existing `artifacts/installer-ci-<runid>/` cache, so repeated manual-session prep runs remain fully populated instead of dropping run metadata
 - task-oriented packaged install and uninstall instructions are now documented in `docs/user-manual.md`, covering the default install path, GUI and CLI shortcuts, uninstall preserve/remove-data behavior, and the current unsigned-preview warning expectations
+- the installer documentation now also defines the current conservative update and rollback policy: uninstall the current build, choose preserve or remove for install-directory user data, install the target build, and rerun the existing GUI/CLI/config first-launch checks instead of assuming an unvalidated in-place upgrade contract
 - the unsigned default path was revalidated locally after the signing scaffold landed: `build_exe.bat` still succeeds with signing skipped when no certificate is configured, and `build_installer.bat` still stops only on the known missing-Inno-Setup prerequisite on this machine
 - the installer baseline is intentionally layered on top of the validated PyInstaller EXE path rather than replacing it
-- the remaining Milestone 15 gap is now concentrated in elevated all-users interactive validation, real certificate provisioning plus signed-artifact validation, and update/rollback guidance
+- the remaining Milestone 15 gap is now concentrated in elevated all-users interactive validation and real certificate provisioning plus signed-artifact validation
 
 #### Deliverables
 

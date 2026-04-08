@@ -92,6 +92,16 @@ The current installer treats these files as user data:
 
 If you preserve those files and reinstall later, the installer keeps the existing `config.ini` instead of overwriting it with the default template.
 
+### Update or roll back a packaged install
+
+1. Close the GUI and any CLI sessions running from the install directory.
+2. Uninstall the currently installed build from Windows Installed apps or Apps & features.
+3. Choose preserve if you want to keep `config.ini` and the local logs for the next install; choose removal if you want a clean reset before moving to the target build.
+4. Install the target build, whether that is a newer installer for an update or an older installer for a rollback.
+5. Repeat the checks from [Verify the install](#verify-the-install): confirm the GUI opens, the CLI path still runs `AICodeReviewer.exe --help`, and `config.ini` is present with the settings you expected to keep.
+
+The current documented packaged-build policy is this uninstall-plus-reinstall flow rather than an in-place upgrade promise.
+
 Use [Windows Installer Guide](windows-installer.md) when you need maintainer-facing build, signing, artifact-inspection, or manual-validation details.
 
 ## CLI First Review
