@@ -236,6 +236,12 @@ For an elevated unattended smoke pass on a Windows machine, run:
 pwsh -File tools/manual_checks/installer/run_installer_smoke_validation.ps1 -ArtifactRoot artifacts/installer-ci-24117477221
 ```
 
+For a non-admin current-user smoke pass, run:
+
+```powershell
+pwsh -File tools/manual_checks/installer/run_installer_smoke_validation.ps1 -ArtifactRoot artifacts/installer-ci-24117477221 -InstallMode CurrentUser
+```
+
 The smoke script does not replace the full interactive checklist. It is designed to validate:
 
 - silent install to a controlled validation directory
@@ -245,9 +251,11 @@ The smoke script does not replace the full interactive checklist. It is designed
 
 The Inno Setup uninstaller now recognizes those silent uninstall flags. In silent mode without an explicit flag, it defaults to preserving user data.
 
+The installer itself now allows command-line privilege overrides, so the smoke script can use `/CURRENTUSER` in non-admin sessions and `/ALLUSERS` in elevated sessions.
+
 Validation status for this automation path:
 
-- local non-admin shells fail fast with a clear elevation requirement message
+- local non-admin shells can now use `-InstallMode CurrentUser` for a per-user smoke pass
 - feature-branch workflow run `24117818915` confirmed the updated installer definition still builds successfully in CI
 
 1. Install `AICodeReviewer-Setup-<version>.exe` with default options.

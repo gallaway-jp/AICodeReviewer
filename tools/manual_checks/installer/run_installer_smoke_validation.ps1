@@ -1,7 +1,9 @@
 [CmdletBinding()]
 param(
     [string]$ArtifactRoot,
-    [string]$InstallDir = "$env:ProgramFiles\AICodeReviewer-Validation",
+    [ValidateSet('Auto', 'CurrentUser', 'AllUsers')]
+    [string]$InstallMode = 'Auto',
+    [string]$InstallDir,
     [string]$LogDir
 )
 
@@ -71,11 +73,35 @@ function Test-PathMissing {
 }
 
 if (-not (Test-IsAdministrator)) {
-    throw 'This smoke-validation script must run from an elevated PowerShell session because the installer requires admin privileges.'
+    $isAdministrator = $false
+} else {
+    $isAdministrator = $true
 }
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $inspectScript = Join-Path $PSScriptRoot 'inspect_installer_artifact.ps1'
+
+if ($InstallMode -eq 'Auto') {
+    if ($isAdministrator) {
+        $effectiveInstallMode = 'AllUsers'
+    } else {
+        $effectiveInstallMode = 'CurrentUser'
+    }
+} else {
+    $effectiveInstallMode = $InstallMode
+}
+
+if (($effectiveInstallMode -eq 'AllUsers') -and (-not $isAdministrator)) {
+    throw 'AllUsers smoke validation requires an elevated PowerShell session. Re-run elevated or use -InstallMode CurrentUser.'
+}
+
+if (-not $InstallDir) {
+    if ($effectiveInstallMode -eq 'AllUsers') {
+        $InstallDir = Join-Path $env:ProgramFiles 'AICodeReviewer-Validation'
+    } else {
+        $InstallDir = Join-Path $env:LOCALAPPDATA 'Programs\AICodeReviewer-Validation'
+    }
+}
 
 if (-not $LogDir) {
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
@@ -101,9 +127,12 @@ $logPath = Join-Path $InstallDir 'aicodereviewer.log'
 $auditLogPath = Join-Path $InstallDir 'aicodereviewer-audit.log'
 $uninstallerPath = Join-Path $InstallDir 'unins000.exe'
 
-$startMenuPrograms = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs'
+$startMenuRoot = if ($effectiveInstallMode -eq 'AllUsers') { $env:ProgramData } else { $env:APPDATA }
+$startMenuPrograms = Join-Path $startMenuRoot 'Microsoft\Windows\Start Menu\Programs'
 $guiShortcut = Join-Path $startMenuPrograms 'AICodeReviewer.lnk'
 $cliShortcut = Join-Path $startMenuPrograms 'AICodeReviewer CLI.lnk'
+
+$installModeArg = if ($effectiveInstallMode -eq 'AllUsers') { '/ALLUSERS' } else { '/CURRENTUSER' }
 
 if (Test-Path -LiteralPath $uninstallerPath) {
     Invoke-Executable -FilePath $uninstallerPath -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/REMOVEUSERDATA', "/LOG=$LogDir\preclean-uninstall.log") -StepName 'Pre-clean uninstall'
@@ -113,7 +142,7 @@ if (Test-Path -LiteralPath $InstallDir) {
     Remove-Item -LiteralPath $InstallDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-Invoke-Executable -FilePath $installerPath -ArgumentList @('/SP-', '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=$InstallDir", "/LOG=$installLog") -StepName 'Silent installer run'
+Invoke-Executable -FilePath $installerPath -ArgumentList @('/SP-', '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', $installModeArg, "/DIR=$InstallDir", "/LOG=$installLog") -StepName 'Silent installer run'
 
 Test-PathExists -LiteralPath $exePath -Label 'Installed EXE'
 Test-PathExists -LiteralPath $configPath -Label 'Installed config'
@@ -133,7 +162,7 @@ Test-PathExists -LiteralPath $configPath -Label 'Preserved config'
 Test-PathExists -LiteralPath $logPath -Label 'Preserved application log'
 Test-PathExists -LiteralPath $auditLogPath -Label 'Preserved audit log'
 
-Invoke-Executable -FilePath $installerPath -ArgumentList @('/SP-', '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=$InstallDir", "/LOG=$LogDir\reinstall.log") -StepName 'Silent reinstall'
+Invoke-Executable -FilePath $installerPath -ArgumentList @('/SP-', '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', $installModeArg, "/DIR=$InstallDir", "/LOG=$LogDir\reinstall.log") -StepName 'Silent reinstall'
 
 Test-PathExists -LiteralPath $uninstallerPath -Label 'Reinstalled uninstaller'
 Set-Content -LiteralPath $configPath -Value "[backend]`nprovider=local`nmode=reset`n" -Encoding ascii
@@ -151,6 +180,7 @@ $summary = @(
     ''
     "- Artifact root: $($artifactJson.ArtifactRoot)"
     "- Workflow run: $($artifactJson.WorkflowRunId)"
+    "- Install mode: $effectiveInstallMode"
     "- Installer path: $installerPath"
     "- Install directory: $InstallDir"
     "- EXE checksum match: $($artifactJson.ExeChecksumMatches)"
