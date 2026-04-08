@@ -591,6 +591,14 @@ aicodereviewer analyze-repo . --output-dir artifacts/generated-addon-preview --a
 aicodereviewer approve-addon-preview artifacts/generated-addon-preview --reviewer <name> --decision approve
 ```
 
+If you want a richer diff-first review before deciding, open the interactive review surface first:
+
+```bash
+aicodereviewer review-addon-preview artifacts/generated-addon-preview --diff-only
+```
+
+That review surface shows the generated bundle against the default bundle and, when present, the currently installed addon against the new preview.
+
 Use this path when you want:
 
 - machine-readable review envelopes
@@ -644,7 +652,15 @@ If you want to inspect how the generator behaves on the curated external sample 
 d:/Development/Python/AICodeReviewer/.venv/Scripts/python.exe tools/validate_generated_addons.py --json-out artifacts/generated-addon-validation/summary.json
 ```
 
-That report summarizes both heuristic signal detection and whether the generated review bundle is more relevant than the default bundle on the sampled repositories.
+That report summarizes heuristic signal detection on the curated external sample set, and the repository reruns it periodically through `.github/workflows/generated-addon-validation.yml`.
+
+For judged review-output quality on representative repositories, run:
+
+```bash
+d:/Development/Python/AICodeReviewer/.venv/Scripts/python.exe tools/evaluate_generated_addon_review_quality.py --backend <backend> --json-out artifacts/generated-addon-review-quality/summary.json
+```
+
+That runner compares default-bundle and generated-bundle review reports against judged expectations on representative FastAPI and React repositories. Use it as the primary relevance baseline when evaluating whether generated addons actually improve review output quality.
 
 Use [Addons Guide](addons.md) for the maintained manifest contract and discovery rules.
 

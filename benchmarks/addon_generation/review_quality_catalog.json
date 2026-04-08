@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "targets": [
+    {
+      "id": "fastapi-patch-contract",
+      "fixture_id": "fastapi-patch-contract-drift",
+      "label": "FastAPI patch contract drift",
+      "stack": "fastapi"
+    },
+    {
+      "id": "fastapi-delivery-validation",
+      "fixture_id": "fastapi-delivery-mode-validation",
+      "label": "FastAPI delivery mode validation",
+      "stack": "fastapi"
+    },
+    {
+      "id": "react-accessibility-group-label",
+      "fixture_id": "react-accessibility-group-label",
+      "label": "React accessibility fieldset label",
+      "stack": "react"
+    }
+  ]
+}

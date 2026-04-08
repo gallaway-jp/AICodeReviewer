@@ -1,0 +1,35 @@
+name: generated-addon-validation
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 10 * * 1'
+
+jobs:
+  validate-generated-addons:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Run external generated-addon validation
+        run: |
+          mkdir -p artifacts/generated-addon-validation
+          python tools/validate_generated_addons.py --json-out artifacts/generated-addon-validation/summary.json
+
+      - name: Upload validation artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-addon-validation-${{ github.run_id }}
+          path: artifacts/generated-addon-validation

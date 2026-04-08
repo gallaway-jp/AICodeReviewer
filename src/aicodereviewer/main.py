@@ -23,6 +23,7 @@ from typing import Any, Callable, Sequence, cast
 from aicodereviewer.addons import AddonRuntime, get_active_addon_runtime, install_addon_runtime
 from aicodereviewer.addon_approval import approve_generated_addon
 from aicodereviewer.addon_generator import generate_addon_preview
+from aicodereviewer.addon_review_surface import build_addon_review_surface, render_addon_review_surface, review_generated_addon_preview
 from aicodereviewer.auth import get_system_language, set_profile_name, clear_profile
 from aicodereviewer.backends import create_backend, get_backend_choices, resolve_backend_type
 from aicodereviewer.backends.health import check_backend, HealthReport
@@ -48,6 +49,7 @@ logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 1
 TOOL_COMMANDS = {"review", "health", "fix-plan", "apply-fixes", "resume", "serve-api", "analyze-repo", "approve-addon-preview"}
+INTERACTIVE_COMMANDS = {"review-addon-preview"}
 EXIT_OK = 0
 EXIT_FAILURE = 1
 EXIT_CANCELLED = 3
@@ -165,6 +167,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     target_lang = _determine_target_lang(argv)
     set_locale(target_lang)
+
+    if argv and argv[0] in INTERACTIVE_COMMANDS:
+        parser = _build_interactive_command_parser(argv[0])
+        args = parser.parse_args(argv[1:])
+        _setup_logging()
+        return _run_interactive_command(argv[0], args)
 
     if argv and argv[0] in TOOL_COMMANDS:
         parser = _build_tool_parser()
@@ -467,6 +475,24 @@ def _build_tool_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _build_interactive_command_parser(command_name: str) -> argparse.ArgumentParser:
+    if command_name != "review-addon-preview":
+        raise ValueError(f"Unsupported interactive command: {command_name}")
+    parser = argparse.ArgumentParser(
+        prog=f"aicodereviewer {command_name}",
+        description="Render a diff-first review surface for a generated addon preview and optionally approve or reject it.",
+    )
+    parser.add_argument("preview_dir", metavar="DIR")
+    parser.add_argument("--install-dir", metavar="DIR")
+    parser.add_argument("--diff-only", action="store_true")
+    parser.add_argument("--decision", choices=["approve", "reject", "defer"])
+    parser.add_argument("--reviewer", metavar="NAME")
+    parser.add_argument("--notes", default="", metavar="TEXT")
+    parser.add_argument("--force", action="store_true")
+    parser.add_argument("--json-out", metavar="FILE")
+    return parser
+
+
 def _add_common_review_args(parser: argparse.ArgumentParser) -> None:
     """Add shared review arguments for tool-mode commands."""
     parser.add_argument("path", nargs="?", help="Project directory for project-scope reviews")
@@ -633,6 +659,65 @@ def _run_approve_addon_preview_tool_mode(args: argparse.Namespace) -> int:
     })
     _write_json_result(payload, args.json_out)
     return EXIT_OK
+
+
+def _run_interactive_command(command_name: str, args: argparse.Namespace) -> int:
+    if command_name != "review-addon-preview":
+        raise ValueError(f"Unsupported interactive command: {command_name}")
+    surface = build_addon_review_surface(args.preview_dir, install_dir=args.install_dir)
+    rendered = render_addon_review_surface(surface)
+    _print_console(rendered, end="")
+
+    payload = surface.to_dict()
+    if args.diff_only:
+        if args.json_out:
+            Path(args.json_out).write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        return EXIT_OK
+
+    decision = args.decision or _prompt_review_surface_decision()
+    if decision == "defer" or not decision:
+        payload["decision"] = "defer"
+        if args.json_out:
+            Path(args.json_out).write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        return EXIT_OK
+
+    reviewer = args.reviewer or _prompt_required_value("Reviewer")
+    notes = args.notes
+    if not notes and sys.stdin.isatty():
+        notes = input("Notes (optional): ").strip()
+
+    result_payload = review_generated_addon_preview(
+        args.preview_dir,
+        reviewer=reviewer,
+        decision=decision,
+        notes=notes,
+        install_dir=args.install_dir,
+        force=args.force,
+    )
+    _print_console(f"Decision recorded: {result_payload['decision']} by {result_payload['reviewer']}")
+    if result_payload.get("activation_hint"):
+        _print_console(str(result_payload["activation_hint"]))
+    if args.json_out:
+        Path(args.json_out).write_text(json.dumps({**payload, "result": result_payload}, indent=2) + "\n", encoding="utf-8")
+    return EXIT_OK
+
+
+def _prompt_review_surface_decision() -> str:
+    if not sys.stdin.isatty():
+        return "defer"
+    while True:
+        response = input("Decision [approve/reject/defer]: ").strip().lower()
+        if response in {"approve", "reject", "defer"}:
+            return response
+
+
+def _prompt_required_value(label: str) -> str:
+    if not sys.stdin.isatty():
+        raise ValueError(f"{label} is required when no interactive terminal is available")
+    while True:
+        value = input(f"{label}: ").strip()
+        if value:
+            return value
 
 
 def _run_serve_api_tool_mode(args: argparse.Namespace) -> int:

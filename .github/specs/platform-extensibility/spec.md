@@ -704,24 +704,31 @@ Current status:
 - the analyzer now excludes nested example, fixture, benchmark, sample, demo, and artifact trees from the primary profile and no longer treats import text embedded inside test snippets as real framework usage
 - generated previews now also emit `approval-request.json` and `review-checklist.md`, and the new `approve-addon-preview` command records an explicit maintainer decision before optionally installing the addon
 - the repository now includes `tools/validate_generated_addons.py` plus a curated external-repository catalog to measure heuristic detection quality and the first generated-vs-default bundle relevance delta
+- the repository now includes `review-addon-preview`, a richer diff-first interactive review surface that renders generated-vs-default and installed-vs-generated addon diffs before approval
+- the external repository catalog has expanded beyond the initial three samples, and `.github/workflows/generated-addon-validation.yml` now reruns that catalog on a weekly schedule plus manual dispatch
+- the relevance baseline has moved to judged review-output quality via `tools/evaluate_generated_addon_review_quality.py` and representative repository fixtures under `benchmarks/addon_generation/review_quality/fixtures`
 
 #### Recent Validation
 
 - focused pytest coverage for `tests/test_addon_generator.py` and `tests/test_cli_tool_mode.py` passed after the filtering change
 - a real `analyze-repo` self-run against this repository now emits a clean JSON envelope and reports only `pytest` instead of framework noise from embedded sample content
 - focused pytest coverage for `tests/test_addon_approval.py`, `tests/test_addon_validation.py`, and the expanded CLI tool-mode tests now passes for the approval gate, installation path, and relevance scoring contract
+- focused pytest coverage now also passes for `tests/test_addon_review_surface.py` and `tests/test_addon_review_quality.py`, covering the interactive review surface and judged score-delta runner
 
 #### Remaining Milestone 16 Gaps
 
-- expand the maintainer approval flow into a richer diff-first UI or GUI surface instead of the current CLI approval packet and command gate
-- broaden the curated external repository sample set beyond the initial small catalog and rerun validation periodically
-- move the relevance measurement beyond heuristic bundle overlap into judged review-output quality on representative repositories
+- expand the diff-first review surface from the current terminal interaction into a dedicated GUI surface when the addon workflow moves into the desktop app
+- continue broadening the curated external repository sample set and refine expectations as upstream repositories drift
+- extend the judged review-quality runner from the first representative repository set into a larger cross-stack suite and backend-comparison history
 
 #### Validation Artifacts
 
 - `analyze-repo` now emits reviewable approval artifacts: `approval-request.json` and `review-checklist.md`
 - `approve-addon-preview` writes `approval-decision.json` and installs approved previews into the default discovered addon directory unless the maintainer overrides the install path
 - `tools/validate_generated_addons.py` writes per-repository preview outputs plus a JSON summary covering heuristic precision/recall and generated-vs-default bundle relevance
+- `review-addon-preview` renders the diff-first approval surface and can also record a maintainer decision in the same interactive path
+- `tools/evaluate_generated_addon_review_quality.py` writes judged default-vs-generated score deltas against representative repository fixtures and is the current Milestone 16 relevance baseline
+
 
 
 
