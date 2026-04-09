@@ -8,6 +8,7 @@ Use it when you want the shortest path to a working review flow without reading 
 
 Start here based on what you want to do:
 
+- Install or remove the packaged Windows app: go to [Windows Installer Workflow](#windows-installer-workflow)
 - Run your first review from the terminal: go to [CLI First Review](#cli-first-review)
 - Review only a diff or change range: go to [Diff Review Workflow](#diff-review-workflow)
 - Review only part of a project with selected files or diff filters: go to [Partial Project Workflow](#partial-project-workflow)
@@ -25,11 +26,13 @@ Start here based on what you want to do:
 
 ## Before You Start
 
-You need:
+For source-based installs, you need:
 
 - Python 3.11 or newer
 - one configured backend: Bedrock, Kiro, Copilot, or Local LLM
 - a project or diff target you want to review
+
+If you are using the packaged Windows installer, skip the Python requirement and start with [Windows Installer Workflow](#windows-installer-workflow).
 
 Install the desktop build:
 
@@ -46,6 +49,60 @@ pip install -e .
 ```
 
 If you have not chosen a backend yet, read [Backend Guide](backends.md) first.
+
+## Windows Installer Workflow
+
+Use this path when you have `AICodeReviewer-Setup-<version>.exe` and want the packaged Windows GUI and CLI without setting up Python first.
+
+What the installer sets up:
+
+- the application under `Program Files\AICodeReviewer` by default
+- a Start Menu `AICodeReviewer` shortcut for the GUI
+- a Start Menu `AICodeReviewer CLI` shortcut for the CLI entry point
+- an optional desktop shortcut for the GUI
+- the packaged `config.ini`, `LICENSE`, `THIRD_PARTY_NOTICES.md`, and `README.md` files in the install directory
+
+### Install the packaged build
+
+1. Download `AICodeReviewer-Setup-<version>.exe` from the release or maintainer-provided artifact.
+2. If Windows shows a SmartScreen or unknown publisher warning, verify the source and version before continuing. Unsigned preview builds can still trigger that warning until signed release packaging is in place.
+3. Run the installer, review the license, keep the default install directory unless you have a specific reason to change it, and choose the desktop shortcut task only if you want a desktop icon.
+4. Leave the post-install launch option enabled if you want the GUI to open immediately; otherwise start it later from the Start Menu `AICodeReviewer` shortcut.
+5. Open Settings in the GUI or edit `config.ini` in the install directory to choose your backend, then continue with [GUI First Session](#gui-first-session) or [CLI First Review](#cli-first-review).
+
+### Verify the install
+
+1. Launch the GUI from the Start Menu and confirm the desktop window opens.
+2. Launch the CLI from the Start Menu `AICodeReviewer CLI` shortcut or run `AICodeReviewer.exe --help` from the install directory.
+3. Confirm `config.ini` exists in the install directory and update backend settings if you have not configured them yet.
+4. If you installed an unsigned preview build, note any SmartScreen or publisher warnings so you can distinguish packaging trust prompts from application problems.
+
+### Uninstall and choose whether to keep data
+
+1. Close the GUI and any terminal sessions running from the install directory.
+2. Open Windows Installed apps or Apps & features and uninstall `AICodeReviewer`.
+3. When the uninstaller asks whether to preserve user data in the install directory, choose based on whether you want to keep your local configuration and logs.
+4. Choose preserve if you plan to reinstall and reuse your backend settings; choose removal if you want a clean local reset.
+
+The current installer treats these files as user data:
+
+- `config.ini`
+- `aicodereviewer.log`
+- `aicodereviewer-audit.log`
+
+If you preserve those files and reinstall later, the installer keeps the existing `config.ini` instead of overwriting it with the default template.
+
+### Update or roll back a packaged install
+
+1. Close the GUI and any CLI sessions running from the install directory.
+2. Uninstall the currently installed build from Windows Installed apps or Apps & features.
+3. Choose preserve if you want to keep `config.ini` and the local logs for the next install; choose removal if you want a clean reset before moving to the target build.
+4. Install the target build, whether that is a newer installer for an update or an older installer for a rollback.
+5. Repeat the checks from [Verify the install](#verify-the-install): confirm the GUI opens, the CLI path still runs `AICodeReviewer.exe --help`, and `config.ini` is present with the settings you expected to keep.
+
+The current documented packaged-build policy is this uninstall-plus-reinstall flow rather than an in-place upgrade promise.
+
+Use [Windows Installer Guide](windows-installer.md) when you need maintainer-facing build, signing, artifact-inspection, or manual-validation details.
 
 ## CLI First Review
 
@@ -522,12 +579,34 @@ aicodereviewer apply-fixes --plan-file artifacts/fix-plan.json --json-out artifa
 aicodereviewer resume --artifact-file artifacts/fix-plan.json
 ```
 
+5. Generate a preview addon scaffold for a repository-specific review bundle when you want to tune future runs without editing core files.
+
+```bash
+aicodereviewer analyze-repo . --output-dir artifacts/generated-addon-preview --addon-id my-repo-adaptive-review
+```
+
+6. Review the generated `approval-request.json` and `review-checklist.md`, edit the generated addon files if needed, and approve the preview explicitly before enabling it.
+
+```bash
+aicodereviewer approve-addon-preview artifacts/generated-addon-preview --reviewer <name> --decision approve
+```
+
+If you want a richer diff-first review before deciding, open the interactive review surface first:
+
+```bash
+aicodereviewer review-addon-preview artifacts/generated-addon-preview --diff-only
+```
+
+That review surface shows the generated bundle against the default bundle and, when present, the currently installed addon against the new preview.
+
 Use this path when you want:
 
 - machine-readable review envelopes
 - resumable automation
 - separated review and apply phases
 - retry and diagnostic metadata for failures
+- a preview addon scaffold derived from the current repository shape
+- an explicit maintainer approval gate before the generated addon becomes active
 
 Use [CLI Guide](cli.md) and [Reports and Outputs](reports.md) for the full tool-mode contract.
 
@@ -537,7 +616,12 @@ Use this path when you want to add a review pack, backend provider, Settings con
 
 Fastest starter path:
 
-1. Copy one of the checked-in examples under `examples/`.
+1. Either generate a preview scaffold or copy one of the checked-in examples under `examples/`.
+
+```bash
+aicodereviewer analyze-repo . --output-dir artifacts/generated-addon-preview --addon-id my-repo-adaptive-review
+```
+
 2. Point `addons.paths` at the addon directory or manifest.
 3. Run addon discovery.
 
@@ -557,6 +641,28 @@ Use these examples as starting points:
 - `examples/addon-secure-defaults/` for manifest-only review-pack contributions
 - `examples/addon-echo-backend/` for backend provider plus Settings-surface contribution
 - `examples/addon-editor-hooks/` for popup-editor and staged-preview hooks
+
+The generated `analyze-repo` scaffold is also a valid starting point when you want a repository-specific review-pack preview instead of a generic example.
+
+The generated profile is intentionally biased toward the primary repository. Nested example, fixture, benchmark, sample, demo, and artifact trees are ignored so preview bundles stay focused on the codebase you actually maintain.
+
+If you want to inspect how the generator behaves on the curated external sample set used for Milestone 16 validation, run:
+
+```bash
+d:/Development/Python/AICodeReviewer/.venv/Scripts/python.exe tools/validate_generated_addons.py --json-out artifacts/generated-addon-validation/summary.json
+```
+
+That report summarizes heuristic signal detection on the curated external sample set, and the repository reruns it periodically through `.github/workflows/generated-addon-validation.yml`.
+
+For judged review-output quality on representative repositories, run:
+
+```bash
+d:/Development/Python/AICodeReviewer/.venv/Scripts/python.exe tools/evaluate_generated_addon_review_quality.py --backend <backend> --json-out artifacts/generated-addon-review-quality/summary.json
+```
+
+That runner compares default-bundle and generated-bundle review reports against judged expectations on representative FastAPI and React repositories. Use it as the primary relevance baseline when evaluating whether generated addons actually improve review output quality.
+
+The repository also ships `.github/workflows/generated-addon-judged-quality.yml` for this judged path. That workflow restores the most recent backend history artifact, reruns the judged fixture set, appends the backend's history entry, and publishes a markdown trend summary. It expects a runner where the chosen backend is already installed and authenticated.
 
 Use [Addons Guide](addons.md) for the maintained manifest contract and discovery rules.
 
@@ -910,6 +1016,7 @@ Try these in order:
 
 ## Recommended Reading By Goal
 
+- packaged Windows install or uninstall: [Windows Installer Guide](windows-installer.md)
 - first install and first review: [Getting Started](getting-started.md)
 - backend setup: [Backend Guide](backends.md)
 - diff and specification review flags: [CLI Guide](cli.md)

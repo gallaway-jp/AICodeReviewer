@@ -61,6 +61,7 @@ class AppBootstrapHelper:
         self.host._build_review_tab()
         self.host._build_results_tab()
         self.host._build_benchmark_tab()
+        self.host._build_addon_review_tab()
         self.host._build_settings_tab()
         self.host._build_log_tab()
         self.host._app_helpers().shell_layout().install_tab_selection_layout_hooks()
@@ -161,3 +162,8 @@ class AppBootstrapHelper:
         self.host._detached_benchmark_window = None
         self.host._detached_benchmark_container = None
         self.host._detached_benchmark_redock_btn = None
+        self.host._detached_addon_review_window = None
+        self.host._detached_addon_review_container = None
+        self.host._detached_addon_review_redock_btn = None
+        self.host._current_addon_review_surface = None
+        self.host._current_addon_review_diffs = {}

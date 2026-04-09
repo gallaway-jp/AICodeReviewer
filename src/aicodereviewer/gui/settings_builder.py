@@ -669,6 +669,27 @@ class SettingsTabBuilder:
         self.host._refresh_addons_btn.grid(row=self.row, column=2, sticky="w", padx=6, pady=(0, 6))
         self.row += 1
 
+        addon_review_launcher = ctk.CTkLabel(
+            self.scroll,
+            text=t("gui.settings.addons_review_launcher"),
+            anchor="w",
+            justify="left",
+            text_color="gray50",
+            font=ctk.CTkFont(size=11),
+        )
+        addon_review_launcher.grid(row=self.row, column=0, columnspan=4, sticky="ew", padx=6, pady=(8, 4))
+        self.host._settings_addon_review_launcher_label = addon_review_launcher
+        self.row += 1
+
+        self.host.open_addon_review_btn = ctk.CTkButton(
+            self.scroll,
+            text=t("gui.settings.addons_open_review"),
+            width=180,
+            command=self.host._open_addon_review_tab,
+        )
+        self.host.open_addon_review_btn.grid(row=self.row, column=2, sticky="w", padx=6, pady=(0, 6))
+        self.row += 1
+
     def _build_output_formats_section(self) -> None:
         self._section_header("Review Report Output Formats")
 

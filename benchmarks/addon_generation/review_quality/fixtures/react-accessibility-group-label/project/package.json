@@ -1,0 +1,13 @@
+{
+  "name": "react-accessibility-group-label",
+  "version": "0.1.0",
+  "dependencies": {
+    "react": "18.3.1"
+  },
+  "devDependencies": {
+    "vitest": "1.6.0"
+  },
+  "scripts": {
+    "test": "vitest run"
+  }
+}

@@ -17,11 +17,16 @@ Milestone 14 intentionally resets the maintained release line to `v0.2.0` to ref
 
 ---
 
-## Unreleased
 
-No unreleased changes are currently recorded after the `v0.2.0` release normalization cutover.
+## v0.3.0
 
----
+### Added
+- Scheduled review notification adapters (push/email)
+- Headless scheduler host for local HTTP
+- GUI/local HTTP integration for scheduled reviews
+- Regression test and documentation updates for Milestone 17
+
+----
 
 ## v0.2.0
 
