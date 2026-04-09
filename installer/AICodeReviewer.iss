@@ -42,6 +42,8 @@ Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
+PrivilegesRequiredOverridesAllowed=commandline
+UsePreviousPrivileges=no
 DisableProgramGroupPage=yes
 VersionInfoVersion={#AppVersion}
 
@@ -71,14 +73,46 @@ Filename: "{app}\AICodeReviewer.exe"; Parameters: "--gui"; WorkingDir: "{app}"; 
 var
   PreserveUserData: Boolean;
 
+function HasCommandLineFlag(const ExpectedValue: String): Boolean;
+var
+  Index: Integer;
+begin
+  Result := False;
+  for Index := 1 to ParamCount do
+  begin
+    if CompareText(ParamStr(Index), ExpectedValue) = 0 then
+    begin
+      Result := True;
+      Exit;
+    end;
+  end;
+end;
+
+function IsSilentUninstall: Boolean;
+begin
+  Result := HasCommandLineFlag('/SILENT') or HasCommandLineFlag('/VERYSILENT');
+end;
+
 function InitializeUninstall(): Boolean;
 begin
-  PreserveUserData :=
-    MsgBox(
-      'Preserve AICodeReviewer user data stored in the install directory (config.ini and log files)?',
-      mbConfirmation,
-      MB_YESNO or MB_DEFBUTTON2
-    ) = IDYES;
+  if HasCommandLineFlag('/REMOVEUSERDATA') then
+  begin
+    PreserveUserData := False;
+  end
+  else if HasCommandLineFlag('/PRESERVEUSERDATA') or IsSilentUninstall() then
+  begin
+    PreserveUserData := True;
+  end
+  else
+  begin
+    PreserveUserData :=
+      MsgBox(
+        'Preserve AICodeReviewer user data stored in the install directory (config.ini and log files)?',
+        mbConfirmation,
+        MB_YESNO or MB_DEFBUTTON2
+      ) = IDYES;
+  end;
+
   Result := True;
 end;
 

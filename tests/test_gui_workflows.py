@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from aicodereviewer.addons import AddonEditorDiagnostic
+from aicodereviewer.addon_generator import generate_addon_preview
 import aicodereviewer.auth as auth
 from aicodereviewer.i18n import t
 from aicodereviewer.models import ReviewIssue
@@ -4946,6 +4947,115 @@ def test_settings_tab_detach_and_redock_preserves_unsaved_state(
         _reset_config_to_path(original_config_path)
 
 
+def test_addon_review_can_approve_preview(
+    app_factory: Any,
+    tmp_path: Path,
+) -> None:
+    original_config_path = config.config_path
+    temporary_config_path = tmp_path / "addon-review-surface.ini"
+
+    try:
+        _save_default_config_to_path(temporary_config_path)
+
+        project_root = tmp_path / "service_repo"
+        project_root.mkdir()
+        (project_root / "pyproject.toml").write_text(
+            "[project]\nname = 'service-repo'\nversion = '0.1.0'\n\n[tool.pytest.ini_options]\naddopts = '-q'\n",
+            encoding="utf-8",
+        )
+        (project_root / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+        src_dir = project_root / "src"
+        src_dir.mkdir()
+        (src_dir / "api.py").write_text("from fastapi import FastAPI\napp = FastAPI()\n", encoding="utf-8")
+
+        preview = generate_addon_preview(project_root, tmp_path / "preview", addon_id="desktop-preview")
+        install_dir = tmp_path / "approved-addons"
+
+        harness = GuiTestHarness(app_factory())
+        harness.app.tabs.set(t("gui.tab.settings"))
+        harness.pump()
+        harness.app.open_addon_review_btn.invoke()
+        harness.pump()
+
+        harness.set_entry(harness.app.addon_review_preview_entry, str(preview.output_dir))
+        harness.set_entry(harness.app.addon_review_reviewer_entry, "Colin")
+        harness.set_entry(harness.app.addon_review_install_dir_entry, str(install_dir))
+
+        harness.app.addon_review_load_btn.invoke()
+        harness.pump(2)
+        harness.app.addon_review_approve_btn.invoke()
+        harness.pump(2)
+
+        assert (install_dir / "desktop-preview" / "addon.json").is_file()
+        assert "Decision recorded: approve by Colin" in harness.app.addon_review_status_box.get("0.0", "end")
+    finally:
+        _reset_config_to_path(original_config_path)
+
+
+def test_addon_review_tab_detach_and_redock_preserves_loaded_state(
+    app_factory: Any,
+    tmp_path: Path,
+) -> None:
+    original_config_path = config.config_path
+    temporary_config_path = tmp_path / "detached-addon-review.ini"
+
+    try:
+        _save_default_config_to_path(temporary_config_path)
+
+        project_root = tmp_path / "service_repo"
+        project_root.mkdir()
+        (project_root / "pyproject.toml").write_text(
+            "[project]\nname = 'service-repo'\nversion = '0.1.0'\n\n[tool.pytest.ini_options]\naddopts = '-q'\n",
+            encoding="utf-8",
+        )
+        (project_root / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+        src_dir = project_root / "src"
+        src_dir.mkdir()
+        (src_dir / "api.py").write_text("from fastapi import FastAPI\napp = FastAPI()\n", encoding="utf-8")
+
+        preview = generate_addon_preview(project_root, tmp_path / "preview", addon_id="desktop-preview")
+        install_dir = tmp_path / "approved-addons"
+
+        harness = GuiTestHarness(app_factory())
+        harness.app.tabs.set(t("gui.tab.addon_review"))
+        harness.pump()
+
+        harness.set_entry(harness.app.addon_review_preview_entry, str(preview.output_dir))
+        harness.set_entry(harness.app.addon_review_reviewer_entry, "Colin")
+        harness.set_entry(harness.app.addon_review_install_dir_entry, str(install_dir))
+        harness.app.addon_review_notes_box.insert("0.0", "Looks ready")
+        harness.app.addon_review_load_btn.invoke()
+        harness.pump(2)
+
+        metadata_text = harness.app.addon_review_metadata_box.get("0.0", "end")
+        diff_text = harness.app.addon_review_diff_box.get("0.0", "end")
+
+        harness.app.detach_addon_review_btn.invoke()
+        harness.pump(2)
+
+        assert harness.app._detached_addon_review_window is not None
+        assert config.get("gui", "detached_pages", "") == "addon_review"
+        assert harness.app.addon_review_reviewer_entry.get() == "Colin"
+        assert harness.app.addon_review_install_dir_entry.get() == str(install_dir)
+        assert harness.app.addon_review_notes_box.get("0.0", "end").strip() == "Looks ready"
+        assert harness.app.addon_review_metadata_box.get("0.0", "end") == metadata_text
+        assert harness.app.addon_review_diff_box.get("0.0", "end") == diff_text
+
+        harness.app._detached_addon_review_redock_btn.invoke()
+        harness.pump(2)
+
+        assert harness.app._detached_addon_review_window is None
+        assert harness.app.tabs.get() == t("gui.tab.addon_review")
+        assert config.get("gui", "detached_pages", "") == ""
+        assert harness.app.addon_review_reviewer_entry.get() == "Colin"
+        assert harness.app.addon_review_install_dir_entry.get() == str(install_dir)
+        assert harness.app.addon_review_notes_box.get("0.0", "end").strip() == "Looks ready"
+        assert harness.app.addon_review_metadata_box.get("0.0", "end") == metadata_text
+        assert harness.app.addon_review_diff_box.get("0.0", "end") == diff_text
+    finally:
+        _reset_config_to_path(original_config_path)
+
+
 def test_benchmark_tab_detach_and_redock_preserves_loaded_state(
     app_factory: Any,
     tmp_path: Path,
@@ -5043,6 +5153,17 @@ def test_detachable_pages_support_keyboard_shortcuts_for_open_and_redock(
         shortcut_harness.pump(2)
 
         assert shortcut_harness.app._detached_benchmark_window is None
+
+        shortcut_harness.app.tabs.set(t("gui.tab.addon_review"))
+        assert shortcut_harness.app._detach_current_page_shortcut() == "break"
+        shortcut_harness.pump(2)
+
+        assert shortcut_harness.app._detached_addon_review_window is not None
+
+        shortcut_harness.app._detached_addon_review_redock_btn.invoke()
+        shortcut_harness.pump(2)
+
+        assert shortcut_harness.app._detached_addon_review_window is None
     finally:
         _reset_config_to_path(original_config_path)
 
@@ -5077,7 +5198,7 @@ def test_log_tab_detached_window_restores_after_restart(
     assert config.get("gui", "detached_pages", "") == "log"
 
 
-def test_three_detached_pages_restore_after_restart(
+def test_four_detached_pages_restore_after_restart(
     app_factory: Any,
     tmp_path: Path,
 ) -> None:
@@ -5108,13 +5229,18 @@ def test_three_detached_pages_restore_after_restart(
         first_app.benchmark_fixture_sort_var.set(t("gui.benchmark.fixture_sort_status_churn"))
         first_app._on_fixture_diff_sort_selected(t("gui.benchmark.fixture_sort_status_churn"))
         first_app.detach_benchmark_btn.invoke()
+        first_app.tabs.set(t("gui.tab.addon_review"))
+        first_app.update_idletasks()
+        first_app.update()
+        first_app.detach_addon_review_btn.invoke()
         first_app.update_idletasks()
         first_app.update()
 
-        assert set(filter(None, config.get("gui", "detached_pages", "").split(","))) == {"benchmark", "log", "settings"}
+        assert set(filter(None, config.get("gui", "detached_pages", "").split(","))) == {"addon_review", "benchmark", "log", "settings"}
         assert config.get("gui", "detached_log_geometry", "") != ""
         assert config.get("gui", "detached_settings_geometry", "") != ""
         assert config.get("gui", "detached_benchmark_geometry", "") != ""
+        assert config.get("gui", "detached_addon_review_geometry", "") != ""
 
         first_app.destroy()
 
@@ -5125,12 +5251,14 @@ def test_three_detached_pages_restore_after_restart(
         assert second_app._detached_log_window is not None
         assert second_app._detached_settings_window is not None
         assert second_app._detached_benchmark_window is not None
-        assert len(_all_toplevels(second_app)) >= 3
-        assert set(filter(None, config.get("gui", "detached_pages", "").split(","))) == {"benchmark", "log", "settings"}
+        assert second_app._detached_addon_review_window is not None
+        assert len(_all_toplevels(second_app)) >= 4
+        assert set(filter(None, config.get("gui", "detached_pages", "").split(","))) == {"addon_review", "benchmark", "log", "settings"}
         assert second_app.benchmark_artifacts_root_entry.get() == str(artifacts_root.resolve())
         assert second_app.benchmark_fixture_filter_var.get() == t("gui.benchmark.fixture_filter_shared")
         assert second_app.benchmark_fixture_sort_var.get() == t("gui.benchmark.fixture_sort_status_churn")
 
+        second_app._detached_addon_review_redock_btn.invoke()
         second_app._detached_benchmark_redock_btn.invoke()
         second_app._detached_settings_redock_btn.invoke()
         second_app._detached_log_redock_btn.invoke()

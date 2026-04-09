@@ -50,25 +50,25 @@ _FRAMEWORK_MARKERS: Dict[str, Dict[str, Any]] = {
     "django": {
         "files": ["manage.py"],
         "content_markers": {"settings.py": "INSTALLED_APPS"},
-        "import_pattern": r"(?:from|import)\s+django",
+        "import_pattern": r"^\s*(?:from|import)\s+django(?:\.|\s|$)",
     },
     "flask": {
         "files": [],
-        "import_pattern": r"(?:from|import)\s+flask",
+        "import_pattern": r"^\s*(?:from|import)\s+flask(?:\.|\s|$)",
     },
     "fastapi": {
         "files": [],
-        "import_pattern": r"(?:from|import)\s+fastapi",
+        "import_pattern": r"^\s*(?:from|import)\s+fastapi(?:\.|\s|$)",
     },
     "pytest": {
         "files": ["pytest.ini", "conftest.py"],
         "content_markers": {"pyproject.toml": "[tool.pytest"},
-        "import_pattern": r"(?:from|import)\s+pytest",
+        "import_pattern": r"^\s*(?:from|import)\s+pytest(?:\.|\s|$)",
     },
     # JavaScript / TypeScript frameworks
     "react": {
         "content_markers": {"package.json": '"react"'},
-        "import_pattern": r"(?:from|import)\s+['\"]react['\"]",
+        "import_pattern": r"^\s*(?:from|import)\s+['\"]react['\"]",
     },
     "next.js": {
         "files": ["next.config.js", "next.config.mjs", "next.config.ts"],
@@ -76,11 +76,11 @@ _FRAMEWORK_MARKERS: Dict[str, Dict[str, Any]] = {
     },
     "express": {
         "content_markers": {"package.json": '"express"'},
-        "import_pattern": r"require\(['\"]express['\"]\)",
+        "import_pattern": r"^\s*(?:const\s+\w+\s*=\s*)?require\(['\"]express['\"]\)",
     },
     "vue": {
         "content_markers": {"package.json": '"vue"'},
-        "import_pattern": r"(?:from|import)\s+['\"]vue['\"]",
+        "import_pattern": r"^\s*(?:from|import)\s+['\"]vue['\"]",
     },
     "angular": {
         "files": ["angular.json"],
@@ -260,7 +260,7 @@ def detect_frameworks(
 
         # Check import patterns in scanned source files
         if not found and spec.get("import_pattern") and scanned_files:
-            pattern = re.compile(spec["import_pattern"])
+            pattern = re.compile(spec["import_pattern"], re.MULTILINE)
             for fpath in scanned_files[:50]:  # limit to avoid scanning entire project
                 try:
                     text = Path(fpath).read_text(encoding="utf-8", errors="ignore")[:5_000]

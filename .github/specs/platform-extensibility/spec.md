@@ -457,11 +457,11 @@ The Milestone 7 acceptance criteria are now satisfied for the current Copilot-fi
 - allow detachable desktop windows for non-Review pages that can be snapped back into the main application
 
 Current baseline status:
-- in progress; the current Milestone 10 baseline supports detaching the Output Log, Settings, and Benchmarks pages into their own desktop windows with explicit redock behavior
-- the detached Output Log window still shares the same underlying log stream as the main tab, the detached Settings page preserves unsaved form state across detach and redock by rebuilding the canonical Settings surface in the active host window, and the detached Benchmark page preserves its loaded browser/compare surface state across detach and redock through snapshot-and-restore of the active benchmark view
-- persisted detached-page state now restores multiple windows after restart through shared `gui.detached_pages` tracking plus per-page geometry keys for log, settings, and benchmark windows
+- in progress; the current Milestone 10 baseline supports detaching the Output Log, Settings, Benchmarks, and Addon Review pages into their own desktop windows with explicit redock behavior
+- the detached Output Log window still shares the same underlying log stream as the main tab, the detached Settings page preserves unsaved form state across detach and redock by rebuilding the canonical Settings surface in the active host window, the detached Benchmark page preserves its loaded browser/compare surface state across detach and redock through snapshot-and-restore of the active benchmark view, and the detached Addon Review page preserves the loaded preview review state across detach and redock through the same snapshot-and-restore pattern
+- persisted detached-page state now restores multiple windows after restart through shared `gui.detached_pages` tracking plus per-page geometry keys for log, settings, benchmark, and addon-review windows
 - the keyboard portion of the Milestone 10 workflow now uses `Ctrl+Shift+O` to open the currently selected detachable page in a window, and detached pages standardize on `Ctrl+W` for redocking back into the main app
-- targeted regression coverage now exercises detach, redock, restart restore, shortcut-handler dispatch, and three-page restore for the log-plus-settings-plus-benchmark baseline without breaking the existing single-window workflows for those pages
+- targeted regression coverage now exercises detach, redock, restart restore, shortcut-handler dispatch, and four-page restore for the log-plus-settings-plus-benchmark-plus-addon-review baseline without breaking the existing single-window workflows for those pages
 - Milestone 10 no longer treats literal drag-out tab gestures as a blocking requirement; explicit Open In Window actions plus `Ctrl+Shift+O` and `Ctrl+W` satisfy the detachable-window acceptance path, while true drag-out remains optional future UX polish
 - remaining Milestone 10 work is optional expansion to additional approved non-Review pages such as Results if broader detachable coverage is still desired
 
@@ -631,8 +631,30 @@ Current status:
 - the CI validation pass closed three concrete packaging gaps: fragile batch version parsing, implicit working-directory assumptions in the batch scripts, and an ignored-but-required `AICodeReviewer.spec` build input
 - the first successful workflow artifact has now also been downloaded and inspected: it contains the packaged EXE, checksum, and `AICodeReviewer-Setup-0.2.0.exe`, with the checksum matching and the installer still unsigned as expected
 - the workflow has also been refreshed to current GitHub Actions major versions (`actions/checkout@v6`, `actions/setup-python@v6`, `actions/upload-artifact@v7`) and revalidated successfully in run `24115382363`
+- installer manual-validation prep now exists via `tools/manual_checks/installer/inspect_installer_artifact.ps1` and `tools/manual_checks/installer/validation-log-template.md`, so the remaining install and uninstall gap is structured and repeatable rather than ad hoc
+- the PyInstaller spec on the active Milestone 15 branch now also stamps Windows version-resource metadata onto `AICodeReviewer.exe`; both a local rebuild and feature-branch workflow run `24117477221` confirmed `FileVersion 0.2.0.0` and `ProductVersion 0.2.0`
+- the installer definition on the active Milestone 15 branch now supports silent uninstall control flags (`/PRESERVEUSERDATA`, `/REMOVEUSERDATA`), and `tools/manual_checks/installer/run_installer_smoke_validation.ps1` can execute an elevated install plus preserve/remove-data uninstall smoke pass against a downloaded CI artifact
+- the installer now also allows command-line privilege overrides (`/CURRENTUSER`, `/ALLUSERS`) for validation runs, and the smoke-validation script can choose a non-admin current-user install path when elevation is not available
+- the packaged CLI help path on Windows no longer crashes on legacy console encodings because the CLI now reconfigures stdout and stderr with replacement-safe error handling before printing localized help text
+- feature-branch workflow run `24119245773` built a fresh installer artifact with the current-user override and CLI help fixes, and a non-admin smoke-validation run against `artifacts/installer-ci-24119245773` passed with checksum verification, `FileVersion 0.2.0.0`, `ProductVersion 0.2.0`, both Start Menu shortcuts present after install, and passing preserve/remove-data uninstall paths
+- the Windows packaging path now includes an opt-in signing scaffold: `tools/sign_windows_binary.ps1` signs the packaged EXE and installer when a PFX certificate is configured, `build_exe.bat` and `build_installer.bat` invoke that helper without regressing the unsigned default path, and `.github/workflows/windows-installer.yml` can consume `WINDOWS_SIGN_CERT_BASE64` plus `WINDOWS_SIGN_CERT_PASSWORD` secrets to sign CI artifacts
+- installer artifact inspection and smoke-validation summaries now report both EXE and installer signature status so signed builds have a first-class validation path instead of an ad hoc maintainer check
+- the installer build path now also publishes `AICodeReviewer-Setup-<version>.exe.sha256`, the workflow uploads it alongside the installer binary, and installer inspection now validates that published checksum when present while remaining compatible with older artifacts that predate it
+- feature-branch workflow run `24130238872` passed with the installer checksum slice, and local inspection of the downloaded artifact at `artifacts/installer-ci-24130238872` confirmed `InstallerChecksumStatus = Match` alongside the existing EXE checksum match
+- installer manual-check tooling now also includes `tools/manual_checks/installer/download_installer_artifact.ps1`, which fetches the `windows-installer` artifact for a specific or latest-successful run and extracts it directly into the `artifacts/installer-ci-<runid>/windows-installer/` layout expected by the inspection and smoke-validation helpers
+- the download helper itself has now been validated against workflow run `24130238872`: the helper-produced `artifacts/installer-ci-24130238872/windows-installer/` layout was immediately accepted by `inspect_installer_artifact.ps1`, which still reported `ExeChecksumMatches = True` and `InstallerChecksumStatus = Match`
+- `inspect_installer_artifact.ps1` and `run_installer_smoke_validation.ps1` now also accept `-RunId` and `-Branch`, so maintainers can jump directly from a workflow run to inspection or smoke validation without a separate manual artifact-download command
+- the direct smoke-validation path is now also validated on the current milestone branch: `run_installer_smoke_validation.ps1 -RunId 24130238872 -InstallMode CurrentUser` completed successfully and recorded a passing summary at `artifacts/manual-installer-validation/20260408-195928/summary.md`
+- manual interactive validation prep now also has a session-bootstrap helper, `tools/manual_checks/installer/start_installer_manual_validation_session.ps1`, which writes a prefilled validation log from a workflow run or artifact root so the remaining elevated all-users pass starts from captured hashes, version metadata, signing status, and suggested commands instead of a blank template
+- the session-bootstrap helper is now validated end to end on workflow run `24130238872`: `start_installer_manual_validation_session.ps1 -RunId 24130238872 -Operator Colin` generated `artifacts/manual-installer-validation-prep/20260408-202542/validation-log.md` with workflow branch and commit metadata, matching EXE and installer checksums, version metadata, unsigned signature status, and suggested follow-up commands
+- the download-plus-bootstrap path now also preserves workflow branch and commit metadata when it reuses an existing `artifacts/installer-ci-<runid>/` cache, so repeated manual-session prep runs remain fully populated instead of dropping run metadata
+- task-oriented packaged install and uninstall instructions are now documented in `docs/user-manual.md`, covering the default install path, GUI and CLI shortcuts, uninstall preserve/remove-data behavior, and the current unsigned-preview warning expectations
+- the installer documentation now also defines the current conservative update and rollback policy: uninstall the current build, choose preserve or remove for install-directory user data, install the target build, and rerun the existing GUI/CLI/config first-launch checks instead of assuming an unvalidated in-place upgrade contract
+- the unsigned default path was revalidated locally after the signing scaffold landed: `build_exe.bat` still succeeds with signing skipped when no certificate is configured, and `build_installer.bat` still stops only on the known missing-Inno-Setup prerequisite on this machine
 - the installer baseline is intentionally layered on top of the validated PyInstaller EXE path rather than replacing it
-- end-to-end install and uninstall validation is still pending, and installer signing plus user-manual install/uninstall guidance remain follow-on work before Milestone 15 can be treated as complete
+- milestone-branch workflow run `24133425649` revalidated on 2026-04-08 that the CI signing path still lacks `WINDOWS_SIGN_CERT_BASE64`: the workflow logged `No signing certificate configured; continuing with unsigned artifact output.`, and artifact inspection reported `ExeSignatureStatus = NotSigned` and `InstallerSignatureStatus = NotSigned`
+- local `AllUsers` smoke validation is still externally blocked on this machine by lack of elevation: `run_installer_smoke_validation.ps1 -RunId 24130238872 -InstallMode AllUsers` exits immediately with the elevated-session guard
+- the remaining Milestone 15 gap is now concentrated in elevated all-users interactive validation and real certificate provisioning plus signed-artifact validation
 
 #### Deliverables
 
@@ -672,6 +694,49 @@ Current status:
 3. The HITL flow allows a maintainer to accept or edit generated prompts and definitions before the addon becomes active.
 4. In representative sample runs, the generated addon improves review relevance or reduces obviously irrelevant findings compared to a baseline (measured by developer adjudication or benchmark fixtures).
 5. The generated addon path remains conservative and reversible, with preview and approval before activation.
+
+#### Current Status
+
+- initial Milestone 16 foundation is now in progress on `milestone/16-adaptive-addon-generator`
+- the repository now includes a conservative `analyze-repo` tool-mode command that scans a target repository, emits a capability profile, and writes a preview addon scaffold without activating it
+- the first slice writes `capability-profile.json`, `summary.txt`, `addon.json`, and `review-pack.json`, then validates the generated manifest against the existing addon loader
+- focused tests now cover repository analysis, generated scaffold validity, and CLI JSON output for the new command
+- the analyzer now excludes nested example, fixture, benchmark, sample, demo, and artifact trees from the primary profile and no longer treats import text embedded inside test snippets as real framework usage
+- generated previews now also emit `approval-request.json` and `review-checklist.md`, and the new `approve-addon-preview` command records an explicit maintainer decision before optionally installing the addon
+- the repository now includes `tools/validate_generated_addons.py` plus a curated external-repository catalog to measure heuristic detection quality and the first generated-vs-default bundle relevance delta
+- the repository now includes `review-addon-preview`, a richer diff-first interactive review surface that renders generated-vs-default and installed-vs-generated addon diffs before approval
+- the external repository catalog has expanded beyond the initial three samples, and `.github/workflows/generated-addon-validation.yml` now reruns that catalog on a weekly schedule plus manual dispatch
+- the relevance baseline has moved to judged review-output quality via `tools/evaluate_generated_addon_review_quality.py` and representative repository fixtures under `benchmarks/addon_generation/review_quality/fixtures`
+- the diff-first approval path now also exists as a dedicated desktop Addon Review page with detachable-window support, so maintainers can inspect generated previews, rendered diffs, checklist state, and approval decisions directly inside the GUI instead of using Settings as an interim host surface
+- the judged runner now persists backend-specific history, emits markdown trend summaries, and is scheduled through `.github/workflows/generated-addon-judged-quality.yml`, which restores the prior backend history artifact before rerunning the representative judged fixture set on a provisioned runner
+- the judged representative fixture set has expanded beyond the initial FastAPI and React pair into a broader cross-stack baseline including Flask, Express, Django, and Vue coverage
+
+#### Recent Validation
+
+- focused pytest coverage for `tests/test_addon_generator.py` and `tests/test_cli_tool_mode.py` passed after the filtering change
+- a real `analyze-repo` self-run against this repository now emits a clean JSON envelope and reports only `pytest` instead of framework noise from embedded sample content
+- focused pytest coverage for `tests/test_addon_approval.py`, `tests/test_addon_validation.py`, and the expanded CLI tool-mode tests now passes for the approval gate, installation path, and relevance scoring contract
+- focused pytest coverage now also passes for `tests/test_addon_review_surface.py` and `tests/test_addon_review_quality.py`, covering the interactive review surface and judged score-delta runner
+- targeted GUI and judged-quality regression coverage now also passes for the dedicated desktop Addon Review surface, detach/redock workflows, detached-page restart restore, and the judged history trend reporting slice: `13 passed`
+
+#### Remaining Milestone 16 Gaps
+
+- continue broadening the curated external repository sample set and refine expectations as upstream repositories drift
+- continue broadening the judged representative repository suite and backend coverage beyond the current provisioned-runner scheduled baseline
+- decide whether the judged workflow should eventually publish longer-lived trend dashboards beyond uploaded history artifacts and markdown step summaries
+
+#### Validation Artifacts
+
+- `analyze-repo` now emits reviewable approval artifacts: `approval-request.json` and `review-checklist.md`
+- `approve-addon-preview` writes `approval-decision.json` and installs approved previews into the default discovered addon directory unless the maintainer overrides the install path
+- `tools/validate_generated_addons.py` writes per-repository preview outputs plus a JSON summary covering heuristic precision/recall and generated-vs-default bundle relevance
+- `review-addon-preview` renders the diff-first approval surface and can also record a maintainer decision in the same interactive path
+- `tools/evaluate_generated_addon_review_quality.py` writes judged default-vs-generated score deltas against representative repository fixtures and is the current Milestone 16 relevance baseline
+- the desktop Addon Review page now exposes the same generated-preview review path inside the GUI and can be detached/redocked like the other approved non-Review surfaces
+- `.github/workflows/generated-addon-judged-quality.yml` restores the last backend history artifact, reruns the judged fixture catalog, appends the new backend history entry, publishes a markdown trend summary, and uploads the updated history artifact set
+
+
+
 
 #### Implementation Notes
 

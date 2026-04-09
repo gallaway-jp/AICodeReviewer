@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "targets": [
+    {
+      "id": "fastapi-patch-contract",
+      "fixture_id": "fastapi-patch-contract-drift",
+      "label": "FastAPI patch contract drift",
+      "stack": "fastapi"
+    },
+    {
+      "id": "fastapi-delivery-validation",
+      "fixture_id": "fastapi-delivery-mode-validation",
+      "label": "FastAPI delivery mode validation",
+      "stack": "fastapi"
+    },
+    {
+      "id": "react-accessibility-group-label",
+      "fixture_id": "react-accessibility-group-label",
+      "label": "React accessibility fieldset label",
+      "stack": "react"
+    },
+    {
+      "id": "flask-json-validation",
+      "fixture_id": "flask-json-validation-gap",
+      "label": "Flask JSON validation gap",
+      "stack": "flask"
+    },
+    {
+      "id": "express-async-error-propagation",
+      "fixture_id": "express-async-error-propagation",
+      "label": "Express async error propagation",
+      "stack": "express"
+    },
+    {
+      "id": "django-query-validation",
+      "fixture_id": "django-query-validation-gap",
+      "label": "Django query validation gap",
+      "stack": "django"
+    },
+    {
+      "id": "vue-accessibility-form-label",
+      "fixture_id": "vue-accessibility-form-label",
+      "label": "Vue accessibility form label",
+      "stack": "vue"
+    }
+  ]
+}
