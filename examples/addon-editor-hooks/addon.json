@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "name": "Editor Hook Addon",
   "compatibility": {
-    "min_app_version": "2.0.0"
+    "min_app_version": "0.3.0"
   },
   "permissions": [
     "ui_contributors"

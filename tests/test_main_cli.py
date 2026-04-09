@@ -500,6 +500,7 @@ def test_check_connection_success(monkeypatch, capsys):
     """--check-connection with a successful backend prints success."""
     mock_backend = MagicMock()
     mock_backend.validate_connection.return_value = True
+    mock_backend.validate_connection_diagnostic.return_value = {"ok": True}
     monkeypatch.setattr(cli, "create_backend", lambda name: mock_backend)
 
     exit_code = run_main_with_args(["--check-connection", "--backend", "bedrock"])
@@ -537,6 +538,7 @@ def test_check_connection_is_standalone(monkeypatch):
     """--check-connection should NOT require --programmers/--reviewers/path."""
     mock_backend = MagicMock()
     mock_backend.validate_connection.return_value = True
+    mock_backend.validate_connection_diagnostic.return_value = {"ok": True}
     monkeypatch.setattr(cli, "create_backend", lambda name: mock_backend)
 
     # Should not raise SystemExit
@@ -547,6 +549,7 @@ def test_check_connection_accepts_backend_alias(monkeypatch):
     received_names = []
     mock_backend = MagicMock()
     mock_backend.validate_connection.return_value = True
+    mock_backend.validate_connection_diagnostic.return_value = {"ok": True}
 
     def _fake_create_backend(name):
         received_names.append(name)

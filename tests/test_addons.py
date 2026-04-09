@@ -49,7 +49,7 @@ def test_load_addon_manifest_resolves_review_pack_entry_points(tmp_path: Path) -
             "id": "secure-defaults-addon",
             "version": "1.0.0",
             "name": "Secure Defaults Addon",
-            "compatibility": {"min_app_version": "2.0.0"},
+            "compatibility": {"min_app_version": "0.3.0"},
             "permissions": ["review_definitions"],
             "entry_points": {
                 "review_packs": ["review-pack.json"],
