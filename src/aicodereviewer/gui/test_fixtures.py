@@ -303,6 +303,7 @@ def apply_test_config() -> None:
     config.set_value("gui", "detached_log_geometry", "")
     config.set_value("gui", "detached_settings_geometry", "")
     config.set_value("gui", "detached_benchmark_geometry", "")
+    config.set_value("gui", "detached_addon_review_geometry", "")
 
     # ── Output formats ─────────────────────────────────────────────────────
     config.set_value("output", "formats", "json,txt,md")

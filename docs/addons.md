@@ -45,6 +45,79 @@ paths = examples/addon-echo-backend
 
 Addon-provided review packs are loaded from the manifest and then merged into the normal review-definition discovery flow. Standalone review-pack search paths configured through `review_packs.paths` continue to work separately.
 
+## Generated Addon Preview
+
+Milestone 16 now includes a conservative repository analyzer that can generate a preview addon scaffold without activating it.
+
+Use it when you want a starting point for a repository-specific review pack:
+
+```bash
+aicodereviewer analyze-repo . --output-dir artifacts/generated-addon-preview --addon-id my-repo-adaptive-review
+```
+
+The command currently writes:
+
+- `capability-profile.json` with detected languages, frameworks, tools, manifests, test harnesses, and recommended review types
+- `summary.txt` with a compact human-readable profile
+- `approval-request.json` with the maintainer review packet, generated bundle diff, and file hashes
+- `review-checklist.md` with the explicit approval checklist and follow-up command
+- `<addon-id>/addon.json`
+- `<addon-id>/review-pack.json`
+
+The analyzer now biases the capability profile toward primary repository content. Nested example, fixture, benchmark, sample, demo, and artifact trees are excluded so generated previews do not inherit framework noise from embedded reference projects.
+
+The generated scaffold is preview-only. Review and edit the output before approving it.
+
+The desktop app now exposes the same review flow on the dedicated Addon Review page. Paste or browse to a generated preview directory, inspect the checklist plus rendered diffs, add reviewer notes, and approve or reject the preview without leaving the GUI.
+
+Use the richer diff-first review surface when you want to inspect the generated bundle before deciding:
+
+```bash
+aicodereviewer review-addon-preview artifacts/generated-addon-preview --diff-only
+```
+
+That command renders:
+
+- a bundle diff between the default review bundle and the generated bundle
+- prompt and context-rule additions introduced by the generated review type
+- installed-vs-generated addon diffs when a version of the same addon is already present
+
+Approve or reject the preview explicitly:
+
+```bash
+aicodereviewer approve-addon-preview artifacts/generated-addon-preview --reviewer <name> --decision approve
+```
+
+Or combine the review surface with a non-interactive decision in one command:
+
+```bash
+aicodereviewer review-addon-preview artifacts/generated-addon-preview --decision approve --reviewer <name>
+```
+
+Approvals write `approval-decision.json` and install the addon into the default discovered `addons/` directory unless you override `--install-dir`. Rejections keep the preview inactive and record the decision without installing it.
+
+Milestone 16 also includes a small external-repository validation harness that clones a curated catalog, runs `analyze-repo` against those repositories, and compares the generated bundle against the default bundle:
+
+```bash
+d:/Development/Python/AICodeReviewer/.venv/Scripts/python.exe tools/validate_generated_addons.py --json-out artifacts/generated-addon-validation/summary.json
+```
+
+The repository now reruns that external validation catalog periodically through `.github/workflows/generated-addon-validation.yml`.
+
+For judged review-output quality, use the representative-repository runner:
+
+```bash
+d:/Development/Python/AICodeReviewer/.venv/Scripts/python.exe tools/evaluate_generated_addon_review_quality.py --backend <backend> --json-out artifacts/generated-addon-review-quality/summary.json
+```
+
+That runner compares real review reports from the default bundle and the generated bundle against judged expectations on representative FastAPI and React repository fixtures. Treat this judged runner as the primary relevance baseline; the external catalog remains a secondary heuristic signal for repository-shape detection.
+
+The judged runner now writes backend-specific history to `artifacts/generated-addon-review-quality/history.json` by default. Each run appends the selected backend's aggregate score deltas and per-stack summaries so you can track whether Copilot, Bedrock, Kiro, or Local LLM quality is improving or regressing over time. Override the location with `--history-file` when you want to publish or compare a different history series.
+
+The repository now also includes `.github/workflows/generated-addon-judged-quality.yml`. That workflow restores the latest uploaded history artifact for the selected backend, reruns the judged fixture catalog, appends the new history entry, and publishes a markdown trend summary to the workflow run. It is configured for a provisioned runner because the chosen backend must already be installed and authenticated on that machine.
+
+The scheduled external validation workflow now publishes a markdown summary and fails when core heuristic drift crosses the current thresholds: language recall below `0.95`, manifest recall below `0.85`, framework F1 below `0.65`, or average generated-bundle F1 performing worse than the default bundle. Tooling and test-harness drift still show up as warnings in the summary even when they do not fail the run.
+
 ## Manifest Shape
 
 Each addon is rooted by an `addon.json` manifest.
@@ -105,6 +178,7 @@ Use this path when you want to:
 - add review types or presets without Python code
 - ship opinionated project defaults
 - keep an addon entirely data-driven
+- start from a generated scaffold and then refine it by hand for a specific repository
 
 Reference example:
 

@@ -3,6 +3,8 @@ setlocal EnableExtensions
 set "SCRIPT_DIR=%~dp0"
 cd /d "%SCRIPT_DIR%"
 set "ROOT_DIR=%CD%"
+set "POWERSHELL_EXE=pwsh"
+where /q "%POWERSHELL_EXE%" || set "POWERSHELL_EXE=powershell"
 
 set "PYTHON=%ROOT_DIR%\.venv\Scripts\python.exe"
 if not exist "%PYTHON%" set "PYTHON=python"
@@ -32,6 +34,10 @@ if not exist "%ROOT_DIR%\dist\AICodeReviewer.exe" (
 	echo ERROR: Build did not produce dist\AICodeReviewer.exe
 	goto :error
 )
+
+echo Signing executable if certificate configuration is available...
+"%POWERSHELL_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%ROOT_DIR%\tools\sign_windows_binary.ps1" -FilePath "%ROOT_DIR%\dist\AICodeReviewer.exe"
+if errorlevel 1 goto :error
 
 echo Writing SHA256 checksum...
 "%PYTHON%" -c "from pathlib import Path; import hashlib; exe_path = Path(r'%ROOT_DIR%\dist\AICodeReviewer.exe'); digest = hashlib.sha256(exe_path.read_bytes()).hexdigest().upper(); Path(r'%ROOT_DIR%\dist\AICodeReviewer.exe.sha256').write_text(f'{digest}  AICodeReviewer.exe', encoding='ascii')"

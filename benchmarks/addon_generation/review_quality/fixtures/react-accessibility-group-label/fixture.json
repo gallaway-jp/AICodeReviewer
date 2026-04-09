@@ -1,0 +1,20 @@
+{
+  "id": "react-accessibility-group-label",
+  "title": "React Accessibility Fieldset Without Legend",
+  "description": "A notification preferences form groups controls inside fieldsets, but the groups have no legends, so screen reader users do not hear meaningful labels for the option sets.",
+  "scope": "project",
+  "review_types": ["accessibility"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "fieldset-missing-legend",
+      "description_keywords": ["legend", "screen"],
+      "file_path_contains_any": ["NotificationPreferences.tsx"],
+      "issue_type": "accessibility",
+      "minimum_severity": "medium",
+      "systemic_impact_contains": "screen",
+      "evidence_basis_contains": "legend"
+    }
+  ]
+}

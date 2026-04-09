@@ -1,0 +1,19 @@
+{
+  "id": "django-query-validation-gap",
+  "title": "Django Query Validation Gap",
+  "description": "A Django view accepts free-form query parameters for pagination and ordering but coerces them directly without validation, producing unstable API behavior.",
+  "scope": "project",
+  "review_types": ["api_design"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "unvalidated-query-contract",
+      "description_keywords": ["query", "validation"],
+      "file_path_contains_any": ["views.py"],
+      "issue_type": "api_design",
+      "minimum_severity": "medium",
+      "evidence_basis_contains": "request.GET.get"
+    }
+  ]
+}

@@ -21,6 +21,7 @@ class AppSurfaceHelper:
         "log": "detached_log_geometry",
         "settings": "detached_settings_geometry",
         "benchmark": "detached_benchmark_geometry",
+        "addon_review": "detached_addon_review_geometry",
     }
 
     def __init__(self, host: Any) -> None:
@@ -275,6 +276,7 @@ class AppSurfaceHelper:
             ("log", "_detached_log_window"),
             ("settings", "_detached_settings_window"),
             ("benchmark", "_detached_benchmark_window"),
+            ("addon_review", "_detached_addon_review_window"),
         ):
             window = getattr(self.host, attr_name, None)
             if window is None or not window.winfo_exists():
@@ -289,6 +291,8 @@ class AppSurfaceHelper:
             self.host._open_detached_settings_window(restoring=True)
         if "benchmark" in self._detached_pages():
             self.host._open_detached_benchmark_window(restoring=True)
+        if "addon_review" in self._detached_pages():
+            self.host._open_detached_addon_review_window(restoring=True)
         if "log" in self._detached_pages():
             self.open_detached_log_window(restoring=True)
 
@@ -310,6 +314,9 @@ class AppSurfaceHelper:
             return "break"
         if current_tab == t("gui.tab.benchmarks"):
             self.host._open_detached_benchmark_window()
+            return "break"
+        if current_tab == t("gui.tab.addon_review"):
+            self.host._open_detached_addon_review_window()
             return "break"
         return None
 

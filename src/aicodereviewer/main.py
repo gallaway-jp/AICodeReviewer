@@ -21,6 +21,9 @@ from pathlib import Path
 from typing import Any, Callable, Sequence, cast
 
 from aicodereviewer.addons import AddonRuntime, get_active_addon_runtime, install_addon_runtime
+from aicodereviewer.addon_approval import approve_generated_addon
+from aicodereviewer.addon_generator import generate_addon_preview
+from aicodereviewer.addon_review_surface import build_addon_review_surface, render_addon_review_surface, review_generated_addon_preview
 from aicodereviewer.auth import get_system_language, set_profile_name, clear_profile
 from aicodereviewer.backends import create_backend, get_backend_choices, resolve_backend_type
 from aicodereviewer.backends.health import check_backend, HealthReport
@@ -45,7 +48,8 @@ from aicodereviewer.review_presets import REVIEW_TYPE_PRESETS, format_review_typ
 logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 1
-TOOL_COMMANDS = {"review", "health", "fix-plan", "apply-fixes", "resume", "serve-api"}
+TOOL_COMMANDS = {"review", "health", "fix-plan", "apply-fixes", "resume", "serve-api", "analyze-repo", "approve-addon-preview"}
+INTERACTIVE_COMMANDS = {"review-addon-preview"}
 EXIT_OK = 0
 EXIT_FAILURE = 1
 EXIT_CANCELLED = 3
@@ -72,6 +76,18 @@ def _print_console(text: str, end: str = "\n") -> None:
             stream.flush()
     except Exception:
         print(payload, end="")
+
+
+def _configure_console_streams() -> None:
+    """Avoid console encoding crashes when localized or rich help text is printed."""
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if stream is None or not hasattr(stream, "reconfigure"):
+            continue
+        try:
+            stream.reconfigure(errors="replace")
+        except Exception:
+            continue
 
 
 def _determine_target_lang(argv: Sequence[str]) -> str:
@@ -143,12 +159,20 @@ def _build_epilog() -> str:
 def main(argv: Sequence[str] | None = None) -> int:
     argv = list(argv) if argv is not None else sys.argv[1:]
 
+    _configure_console_streams()
+
     addon_runtime = install_addon_runtime()
     invocation_review_packs = _extract_review_pack_paths(argv)
     install_review_registry(merge_review_pack_paths(invocation_review_packs) if invocation_review_packs else None)
 
     target_lang = _determine_target_lang(argv)
     set_locale(target_lang)
+
+    if argv and argv[0] in INTERACTIVE_COMMANDS:
+        parser = _build_interactive_command_parser(argv[0])
+        args = parser.parse_args(argv[1:])
+        _setup_logging()
+        return _run_interactive_command(argv[0], args)
 
     if argv and argv[0] in TOOL_COMMANDS:
         parser = _build_tool_parser()
@@ -426,6 +450,46 @@ def _build_tool_parser() -> argparse.ArgumentParser:
     serve_api_parser.add_argument("--review-pack", action="append", default=[], metavar="FILE")
     _add_runtime_override_args(serve_api_parser)
 
+    analyze_repo_parser = subparsers.add_parser(
+        "analyze-repo",
+        help="Analyze a repository and generate a preview addon scaffold",
+    )
+    analyze_repo_parser.add_argument("path", metavar="PATH")
+    analyze_repo_parser.add_argument("--output-dir", required=True, metavar="DIR")
+    analyze_repo_parser.add_argument("--addon-id", metavar="ID")
+    analyze_repo_parser.add_argument("--addon-name", metavar="NAME")
+    analyze_repo_parser.add_argument("--json-out", metavar="FILE")
+
+    approve_addon_parser = subparsers.add_parser(
+        "approve-addon-preview",
+        help="Review and approve or reject a generated addon preview",
+    )
+    approve_addon_parser.add_argument("preview_dir", metavar="DIR")
+    approve_addon_parser.add_argument("--reviewer", required=True, metavar="NAME")
+    approve_addon_parser.add_argument("--decision", choices=["approve", "reject"], default="approve")
+    approve_addon_parser.add_argument("--notes", default="", metavar="TEXT")
+    approve_addon_parser.add_argument("--install-dir", metavar="DIR")
+    approve_addon_parser.add_argument("--force", action="store_true")
+    approve_addon_parser.add_argument("--json-out", metavar="FILE")
+
+    return parser
+
+
+def _build_interactive_command_parser(command_name: str) -> argparse.ArgumentParser:
+    if command_name != "review-addon-preview":
+        raise ValueError(f"Unsupported interactive command: {command_name}")
+    parser = argparse.ArgumentParser(
+        prog=f"aicodereviewer {command_name}",
+        description="Render a diff-first review surface for a generated addon preview and optionally approve or reject it.",
+    )
+    parser.add_argument("preview_dir", metavar="DIR")
+    parser.add_argument("--install-dir", metavar="DIR")
+    parser.add_argument("--diff-only", action="store_true")
+    parser.add_argument("--decision", choices=["approve", "reject", "defer"])
+    parser.add_argument("--reviewer", metavar="NAME")
+    parser.add_argument("--notes", default="", metavar="TEXT")
+    parser.add_argument("--force", action="store_true")
+    parser.add_argument("--json-out", metavar="FILE")
     return parser
 
 
@@ -500,7 +564,160 @@ def _run_tool_command(
         return _run_resume_tool_mode(args)
     if args.command == "serve-api":
         return _run_serve_api_tool_mode(args)
+    if args.command == "analyze-repo":
+        return _run_analyze_repo_tool_mode(args)
+    if args.command == "approve-addon-preview":
+        return _run_approve_addon_preview_tool_mode(args)
     raise ValueError(f"Unsupported tool command: {args.command}")
+
+
+def _run_analyze_repo_tool_mode(args: argparse.Namespace) -> int:
+    """Analyze a repository and emit a generated addon preview envelope."""
+    payload: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "command": "analyze-repo",
+        "path": args.path,
+        "output_dir": args.output_dir,
+        "success": False,
+        "exit_code": EXIT_FAILURE,
+    }
+
+    context_logger = logging.getLogger("aicodereviewer.context_collector")
+    previous_context_level = context_logger.level
+    try:
+        context_logger.setLevel(logging.WARNING)
+        preview = generate_addon_preview(
+            args.path,
+            args.output_dir,
+            addon_id=args.addon_id,
+            addon_name=args.addon_name,
+        )
+    except Exception as exc:
+        payload.update({
+            "status": "error",
+            "error": _error_payload(str(exc), diagnostic=diagnostic_from_exception(exc, origin="analyze_repo")),
+        })
+        context_logger.setLevel(previous_context_level)
+        _write_json_result(payload, args.json_out)
+        return EXIT_FAILURE
+
+    context_logger.setLevel(previous_context_level)
+    payload.update({
+        "status": "generated",
+        "success": True,
+        "exit_code": EXIT_OK,
+        "addon_id": preview.addon_id,
+        "addon_name": preview.addon_name,
+        "addon_root": str(preview.addon_root),
+        "manifest_path": str(preview.manifest_path),
+        "review_pack_path": str(preview.review_pack_path),
+        "capability_profile_path": str(preview.capability_profile_path),
+        "summary_path": str(preview.summary_path),
+        "approval_request_path": str(preview.approval_request_path),
+        "review_checklist_path": str(preview.review_checklist_path),
+        "generated_review_key": preview.review_key,
+        "generated_preset_key": preview.preset_key,
+        "profile": preview.profile.to_dict(),
+        "preview_only": True,
+        "approval_status": "pending_review",
+    })
+    _write_json_result(payload, args.json_out)
+    return EXIT_OK
+
+
+def _run_approve_addon_preview_tool_mode(args: argparse.Namespace) -> int:
+    payload: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "command": "approve-addon-preview",
+        "preview_dir": args.preview_dir,
+        "success": False,
+        "exit_code": EXIT_FAILURE,
+    }
+
+    try:
+        result = approve_generated_addon(
+            args.preview_dir,
+            reviewer=args.reviewer,
+            decision=args.decision,
+            notes=args.notes,
+            install_dir=args.install_dir,
+            force=args.force,
+        )
+    except Exception as exc:
+        payload.update({
+            "status": "error",
+            "error": _error_payload(str(exc), diagnostic=diagnostic_from_exception(exc, origin="approve_addon_preview")),
+        })
+        _write_json_result(payload, args.json_out)
+        return EXIT_FAILURE
+
+    payload.update({
+        "status": "approved" if result.approved else "rejected",
+        "success": True,
+        "exit_code": EXIT_OK,
+        **result.to_dict(),
+    })
+    _write_json_result(payload, args.json_out)
+    return EXIT_OK
+
+
+def _run_interactive_command(command_name: str, args: argparse.Namespace) -> int:
+    if command_name != "review-addon-preview":
+        raise ValueError(f"Unsupported interactive command: {command_name}")
+    surface = build_addon_review_surface(args.preview_dir, install_dir=args.install_dir)
+    rendered = render_addon_review_surface(surface)
+    _print_console(rendered, end="")
+
+    payload = surface.to_dict()
+    if args.diff_only:
+        if args.json_out:
+            Path(args.json_out).write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        return EXIT_OK
+
+    decision = args.decision or _prompt_review_surface_decision()
+    if decision == "defer" or not decision:
+        payload["decision"] = "defer"
+        if args.json_out:
+            Path(args.json_out).write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        return EXIT_OK
+
+    reviewer = args.reviewer or _prompt_required_value("Reviewer")
+    notes = args.notes
+    if not notes and sys.stdin.isatty():
+        notes = input("Notes (optional): ").strip()
+
+    result_payload = review_generated_addon_preview(
+        args.preview_dir,
+        reviewer=reviewer,
+        decision=decision,
+        notes=notes,
+        install_dir=args.install_dir,
+        force=args.force,
+    )
+    _print_console(f"Decision recorded: {result_payload['decision']} by {result_payload['reviewer']}")
+    if result_payload.get("activation_hint"):
+        _print_console(str(result_payload["activation_hint"]))
+    if args.json_out:
+        Path(args.json_out).write_text(json.dumps({**payload, "result": result_payload}, indent=2) + "\n", encoding="utf-8")
+    return EXIT_OK
+
+
+def _prompt_review_surface_decision() -> str:
+    if not sys.stdin.isatty():
+        return "defer"
+    while True:
+        response = input("Decision [approve/reject/defer]: ").strip().lower()
+        if response in {"approve", "reject", "defer"}:
+            return response
+
+
+def _prompt_required_value(label: str) -> str:
+    if not sys.stdin.isatty():
+        raise ValueError(f"{label} is required when no interactive terminal is available")
+    while True:
+        value = input(f"{label}: ").strip()
+        if value:
+            return value
 
 
 def _run_serve_api_tool_mode(args: argparse.Namespace) -> int:

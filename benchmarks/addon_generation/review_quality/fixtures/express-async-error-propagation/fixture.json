@@ -1,0 +1,19 @@
+{
+  "id": "express-async-error-propagation",
+  "title": "Express Async Error Propagation",
+  "description": "An Express async route awaits a repository call but never forwards failures to next(), so request timeouts and unhandled promise behavior are likely.",
+  "scope": "project",
+  "review_types": ["error_handling"],
+  "project_dir": "project",
+  "minimum_score": 1.0,
+  "expected_findings": [
+    {
+      "id": "missing-next-on-async-failure",
+      "description_keywords": ["next", "error"],
+      "file_path_contains_any": ["routes.js"],
+      "issue_type": "error_handling",
+      "minimum_severity": "medium",
+      "evidence_basis_contains": "await repo.loadAccount"
+    }
+  ]
+}

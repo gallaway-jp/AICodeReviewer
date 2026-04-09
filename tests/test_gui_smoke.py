@@ -446,10 +446,54 @@ class TestAppCreation:
         assert hasattr(app, "addon_diagnostics_box")
         assert hasattr(app, "addon_contributions_frame")
         assert hasattr(app, "_refresh_addons_btn")
+        assert hasattr(app, "open_addon_review_btn")
         assert hasattr(app, "local_http_status_label")
         assert hasattr(app, "local_http_base_url_entry")
         assert hasattr(app, "local_http_copy_btn")
         assert hasattr(app, "local_http_docs_box")
+
+    def test_addon_review_widgets(self, app: Any) -> None:
+        """Addon Review should expose the standalone preview review widgets."""
+        assert hasattr(app, "addon_review_preview_entry")
+        assert hasattr(app, "addon_review_status_box")
+        assert hasattr(app, "addon_review_metadata_box")
+        assert hasattr(app, "addon_review_checklist_box")
+        assert hasattr(app, "addon_review_diff_box")
+        assert hasattr(app, "addon_review_approve_btn")
+        assert hasattr(app, "addon_review_reject_btn")
+        assert hasattr(app, "detach_addon_review_btn")
+
+    def test_addon_review_surface_loads_preview(self, app: Any, tmp_path: Path) -> None:
+        from aicodereviewer.addon_generator import generate_addon_preview
+
+        project_root = tmp_path / "service_repo"
+        project_root.mkdir()
+        (project_root / "pyproject.toml").write_text(
+            "[project]\nname = 'service-repo'\nversion = '0.1.0'\n\n[tool.pytest.ini_options]\naddopts = '-q'\n",
+            encoding="utf-8",
+        )
+        (project_root / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+        src_dir = project_root / "src"
+        src_dir.mkdir()
+        (src_dir / "api.py").write_text("from fastapi import FastAPI\napp = FastAPI()\n", encoding="utf-8")
+
+        preview = generate_addon_preview(project_root, tmp_path / "preview", addon_id="desktop-preview")
+
+        app.tabs.set(t("gui.tab.addon_review"))
+        app.update_idletasks()
+        app.update()
+        app.addon_review_preview_entry.delete(0, "end")
+        app.addon_review_preview_entry.insert(0, str(preview.output_dir))
+        app.addon_review_reviewer_entry.delete(0, "end")
+        app.addon_review_reviewer_entry.insert(0, "Colin")
+
+        app._load_addon_review_surface(show_toast=False)
+
+        metadata_text = app.addon_review_metadata_box.get("0.0", "end")
+        diff_text = app.addon_review_diff_box.get("0.0", "end")
+        assert "desktop-preview" in metadata_text
+        assert "Generated Bundle vs Default Bundle" in app.addon_review_diff_var.get()
+        assert "api_design" in diff_text
 
     def test_settings_addon_diagnostics_render_runtime(self, app: Any, monkeypatch: pytest.MonkeyPatch) -> None:
         """Addon summary and diagnostic text boxes should reflect the active runtime."""
