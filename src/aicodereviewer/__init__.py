@@ -7,6 +7,6 @@ server backends with multi-type reviews, interactive CLI, a CustomTkinter
 GUI, and English/Japanese localisation.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 __author__ = "AICodeReviewer Team"
 __description__ = "AI-powered code review tool with Bedrock, Kiro, Copilot & Local LLM backends"
