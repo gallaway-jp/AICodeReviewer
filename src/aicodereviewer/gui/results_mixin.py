@@ -93,7 +93,11 @@ class ResultsTabMixin:
         return ResultsLayoutHelper.resolve_base_logical_width(self, *candidates)
 
     def _schedule_results_layout_refresh(self, *_args: Any) -> None:
-        self._refresh_results_tab_layout()
+        self._schedule_surface_layout_refresh(
+            "_results_layout_refresh_after_id",
+            self._refresh_results_tab_layout,
+            tab_name=t("gui.tab.results"),
+        )
 
     def _refresh_results_tab_layout(self) -> None:
         self._results_layout_helper().refresh_tab_layout()
@@ -120,6 +124,8 @@ class ResultsTabMixin:
 
     def _show_issues(self, issues: List[ReviewIssue]):
         logger.info("Displaying %d issues on the Results tab", len(issues))
+        # Ensure the Results tab is built before accessing its widgets
+        self._build_tab_if_needed(t("gui.tab.results"))
         self._issues = issues
         for w in self.results_frame.winfo_children():
             w.destroy()

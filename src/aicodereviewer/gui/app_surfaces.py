@@ -49,13 +49,31 @@ class AppSurfaceHelper:
         status_frame = ctk.CTkFrame(self.host, fg_color="transparent")
         status_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=(2, 6))
         status_frame.grid_columnconfigure(0, weight=1)
+        status_frame.grid_columnconfigure(1, weight=0)
+        status_frame.grid_columnconfigure(2, weight=0)
+        status_frame.grid_columnconfigure(3, weight=0)
 
         self.host.status_var = ctk.StringVar(value=t("common.ready"))
-        ctk.CTkLabel(status_frame, textvariable=self.host.status_var, anchor="w").grid(
-            row=0,
-            column=0,
-            sticky="ew",
+        self.host._status_label = ctk.CTkLabel(
+            status_frame,
+            textvariable=self.host.status_var,
+            anchor="w",
+            wraplength=640,
+            justify="left",
         )
+        self.host._status_label.grid(row=0, column=0, sticky="ew")
+
+        self.host._detach_page_btn = ctk.CTkButton(
+            status_frame,
+            text=t("gui.detach_page.unavailable"),
+            width=150,
+            state="disabled",
+            fg_color=("#dbe7f6", "#334155"),
+            hover_color=("#c8dbf1", "#3f4d61"),
+            text_color=("gray15", "gray92"),
+            command=lambda: None,
+        )
+        self.host._detach_page_btn.grid(row=0, column=1, padx=(8, 0))
 
         self.host.cancel_btn = ctk.CTkButton(
             status_frame,
@@ -66,7 +84,7 @@ class AppSurfaceHelper:
             state="disabled",
             command=self.host._cancel_operation,
         )
-        self.host.cancel_btn.grid(row=0, column=1, padx=(8, 0))
+        self.host.cancel_btn.grid(row=0, column=2, padx=(8, 0))
 
         self.host._health_countdown_lbl = ctk.CTkLabel(
             status_frame,
@@ -76,10 +94,69 @@ class AppSurfaceHelper:
             width=56,
             anchor="e",
         )
-        self.host._health_countdown_lbl.grid(row=0, column=2, padx=(4, 0))
+        self.host._health_countdown_lbl.grid(row=0, column=3, padx=(4, 0))
+
+        status_frame.bind(
+            "<Configure>",
+            self.host._schedule_status_bar_layout_refresh,
+            add="+",
+        )
+
+        # Single coalesced handler for all window Configure events
+        self.host.bind("<Configure>", self.host._schedule_window_resize_refresh, add="+")
+        self.refresh_detach_action_state()
+
+    def _current_detachable_page_state(self) -> dict[str, Any] | None:
+        current_tab = str(self.host.tabs.get())
+        page_map = {
+            t("gui.tab.log"): {
+                "page_key": "log",
+                "command": self.host._open_detached_log_window,
+                "open_label": t("gui.log.open_window"),
+                "focus_label": t("gui.log.focus_window"),
+            },
+            t("gui.tab.settings"): {
+                "page_key": "settings",
+                "command": self.host._open_detached_settings_window,
+                "open_label": t("gui.settings.open_window"),
+                "focus_label": t("gui.settings.focus_window"),
+            },
+            t("gui.tab.benchmarks"): {
+                "page_key": "benchmark",
+                "command": self.host._open_detached_benchmark_window,
+                "open_label": t("gui.benchmark.open_window"),
+                "focus_label": t("gui.benchmark.focus_window"),
+            },
+            t("gui.tab.addon_review"): {
+                "page_key": "addon_review",
+                "command": self.host._open_detached_addon_review_window,
+                "open_label": t("gui.addon_review.open_window"),
+                "focus_label": t("gui.addon_review.focus_window"),
+            },
+        }
+        state = page_map.get(current_tab)
+        if state is None:
+            return None
+        resolved = dict(state)
+        resolved["detached"] = self.is_page_detached(str(resolved["page_key"]))
+        return resolved
+
+    def refresh_detach_action_state(self) -> None:
+        button = getattr(self.host, "_detach_page_btn", None)
+        if button is None:
+            return
+        state = self._current_detachable_page_state()
+        if state is None:
+            button.configure(text=t("gui.detach_page.unavailable"), state="disabled", command=lambda: None)
+            return
+        button.configure(
+            text=state["focus_label"] if state["detached"] else state["open_label"],
+            state="normal",
+            command=state["command"],
+        )
 
     def build_log_tab(self) -> None:
-        tab = self.host.tabs.add(t("gui.tab.log"))
+        tab = self.host._ensure_tab(t("gui.tab.log"))
         self.host.log_root_tab = tab
         tab.grid_columnconfigure(0, weight=1)
         tab.grid_rowconfigure(2, weight=1)
@@ -146,6 +223,71 @@ class AppSurfaceHelper:
         tab.bind("<Configure>", self.host._schedule_log_layout_refresh, add="+")
         self.refresh_log_tab_layout()
 
+    def _clear_log_container(self, container: Any) -> None:
+        for child in container.winfo_children():
+            child.destroy()
+        self.host.log_intro_label = None
+        self.host._log_filter_frame = None
+        self.host._log_level_label = None
+        self.host._log_level_menu = None
+        self.host.log_box = None
+        self.host._log_button_frame = None
+        self.host.clear_log_btn = None
+        self.host.save_log_btn = None
+        self.host.detach_log_btn = None
+        self.host._log_layout_mode = None
+        self.host._log_intro_wraplength = None
+
+    def _render_detached_log_placeholder(self) -> None:
+        tab = getattr(self.host, "log_root_tab", None)
+        if tab is None:
+            return
+        self._clear_log_container(tab)
+        tab.grid_columnconfigure(0, weight=1)
+        tab.grid_rowconfigure(0, weight=1)
+
+        frame = ctk.CTkFrame(tab)
+        frame.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
+        frame.grid_columnconfigure(0, weight=1)
+
+        label = ctk.CTkLabel(
+            frame,
+            text=t("gui.log.detached_notice"),
+            justify="left",
+            anchor="w",
+            wraplength=560,
+            text_color=("gray35", "gray70"),
+        )
+        label.grid(row=0, column=0, sticky="ew", pady=(0, 10), padx=12)
+
+        actions = ctk.CTkFrame(frame, fg_color="transparent")
+        actions.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 12))
+        ctk.CTkButton(
+            actions,
+            text=t("gui.log.focus_window"),
+            command=self.host._open_detached_log_window,
+        ).grid(row=0, column=0, padx=(0, 10))
+        ctk.CTkButton(
+            actions,
+            text=t("gui.log.redock"),
+            command=self.host._redock_detached_log_window,
+            fg_color="gray40",
+            hover_color="gray30",
+        ).grid(row=0, column=1)
+
+    def _rebuild_main_log_surface(self) -> None:
+        tab = getattr(self.host, "log_root_tab", None)
+        if tab is None:
+            return
+        self._clear_log_container(tab)
+        self.build_log_tab()
+
+    def _focus_detached_log_window(self) -> None:
+        existing = getattr(self.host, "_detached_log_window", None)
+        if existing is not None and existing.winfo_exists():
+            existing.lift()
+            existing.focus_force()
+
     def resolve_logical_width(self, *candidates: Any) -> float:
         review_width = getattr(self.host, "_review_logical_width", None)
         if callable(review_width):
@@ -165,12 +307,33 @@ class AppSurfaceHelper:
         return float(available_width)
 
     def refresh_log_tab_layout(self) -> None:
+        if any(
+            getattr(self.host, attr, None) is None
+            for attr in (
+                "log_intro_label",
+                "_log_level_label",
+                "_log_level_menu",
+                "clear_log_btn",
+                "save_log_btn",
+                "detach_log_btn",
+            )
+        ):
+            return
         logical_width = float(self.host._log_logical_width(getattr(self.host, "log_root_tab", None), self.host))
-        self.host.log_intro_label.configure(wraplength=max(320, int(logical_width) - 48))
+        wraplength = max(320, int(logical_width) - 48)
+        previous_wraplength = getattr(self.host, "_log_intro_wraplength", None)
+        if previous_wraplength != wraplength:
+            self.host.log_intro_label.configure(wraplength=wraplength)
+            self.host._log_intro_wraplength = wraplength
+
+        layout_mode = "wide" if logical_width >= 860 else "stacked"
+        if getattr(self.host, "_log_layout_mode", None) == layout_mode:
+            return
+        self.host._log_layout_mode = layout_mode
 
         self.host._log_level_label.grid_forget()
         self.host._log_level_menu.grid_forget()
-        if logical_width >= 860:
+        if layout_mode == "wide":
             self.host._log_level_label.grid(row=0, column=0, padx=(0, 4), pady=(0, 2), sticky="w")
             self.host._log_level_menu.grid(row=0, column=1, padx=(0, 8), pady=(0, 2), sticky="w")
         else:
@@ -180,7 +343,7 @@ class AppSurfaceHelper:
         self.host.clear_log_btn.grid_forget()
         self.host.save_log_btn.grid_forget()
         self.host.detach_log_btn.grid_forget()
-        if logical_width >= 860:
+        if layout_mode == "wide":
             self.host.clear_log_btn.grid(row=0, column=0, padx=(0, 6), pady=0, sticky="w")
             self.host.save_log_btn.grid(row=0, column=1, padx=0, pady=0, sticky="w")
             self.host.detach_log_btn.grid(row=0, column=2, padx=(6, 0), pady=0, sticky="w")
@@ -235,12 +398,13 @@ class AppSurfaceHelper:
         textbox.configure(state="disabled")
 
     def _sync_log_views(self) -> None:
-        self._render_log_textbox(
-            self.host.log_box,
-            min_level=self.LEVEL_MAP.get(self.host._log_level_var.get(), 0),
-        )
+        if getattr(self.host, "log_box", None) is not None and getattr(self.host, "_log_level_var", None) is not None:
+            self._render_log_textbox(
+                self.host.log_box,
+                min_level=self.LEVEL_MAP.get(self.host._log_level_var.get(), 0),
+            )
         detached_level_var = getattr(self.host, "_detached_log_level_var", None)
-        if detached_level_var is not None and self.host._detached_log_box is not None:
+        if detached_level_var is not None and getattr(self.host, "_detached_log_box", None) is not None:
             self._render_log_textbox(
                 self.host._detached_log_box,
                 min_level=self.LEVEL_MAP.get(detached_level_var.get(), 0),
@@ -269,7 +433,9 @@ class AppSurfaceHelper:
 
     def redock_detached_log_window(self) -> None:
         self._destroy_detached_log_window(persist_detached_state=True)
+        self._rebuild_main_log_surface()
         self.host.tabs.set(t("gui.tab.log"))
+        self.refresh_detach_action_state()
 
     def prepare_detached_windows_for_shutdown(self) -> None:
         for page_key, attr_name in (
@@ -305,26 +471,20 @@ class AppSurfaceHelper:
             if toplevel is not self.host:
                 return None
 
-        current_tab = str(self.host.tabs.get())
-        if current_tab == t("gui.tab.log"):
-            self.host._open_detached_log_window()
-            return "break"
-        if current_tab == t("gui.tab.settings"):
-            self.host._open_detached_settings_window()
-            return "break"
-        if current_tab == t("gui.tab.benchmarks"):
-            self.host._open_detached_benchmark_window()
-            return "break"
-        if current_tab == t("gui.tab.addon_review"):
-            self.host._open_detached_addon_review_window()
-            return "break"
-        return None
+        state = self._current_detachable_page_state()
+        if state is None:
+            self.host.status_var.set(t("gui.detach_page.unsupported_status"))
+            self.host._show_toast(t("gui.detach_page.unsupported_toast"), error=False)
+            self.refresh_detach_action_state()
+            return None
+        state["command"]()
+        self.refresh_detach_action_state()
+        return "break"
 
     def open_detached_log_window(self, *, restoring: bool = False) -> None:
         existing = getattr(self.host, "_detached_log_window", None)
         if existing is not None and existing.winfo_exists():
-            existing.lift()
-            existing.focus_force()
+            self._focus_detached_log_window()
             return
 
         win = ctk.CTkToplevel(self.host)
@@ -414,9 +574,11 @@ class AppSurfaceHelper:
         self.bind_detached_redock_shortcuts(win, self.redock_detached_log_window)
 
         self.set_page_detached("log", True)
+        self._render_detached_log_placeholder()
         self._sync_log_views()
         if restoring:
             self.show_toast(t("gui.log.window_restored"))
+        self.refresh_detach_action_state()
 
     def poll_log_queue(self) -> None:
         if not getattr(self.host, "_log_polling", True):
@@ -460,16 +622,64 @@ class AppSurfaceHelper:
             self.show_toast(str(exc), error=True)
 
     def restack_toasts(self) -> None:
+        # Clean stale toasts first
+        self.host._active_toasts = [frame for frame in self.host._active_toasts if frame.winfo_exists()]
+        if not self.host._active_toasts:
+            return
+
         win_h = self.host.winfo_height() or self.host.HEIGHT
+        if win_h <= 0:
+            return
+
         toast_slot_px = int(getattr(self.host, "_TOAST_SLOT_PX", 52))
         for index, frame in enumerate(self.host._active_toasts):
             offset_px = index * toast_slot_px
             rely = 1.0 - (offset_px + 24) / win_h
-            try:
-                frame.place(relx=0.5, rely=rely, anchor="s")
-                frame.lift()
-            except Exception:
-                pass
+            if frame.winfo_exists():
+                try:
+                    frame.place(relx=0.5, rely=rely, anchor="s")
+                    frame.lift()
+                except Exception:
+                    logger.debug("Failed to restack toast frame")
+            else:
+                logger.debug("Skipping destroyed toast frame")
+
+    def refresh_status_bar_layout(self) -> None:
+        if getattr(self.host, "_status_label", None) is None:
+            return
+
+        try:
+            width = int(self.host.winfo_width())
+        except Exception:
+            return
+
+        layout_mode = (
+            "compact-hidden-countdown"
+            if width <= 340
+            else "compact"
+            if width <= 520
+            else "wide"
+        )
+        if getattr(self.host, "_status_bar_layout_mode", None) == layout_mode:
+            return
+        self.host._status_bar_layout_mode = layout_mode
+
+        if width <= 520:
+            self.host._status_label.grid_configure(columnspan=4, sticky="ew")
+            self.host._detach_page_btn.grid_configure(row=1, column=0, pady=(4, 0), sticky="w")
+            self.host.cancel_btn.grid_configure(row=1, column=1, columnspan=2, pady=(4, 0), sticky="w")
+            self.host._health_countdown_lbl.grid_configure(row=1, column=3, pady=(4, 0), sticky="e")
+            if width <= 340:
+                self.host._health_countdown_lbl.grid_remove()
+            else:
+                self.host._health_countdown_lbl.grid()
+        else:
+            self.host._status_label.grid_configure(row=0, column=0, columnspan=1, sticky="ew")
+            self.host._detach_page_btn.grid_configure(row=0, column=1, pady=0, sticky="w")
+            self.host.cancel_btn.grid_configure(row=0, column=2, columnspan=1, pady=0, sticky="w")
+            self.host._health_countdown_lbl.grid_configure(row=0, column=3, pady=0, sticky="e")
+            self.host._health_countdown_lbl.grid()
+
 
     def show_toast(self, message: str, *, duration: int = 6000, error: bool = False) -> None:
         if error:
@@ -494,6 +704,8 @@ class AppSurfaceHelper:
         lbl.pack(padx=16, pady=8)
 
         def _dismiss() -> None:
+            if not toast.winfo_exists() or not self.host.winfo_exists():
+                return
             try:
                 toast.destroy()
             except Exception:
@@ -504,4 +716,6 @@ class AppSurfaceHelper:
                 pass
             self.restack_toasts()
 
+        if duration == 6000:
+            duration = self.host._gui_toast_duration_ms()
         self.host._schedule_app_after(duration, _dismiss)

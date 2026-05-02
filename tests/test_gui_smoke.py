@@ -14,6 +14,7 @@ Run with::
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 from typing import Any, Generator
 import json
@@ -58,9 +59,14 @@ def _assert_widget_within_window(app: Any, widget: Any, *, slack: int = 24) -> N
 def app() -> Generator[Any, None, None]:
     """Create and yield an App in testing mode, then destroy it."""
     from aicodereviewer.gui.app import App
+    from aicodereviewer.config import config
+
+    original_detached_pages = str(config.get("gui", "detached_pages", "") or "")
+    config.set_value("gui", "detached_pages", "")
     try:
         application = App(testing_mode=True)
     except tk.TclError as exc:
+        config.set_value("gui", "detached_pages", original_detached_pages)
         error_text = str(exc)
         known_tcl_env_failures = (
             "auto.tcl",
@@ -79,6 +85,7 @@ def app() -> Generator[Any, None, None]:
         application.destroy()
     except Exception:
         pass
+    config.set_value("gui", "detached_pages", original_detached_pages)
 
 
 class TestAppCreation:
@@ -117,6 +124,30 @@ class TestAppCreation:
         assert ("tool_file_access", "enabled") in app._setting_entries
         assert hasattr(app, "detach_settings_btn")
         assert app.detach_settings_btn.cget("text") == t("gui.settings.open_window")
+        assert hasattr(app, "_detach_page_btn")
+        assert app._detach_page_btn.cget("text") == t("gui.settings.open_window")
+
+    def test_global_detach_action_tracks_current_tab(self, app: Any) -> None:
+        app.tabs.set(t("gui.tab.review"))
+        app.update_idletasks()
+        app.update()
+        assert app._detach_page_btn.cget("state") == "disabled"
+
+        app.tabs.set(t("gui.tab.settings"))
+        app.update_idletasks()
+        app.update()
+        assert app._detach_page_btn.cget("state") == "normal"
+        assert app._detach_page_btn.cget("text") == t("gui.settings.open_window")
+
+        app._open_detached_settings_window()
+        app.update_idletasks()
+        app.update()
+        assert app._detach_page_btn.cget("text") == t("gui.settings.focus_window")
+
+        app._settings_redock_detached_window()
+        app.update_idletasks()
+        app.update()
+        assert app._detach_page_btn.cget("text") == t("gui.settings.open_window")
 
     def test_benchmark_tab_widgets(self, app: Any) -> None:
         benchmark_tab = BenchmarkTabHarness(app)
@@ -276,6 +307,88 @@ class TestAppCreation:
 
         assert hasattr(app, "detach_log_btn")
         assert app.detach_log_btn.cget("text") == t("gui.log.open_window")
+
+    def test_log_detach_replaces_main_tab_with_placeholder_until_redocked(self, app: Any) -> None:
+        app.tabs.set(t("gui.tab.log"))
+        app.update_idletasks()
+        app.update()
+
+        app._open_detached_log_window()
+        app.update_idletasks()
+        app.update()
+
+        assert getattr(app, "_detached_log_window", None) is not None
+        assert app._detached_log_window.winfo_exists()
+        assert app.log_box is None
+        assert app.detach_log_btn is None
+
+        placeholder_texts: list[str] = []
+        for widget in app.log_root_tab.winfo_children()[0].winfo_children():
+            if not hasattr(widget, "cget"):
+                continue
+            try:
+                placeholder_texts.append(str(widget.cget("text")))
+            except Exception:
+                continue
+        assert t("gui.log.detached_notice") in placeholder_texts
+
+        app._redock_detached_log_window()
+        app.update_idletasks()
+        app.update()
+
+        assert getattr(app, "_detached_log_window", None) is None
+        assert app.log_box is not None
+        assert app.detach_log_btn is not None
+        assert app.detach_log_btn.cget("text") == t("gui.log.open_window")
+
+    def test_toast_auto_dismisses_with_configured_duration(self, app: Any) -> None:
+        original_toast_duration = str(app._gui_toast_duration_ms())
+        try:
+            from aicodereviewer.config import config
+            config.set_value("gui", "toast_duration_ms", "50")
+            app._show_toast("Test toast", duration=6000)
+            app.update_idletasks()
+            assert len(app._active_toasts) == 1
+            time.sleep(0.08)
+            app.update()
+            assert len(app._active_toasts) == 0
+        finally:
+            config.set_value("gui", "toast_duration_ms", original_toast_duration)
+
+    def test_status_bar_reflows_in_narrow_window(self, app: Any) -> None:
+        original_winfo_width = app.winfo_width
+        try:
+            app.winfo_width = lambda: 320
+            app._refresh_status_bar_layout()
+            assert int(app._status_label.grid_info().get("columnspan", 1)) == 4
+            assert app._detach_page_btn.winfo_manager() != ""
+            assert app._health_countdown_lbl.winfo_manager() == ""
+
+            app.winfo_width = lambda: 620
+            app._refresh_status_bar_layout()
+            assert int(app._status_label.grid_info().get("columnspan", 1)) == 1
+            assert app._detach_page_btn.winfo_manager() != ""
+            assert app._health_countdown_lbl.winfo_manager() != ""
+        finally:
+            app.winfo_width = original_winfo_width
+
+    def test_window_resize_refreshes_only_active_tab_layout(self, app: Any) -> None:
+        app.tabs.set(t("gui.tab.results"))
+        app.update_idletasks()
+        app.update()
+
+        calls: list[str] = []
+        original_results_refresh = app._refresh_results_tab_layout
+        original_settings_refresh = app._refresh_settings_tab_layout
+        app._refresh_results_tab_layout = lambda: calls.append("results")
+        app._refresh_settings_tab_layout = lambda: calls.append("settings")
+        try:
+            helper = app._app_helpers().shell_layout()
+            helper._perform_geometry_refreshes(active_only=True)
+            assert calls == ["results"]
+        finally:
+            app._refresh_results_tab_layout = original_results_refresh
+            app._refresh_settings_tab_layout = original_settings_refresh
 
     def test_results_settings_and_log_reflow_explicitly_by_logical_width(self, app: Any) -> None:
         app.tabs.set(t("gui.tab.results"))
@@ -442,6 +555,9 @@ class TestAppCreation:
 
     def test_settings_addon_diagnostics_widgets(self, app: Any) -> None:
         """Settings tab should expose addon summary and diagnostics surfaces."""
+        # Trigger lazy build of the Settings tab
+        app._build_tab_if_needed(t("gui.tab.settings"))
+        app.update_idletasks()
         assert hasattr(app, "addon_summary_box")
         assert hasattr(app, "addon_diagnostics_box")
         assert hasattr(app, "addon_contributions_frame")
@@ -454,6 +570,9 @@ class TestAppCreation:
 
     def test_addon_review_widgets(self, app: Any) -> None:
         """Addon Review should expose the standalone preview review widgets."""
+        # Trigger lazy build of the Addon Review tab
+        app._build_tab_if_needed(t("gui.tab.addon_review"))
+        app.update_idletasks()
         assert hasattr(app, "addon_review_preview_entry")
         assert hasattr(app, "addon_review_status_box")
         assert hasattr(app, "addon_review_metadata_box")
@@ -497,6 +616,9 @@ class TestAppCreation:
 
     def test_settings_addon_diagnostics_render_runtime(self, app: Any, monkeypatch: pytest.MonkeyPatch) -> None:
         """Addon summary and diagnostic text boxes should reflect the active runtime."""
+        # Trigger lazy build of the Settings tab
+        app._build_tab_if_needed(t("gui.tab.settings"))
+        app.update_idletasks()
         from aicodereviewer.addons import AddonManifest, AddonUIContributorSpec
         import aicodereviewer.gui.settings_mixin as settings_mixin
 
@@ -598,6 +720,7 @@ class TestTestingMode:
         )
 
         benchmark_tab = BenchmarkTabHarness(app)
+        benchmark_tab.open()
         benchmark_tab.load_catalog(fixtures_root)
 
         assert "catalog-browser-fixture" in benchmark_tab.catalog_text()
@@ -622,6 +745,7 @@ class TestTestingMode:
         )
 
         benchmark_tab = BenchmarkTabHarness(app)
+        benchmark_tab.open()
         benchmark_tab.refresh_summary_selector(artifacts_root)
 
         values = benchmark_tab.summary_selector_values()

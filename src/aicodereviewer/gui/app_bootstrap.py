@@ -3,9 +3,32 @@ from __future__ import annotations
 import logging
 import queue
 import threading
+import tkinter as tk
 from typing import Any
 
 import customtkinter as ctk  # type: ignore[import-untyped]
+
+_original_ctk_entry = ctk.CTkEntry
+
+class _SafeCTkEntry:
+    def __new__(cls, *args: Any, **kwargs: Any) -> Any:
+        try:
+            return _original_ctk_entry(*args, **kwargs)
+        except Exception:
+            logger = logging.getLogger(__name__)
+            logger.warning("CTkEntry construction failed; falling back to Tk.Entry", exc_info=True)
+            if "placeholder_text" in kwargs:
+                kwargs.pop("placeholder_text")
+            if "fg_color" in kwargs:
+                kwargs.pop("fg_color")
+            if "hover_color" in kwargs:
+                kwargs.pop("hover_color")
+            master = args[0] if args else kwargs.get("master")
+            if master is None:
+                raise
+            return tk.Entry(master, **kwargs)
+
+ctk.CTkEntry = _SafeCTkEntry
 
 from aicodereviewer.addons import install_addon_runtime
 from aicodereviewer.auth import get_system_language
@@ -58,12 +81,28 @@ class AppBootstrapHelper:
         self.host.tabs = ctk.CTkTabview(self.host, anchor="nw")
         self.host.tabs.grid(row=0, column=0, sticky="nsew", padx=10, pady=(10, 0))
 
+        self.host._tab_name_to_frame = {}
+        self.host._lazy_tab_builders = {
+            t("gui.tab.review"): self.host._build_review_tab,
+            t("gui.tab.results"): self.host._build_results_tab,
+            t("gui.tab.benchmarks"): self.host._build_benchmark_tab,
+            t("gui.tab.addon_review"): self.host._build_addon_review_tab,
+            t("gui.tab.settings"): self.host._build_settings_tab,
+            t("gui.tab.log"): self.host._build_log_tab,
+        }
+        self.host._built_tabs = set()
+
+        for tab_name in self.host._lazy_tab_builders:
+            self.host._ensure_tab(tab_name)
+
         self.host._build_review_tab()
-        self.host._build_results_tab()
-        self.host._build_benchmark_tab()
-        self.host._build_addon_review_tab()
-        self.host._build_settings_tab()
+        self.host._built_tabs.add(t("gui.tab.review"))
+        # Build the Log tab eagerly so log output is always captured
         self.host._build_log_tab()
+        self.host._built_tabs.add(t("gui.tab.log"))
+        # Build the Settings tab eagerly since many tests and features access it
+        self.host._build_settings_tab()
+        self.host._built_tabs.add(t("gui.tab.settings"))
         self.host._app_helpers().shell_layout().install_tab_selection_layout_hooks()
         self.host._app_helpers().surfaces().build_status_bar()
 
@@ -167,3 +206,4 @@ class AppBootstrapHelper:
         self.host._detached_addon_review_redock_btn = None
         self.host._current_addon_review_surface = None
         self.host._current_addon_review_diffs = {}
+        self.host._active_toasts = []

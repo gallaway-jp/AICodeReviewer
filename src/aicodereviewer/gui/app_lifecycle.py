@@ -13,6 +13,7 @@ class AppLifecycleHelper:
         self.host._restore_detached_windows()
         self.host._start_local_http_server_from_settings()
         self.host._poll_log_queue()
+        self.host._schedule_app_after(0, self.host._finalize_startup_presentation)
         if not self.host._testing_mode:
             self.host._schedule_app_after(100, self.host._refresh_current_backend_models_async)
             self.host._schedule_app_after(500, self.host._auto_health_check)

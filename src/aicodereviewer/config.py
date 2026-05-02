@@ -43,6 +43,7 @@ _CONVERTERS: list[tuple[str, str, Any]] = [
     ("local_http",  "enabled",           _to_bool),
     ("local_http",  "enable_*",          _to_bool),
     ("local_http",  "port",              int),
+    ("gui",         "*_ms",              int),
     ("tool_file_access", "enabled",      _to_bool),
     # Logging section
     ("logging",     "enable_*",          _to_bool),
@@ -191,6 +192,8 @@ class Config:
         self._add("gui", "detached_log_geometry", "")
         self._add("gui", "detached_settings_geometry", "")
         self._add("gui", "detached_benchmark_geometry", "")
+        self._add("gui", "toast_duration_ms", "6000")
+        self._add("gui", "resize_debounce_ms", "100")
 
         # ── local http ─────────────────────────────────────────────────────
         self._add("local_http", "enabled", "false")

@@ -19,7 +19,12 @@ class AddonReviewTabMixin:
         AddonReviewTabBuilder(self).build()
 
     def _schedule_addon_review_layout_refresh(self, *_args: Any) -> None:
-        self._refresh_addon_review_tab_layout()
+        self._schedule_surface_layout_refresh(
+            "_addon_review_layout_refresh_after_id",
+            self._refresh_addon_review_tab_layout,
+            tab_name=t("gui.tab.addon_review"),
+            detached_window_attr="_detached_addon_review_window",
+        )
 
     def _refresh_addon_review_tab_layout(self) -> None:
         logical_width = float(
@@ -205,9 +210,19 @@ class AddonReviewTabMixin:
 
         detached_window.protocol("WM_DELETE_WINDOW", _on_close)
         detached_window.bind("<Configure>", _persist_geometry, add="+")
+        detached_window.bind(
+            "<Configure>",
+            lambda _event=None: self._schedule_debounced(
+                "_detached_addon_review_layout_refresh_after_id",
+                50,
+                self._refresh_addon_review_tab_layout,
+            ),
+            add="+",
+        )
         if restoring:
             self._show_toast(t("gui.addon_review.window_restored"))
         self._focus_detached_addon_review_window()
+        self._refresh_detach_action_state()
 
     def _addon_review_redock_detached_window(self) -> None:
         window = getattr(self, "_detached_addon_review_window", None)
@@ -222,6 +237,7 @@ class AddonReviewTabMixin:
             self.tabs.set(t("gui.tab.addon_review"))
         except Exception:
             pass
+        self._refresh_detach_action_state()
 
     def _initialize_addon_review_surface_widgets(self) -> None:
         self._current_addon_review_surface = None

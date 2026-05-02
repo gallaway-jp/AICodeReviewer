@@ -12,7 +12,7 @@ class ResultsTabBuilder:
         self.host = host
 
     def build(self) -> None:
-        tab = self.host.tabs.add(t("gui.tab.results"))
+        tab = self.host._ensure_tab(t("gui.tab.results"))
         self.host.results_root_tab = tab
         tab.grid_columnconfigure(0, weight=1)
         tab.grid_rowconfigure(6, weight=1)

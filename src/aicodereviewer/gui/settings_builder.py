@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+import tkinter as tk
 from typing import Any, List
 
 import customtkinter as ctk  # type: ignore[import-untyped]
@@ -23,7 +24,7 @@ class SettingsTabBuilder:
 
     def build(self) -> None:
         if self.parent is None:
-            tab = self.host.tabs.add(t("gui.tab.settings"))
+            tab = self.host._ensure_tab(t("gui.tab.settings"))
             self.host.settings_root_tab = tab
         else:
             tab = self.parent
@@ -82,6 +83,18 @@ class SettingsTabBuilder:
         sep.grid(row=self.row + 1, column=0, columnspan=4, sticky="ew", padx=6)
         self.row += 2
 
+    def _create_entry_widget(self, parent: Any) -> Any:
+        try:
+            return ctk.CTkEntry(parent)
+        except Exception:
+            warning_message = "CustomTkinter entry creation failed; falling back to Tkinter Entry."
+            try:
+                logger = __import__("logging").getLogger(__name__)
+                logger.warning(warning_message)
+            except Exception:
+                pass
+            return tk.Entry(parent)
+
     def _add_entry(
         self,
         label: str,
@@ -99,7 +112,7 @@ class SettingsTabBuilder:
             padx=(0, 4),
             pady=3,
         )
-        entry = ctk.CTkEntry(self.scroll)
+        entry = self._create_entry_widget(self.scroll)
         entry.insert(0, str(default))
         entry.grid(row=self.row, column=2, sticky="ew", padx=6, pady=3)
         if actions:

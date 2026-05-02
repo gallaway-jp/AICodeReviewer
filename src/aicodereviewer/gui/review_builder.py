@@ -24,7 +24,7 @@ class ReviewTabBuilder:
         self.host = host
 
     def build(self) -> None:
-        tab = self.host.tabs.add(t("gui.tab.review"))
+        tab = self.host._ensure_tab(t("gui.tab.review"))
         tab.grid_columnconfigure(0, weight=1)
         tab.grid_rowconfigure(0, weight=1)
 

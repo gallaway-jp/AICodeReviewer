@@ -131,15 +131,20 @@ The desktop app supports a detachable-window workflow for selected non-Review pa
 
 Currently supported detachable pages:
 - Benchmarks
+- Addon Review
 - Settings
 - Output Log
 
 Behavior:
-- each supported page exposes an `Open In Window` action in the main tab
+- each supported page exposes an `Open In Window` action in the main tab and through the shared status-bar window action
 - detached windows expose a `Redock` action that returns the page to the main tab
-- the Review tab remains anchored in the main window
+- the Review and Results tabs remain anchored in the main window
 - detached window geometry is persisted and restored on restart through the GUI config
 - the app keeps one canonical surface active per detachable page, then rebuilds that page in the active host during detach and redock
+
+Windows display note:
+- the default Windows GUI setting disables CustomTkinter automatic DPI awareness to avoid stalls and hangs when moving the window across mixed-DPI monitors
+- if you prefer sharper per-monitor scaling and your setup is stable, you can opt back in with `gui.automatic_dpi_awareness = true`
 
 Keyboard shortcuts:
 - `Ctrl+Shift+O` opens the currently selected detachable page in its own window

@@ -16,6 +16,17 @@ class ResultsLayoutState:
     bottom_action_columns: int
 
 
+@dataclass(frozen=True)
+class ResultsStructureState:
+    overview_columns: int
+    quick_filter_columns: int
+    quick_filters_inline: bool
+    filter_mode: str
+    bottom_actions_inline: bool
+    bottom_action_columns: int
+    visible_button_keys: tuple[str, ...]
+
+
 class ResultsLayoutHelper:
     def __init__(self, host: Any) -> None:
         self.host = host
@@ -67,25 +78,50 @@ class ResultsLayoutHelper:
             bottom_action_columns=3 if logical_width >= 980 else 2 if logical_width >= 700 else 1,
         )
 
+    @staticmethod
+    def build_structure_state(state: ResultsLayoutState, *, visible_buttons: list[Any]) -> ResultsStructureState:
+        return ResultsStructureState(
+            overview_columns=state.overview_columns,
+            quick_filter_columns=state.quick_filter_columns,
+            quick_filters_inline=state.quick_filters_inline,
+            filter_mode=state.filter_mode,
+            bottom_actions_inline=state.bottom_actions_inline,
+            bottom_action_columns=state.bottom_action_columns,
+            visible_button_keys=tuple(str(button) for button in visible_buttons),
+        )
+
     def refresh_tab_layout(self) -> None:
         logical_width = float(self.host._results_logical_width(getattr(self.host, "results_root_tab", None), self.host))
         ordered_buttons = list(getattr(self.host, "_results_action_buttons_order", []))
         visible_buttons = [button for button in ordered_buttons if button.winfo_manager() != ""]
         state = self.build_state(logical_width, visible_buttons=len(visible_buttons))
 
-        self._layout_overview_cards(state)
+        previous_state = getattr(self.host, "_results_layout_state", None)
+        previous_structure = (
+            self.build_structure_state(previous_state, visible_buttons=visible_buttons)
+            if isinstance(previous_state, ResultsLayoutState)
+            else None
+        )
+        current_structure = self.build_structure_state(state, visible_buttons=visible_buttons)
+
+        if previous_structure != current_structure:
+            self._layout_overview_cards(state)
+            self.layout_quick_filters(logical_width, state=state)
+            self.layout_filter_bar(logical_width, state=state)
+            self.layout_bottom_actions(logical_width, state=state)
 
         results_subsummary = getattr(self.host, "results_subsummary", None)
-        if results_subsummary is not None:
+        if results_subsummary is not None and (
+            previous_state is None or previous_state.subsummary_wraplength != state.subsummary_wraplength
+        ):
             results_subsummary.configure(wraplength=state.subsummary_wraplength)
 
         results_action_hint = getattr(self.host, "results_action_hint", None)
-        if results_action_hint is not None:
+        if results_action_hint is not None and (
+            previous_state is None or previous_state.action_hint_wraplength != state.action_hint_wraplength
+        ):
             results_action_hint.configure(wraplength=state.action_hint_wraplength)
-
-        self.layout_quick_filters(logical_width, state=state)
-        self.layout_filter_bar(logical_width, state=state)
-        self.layout_bottom_actions(logical_width, state=state)
+        self.host._results_layout_state = state
 
     def _layout_overview_cards(self, state: ResultsLayoutState) -> None:
         overview_frame = getattr(self.host, "_overview_frame", None)

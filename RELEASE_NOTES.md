@@ -17,6 +17,15 @@ Milestone 14 intentionally resets the maintained release line to `v0.2.0` to ref
 
 ---
 
+## Unreleased
+
+### Changed
+- On Windows, the GUI now defaults to the more stable DPI mode for mixed-DPI multi-monitor setups. This reduces resize and monitor-hop instability at the cost of less aggressive per-monitor sharpness adjustments.
+- The GUI now finishes its initial startup presentation before showing the main window, which reduces visible layout reshuffling during load.
+
+### Fixed
+- The shared status bar now exposes the current detachable page action directly, making detachable surfaces easier to discover without hunting for per-tab buttons.
+
 
 ## v0.3.0
 

@@ -51,7 +51,12 @@ class BenchmarkTabMixin:
         return self._benchmark_layout_helper().resolve_logical_width(*candidates)
 
     def _schedule_benchmark_layout_refresh(self, *_args: Any) -> None:
-        self._refresh_benchmark_tab_layout()
+        self._schedule_surface_layout_refresh(
+            "_benchmark_layout_refresh_after_id",
+            self._refresh_benchmark_tab_layout,
+            tab_name=t("gui.tab.benchmarks"),
+            detached_window_attr="_detached_benchmark_window",
+        )
 
     def _layout_benchmark_action_frame(
         self,
@@ -98,6 +103,7 @@ class BenchmarkTabMixin:
     def _clear_benchmark_container(self, container: Any) -> None:
         if container is None:
             return
+        self._benchmark_layout_state = None
         for child in container.winfo_children():
             child.destroy()
 
@@ -338,10 +344,20 @@ class BenchmarkTabMixin:
 
         detached_window.protocol("WM_DELETE_WINDOW", _on_close)
         detached_window.bind("<Configure>", _persist_geometry, add="+")
+        detached_window.bind(
+            "<Configure>",
+            lambda _event=None: self._schedule_debounced(
+                "_detached_benchmark_layout_refresh_after_id",
+                50,
+                self._refresh_benchmark_tab_layout,
+            ),
+            add="+",
+        )
 
         if restoring:
             self.status_var.set(t("gui.benchmark.window_restored"))
         self._focus_detached_benchmark_window()
+        self._refresh_detach_action_state()
 
     def _benchmark_redock_detached_window(self) -> None:
         window = getattr(self, "_detached_benchmark_window", None)
@@ -357,6 +373,7 @@ class BenchmarkTabMixin:
             self.tabs.set(t("gui.tab.benchmarks"))
         except Exception:
             pass
+        self._refresh_detach_action_state()
 
     def _build_fixture_presence_filters(self) -> list[tuple[str, str, tuple[str, ...] | None]]:
         return [

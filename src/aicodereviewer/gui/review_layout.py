@@ -19,6 +19,14 @@ class ReviewTypeLayoutState:
     preset_inline: bool
 
 
+@dataclass(frozen=True)
+class ReviewTypeStructureState:
+    checkbox_columns: int
+    checkbox_rows_per_column: int
+    controls_mode: str
+    preset_inline: bool
+
+
 class ReviewLayoutHelper:
     def __init__(self, host: Any) -> None:
         self.host = host
@@ -74,6 +82,15 @@ class ReviewLayoutHelper:
             preset_inline=logical_width >= 820,
         )
 
+    @staticmethod
+    def build_type_structure_state(state: ReviewTypeLayoutState) -> ReviewTypeStructureState:
+        return ReviewTypeStructureState(
+            checkbox_columns=state.checkbox_columns,
+            checkbox_rows_per_column=state.checkbox_rows_per_column,
+            controls_mode=state.controls_mode,
+            preset_inline=state.preset_inline,
+        )
+
     def refresh_tab_layout(self) -> None:
         body = getattr(self.host, "review_body_frame", None)
         setup_panel = getattr(self.host, "review_setup_panel", None)
@@ -94,6 +111,12 @@ class ReviewLayoutHelper:
         )
         state = self.build_tab_state(logical_width)
         self.host.review_layout_mode = "split" if state.split_mode else "stacked"
+
+        previous_state = getattr(self.host, "_review_tab_layout_state", None)
+        if previous_state == state:
+            self.refresh_type_layout()
+            return
+        self.host._review_tab_layout_state = state
 
         for child in (setup_panel, run_panel, divider):
             try:
@@ -144,24 +167,45 @@ class ReviewLayoutHelper:
             len(list(getattr(self.host, "_ordered_review_type_keys", []))),
         )
 
-        self.refresh_type_checkbox_layout(state)
-        self.refresh_type_controls_layout(state)
+        previous_state = getattr(self.host, "_review_type_layout_state", None)
+        previous_structure = (
+            self.build_type_structure_state(previous_state)
+            if isinstance(previous_state, ReviewTypeLayoutState)
+            else None
+        )
+        current_structure = self.build_type_structure_state(state)
 
-        for label_name in (
-            "review_preset_summary_label",
-            "review_pin_status_label",
-            "review_recommendation_label",
-            "review_types_hint_label",
-        ):
-            label = getattr(self.host, label_name, None)
-            if label is not None:
-                label.configure(wraplength=state.wraplength)
+        if previous_structure != current_structure:
+            self.refresh_type_checkbox_layout(state)
+            self.refresh_type_controls_layout(state)
+        elif previous_state is None or previous_state.checkbox_width != state.checkbox_width:
+            self._update_type_checkbox_widths(state)
+
+        if previous_state is None or previous_state.wraplength != state.wraplength:
+            for label_name in (
+                "review_preset_summary_label",
+                "review_pin_status_label",
+                "review_recommendation_label",
+                "review_types_hint_label",
+            ):
+                label = getattr(self.host, label_name, None)
+                if label is not None:
+                    label.configure(wraplength=state.wraplength)
 
         for widget_name in ("review_types_scroll_canvas", "review_scroll_canvas"):
             widget = getattr(self.host, widget_name, None)
             update_scroll_region = getattr(widget, "_acr_update_scroll_region", None)
             if callable(update_scroll_region):
                 update_scroll_region()
+
+        self.host._review_type_layout_state = state
+
+    def _update_type_checkbox_widths(self, state: ReviewTypeLayoutState) -> None:
+        for checkbox in getattr(self.host, "type_checkboxes", {}).values():
+            try:
+                checkbox.configure(width=state.checkbox_width)
+            except Exception:
+                continue
 
     def refresh_type_checkbox_layout(self, state: ReviewTypeLayoutState | None = None) -> None:
         types_frame = getattr(self.host, "review_types_frame", None)

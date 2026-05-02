@@ -498,6 +498,10 @@ def test_review_backend_dropdown_stays_in_sync_with_settings(
     assert hasattr(harness.app, "review_backend_menu")
     assert copilot_display in list(harness.app.review_backend_menu.cget("values"))
 
+    # Build the Settings tab so _settings_backend_var is available
+    harness.app._build_tab_if_needed(t("gui.tab.settings"))
+    harness.app.update_idletasks()
+
     harness.app._on_review_backend_selected(copilot_display)
     harness.app.update_idletasks()
 
@@ -2786,6 +2790,9 @@ def test_session_can_be_saved_and_loaded_into_a_fresh_app(
         lambda **_: str(session_path),
     )
 
+    # Build the Results tab so load_session_btn is available
+    second_harness.app._build_tab_if_needed(t("gui.tab.results"))
+    second_harness.pump()
     second_harness.app.load_session_btn.invoke()
     second_harness.pump()
 
@@ -2815,6 +2822,9 @@ def test_settings_tab_values_persist_across_app_restart(
     _reset_config_to_path(config_path)
 
     first_harness = GuiTestHarness(app_factory())
+    # Build the Settings tab so its widgets are available
+    first_harness.app._build_tab_if_needed(t("gui.tab.settings"))
+    first_harness.pump()
     first_harness.app._theme_var.set(t("gui.settings.ui_theme_dark"))
     first_harness.app._lang_setting_var.set(t("gui.settings.ui_lang_ja"))
     first_harness.app._settings_backend_var.set(first_harness.app._backend_display_map["local"])
@@ -2838,6 +2848,9 @@ def test_settings_tab_values_persist_across_app_restart(
 
     _reset_config_to_path(config_path)
     second_harness = GuiTestHarness(app_factory())
+    # Build the Settings tab so its widgets are available
+    second_harness.app._build_tab_if_needed(t("gui.tab.settings"))
+    second_harness.pump()
 
     assert second_harness.app._ui_lang == "ja"
     assert second_harness.app._theme_var.get() == t("gui.settings.ui_theme_dark")
@@ -3203,6 +3216,9 @@ def test_settings_invalid_numeric_value_does_not_persist_partial_changes(
     _reset_config_to_path(config_path)
 
     first_harness = GuiTestHarness(app_factory())
+    # Build the Settings tab so its widgets are available
+    first_harness.app._build_tab_if_needed(t("gui.tab.settings"))
+    first_harness.pump()
     first_harness.app._theme_var.set(t("gui.settings.ui_theme_dark"))
     rate_limit_entry = first_harness.app._setting_entries[("performance", "max_requests_per_minute")]
     rate_limit_entry.delete(0, "end")
@@ -3216,6 +3232,9 @@ def test_settings_invalid_numeric_value_does_not_persist_partial_changes(
 
     _reset_config_to_path(config_path)
     second_harness = GuiTestHarness(app_factory())
+    # Build the Settings tab so its widgets are available
+    second_harness.app._build_tab_if_needed(t("gui.tab.settings"))
+    second_harness.pump()
 
     assert second_harness.app._theme_var.get() == t("gui.settings.ui_theme_system")
     assert second_harness.app._setting_entries[("performance", "max_requests_per_minute")].get() == "10"
@@ -4177,6 +4196,9 @@ def test_restored_session_review_changes_recreates_backend_and_finalizes(
 
     harness = GuiTestHarness(app_factory())
     harness.enable_runtime_actions()
+    # Build the Results tab so load_session_btn is available
+    harness.app._build_tab_if_needed(t("gui.tab.results"))
+    harness.pump()
     monkeypatch.setattr(
         "aicodereviewer.gui.results_mixin.filedialog.askopenfilename",
         lambda **_: str(session_path),
@@ -4267,6 +4289,9 @@ def test_restored_session_ai_fix_recreates_backend_and_opens_preview(
 
     harness = GuiTestHarness(app_factory())
     harness.enable_runtime_actions()
+    # Build the Results tab so load_session_btn is available
+    harness.app._build_tab_if_needed(t("gui.tab.results"))
+    harness.pump()
     monkeypatch.setattr(
         "aicodereviewer.gui.results_mixin.filedialog.askopenfilename",
         lambda **_: str(session_path),
@@ -4508,6 +4533,9 @@ def test_popup_recovery_restores_unsaved_editor_draft(
     first_harness.app.destroy()
 
     second_harness = GuiTestHarness(app_factory())
+    # Build the Results tab so _issue_cards is available
+    second_harness.app._build_tab_if_needed(t("gui.tab.results"))
+    second_harness.pump()
     second_harness.wait_until(
         lambda: second_harness.results_tab.issue_count() == 1,
         message="popup recovery did not restore the editor issue list",
@@ -4611,6 +4639,9 @@ def test_popup_recovery_restores_staged_batch_fix_edits_and_selection(
 
     second_harness = GuiTestHarness(app_factory())
     second_harness.enable_runtime_actions()
+    # Build the Results tab so _issue_cards is available
+    second_harness.app._build_tab_if_needed(t("gui.tab.results"))
+    second_harness.pump()
     second_harness.wait_until(
         lambda: second_harness.results_tab.issue_count() == 2,
         message="popup recovery did not restore the batch fix issue list",
@@ -4682,6 +4713,8 @@ def test_popup_recovery_rejects_issue_file_path_outside_workspace(
     )
 
     harness = GuiTestHarness(app_factory())
+    # Build the Results tab so _issue_cards is available
+    harness.app._build_tab_if_needed(t("gui.tab.results"))
     harness.pump(2)
 
     assert harness.results_tab.issue_count() == 0
@@ -4740,6 +4773,9 @@ def test_restored_session_issue_detail_shows_resolution_provenance(
 
     harness = GuiTestHarness(app_factory())
     harness.enable_runtime_actions()
+    # Build the Results tab so load_session_btn is available
+    harness.app._build_tab_if_needed(t("gui.tab.results"))
+    harness.pump()
     monkeypatch.setattr(
         "aicodereviewer.gui.results_mixin.filedialog.askopenfilename",
         lambda **_: str(session_path),
@@ -4891,13 +4927,13 @@ def test_log_tab_detach_and_redock_keeps_log_state_synced(
     harness.app._poll_log_queue()
     harness.pump()
 
-    assert "detached error" in harness.app.log_box.get("0.0", "end")
+    assert harness.app.log_box is None
+    assert harness.app.detach_log_btn is None
     assert "detached error" in harness.app._detached_log_box.get("0.0", "end")
 
     harness.app._detached_log_clear_btn.invoke()
     harness.pump()
 
-    assert harness.app.log_box.get("0.0", "end").strip() == ""
     assert harness.app._detached_log_box.get("0.0", "end").strip() == ""
 
     harness.app._detached_log_redock_btn.invoke()
@@ -4906,6 +4942,7 @@ def test_log_tab_detach_and_redock_keeps_log_state_synced(
     assert harness.app._detached_log_window is None
     assert config.get("gui", "detached_pages", "") == ""
     assert harness.app.tabs.get() == t("gui.tab.log")
+    assert harness.app.log_box.get("0.0", "end").strip() == ""
 
 
 def test_settings_tab_detach_and_redock_preserves_unsaved_state(

@@ -156,10 +156,18 @@ class ReviewTabMixin:
         )
 
     def _schedule_review_layout_refresh(self, *_args: Any) -> None:
-        self._refresh_review_tab_layout()
+        self._schedule_surface_layout_refresh(
+            "_review_layout_refresh_after_id",
+            self._refresh_review_tab_layout,
+            tab_name=t("gui.tab.review"),
+        )
 
     def _schedule_review_type_layout_refresh(self, *_args: Any) -> None:
-        self._refresh_review_type_layout()
+        self._schedule_surface_layout_refresh(
+            "_review_type_layout_refresh_after_id",
+            self._refresh_review_type_layout,
+            tab_name=t("gui.tab.review"),
+        )
 
     def _review_layout_helper(self) -> ReviewLayoutHelper:
         return ReviewLayoutHelper(self)

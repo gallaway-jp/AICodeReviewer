@@ -18,7 +18,29 @@ class SettingsLayoutState:
     contribution_wraplength: int
 
 
+@dataclass(frozen=True)
+class SettingsStructureState:
+    output_format_columns: int
+    stack_settings_buttons: bool
+    output_checkbox_keys: tuple[str, ...]
+    button_keys: tuple[str, ...]
+
+
 class SettingsLayoutHelper:
+    @staticmethod
+    def build_structure_state(
+        layout: SettingsLayoutState,
+        *,
+        checkboxes: Iterable[Any],
+        buttons: Iterable[Any],
+    ) -> SettingsStructureState:
+        return SettingsStructureState(
+            output_format_columns=layout.output_format_columns,
+            stack_settings_buttons=layout.stack_settings_buttons,
+            output_checkbox_keys=tuple(str(checkbox) for checkbox in checkboxes),
+            button_keys=tuple(str(button) for button in buttons),
+        )
+
     @staticmethod
     def resolve_logical_width(host: Any, *candidates: Any) -> float:
         review_width = getattr(host, "_review_logical_width", None)

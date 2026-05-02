@@ -16,7 +16,7 @@ class AddonReviewTabBuilder:
         self.detached = detached
 
     def build(self) -> None:
-        root_tab = self.parent if self.parent is not None else self.host.tabs.add(t("gui.tab.addon_review"))
+        root_tab = self.parent if self.parent is not None else self.host._ensure_tab(t("gui.tab.addon_review"))
         root_tab.grid_columnconfigure(0, weight=1)
         root_tab.grid_rowconfigure(0, weight=1)
         if not self.detached:

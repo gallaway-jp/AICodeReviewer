@@ -28,61 +28,96 @@ class SettingsTabMixin:
         return SettingsLayoutHelper.resolve_logical_width(self, *candidates)
 
     def _schedule_settings_layout_refresh(self, *_args: Any) -> None:
-        self._refresh_settings_tab_layout()
+        self._schedule_surface_layout_refresh(
+            "_settings_layout_refresh_after_id",
+            self._refresh_settings_tab_layout,
+            tab_name=t("gui.tab.settings"),
+            detached_window_attr="_detached_settings_window",
+        )
 
     def _refresh_settings_tab_layout(self) -> None:
         logical_width = self._settings_logical_width(getattr(self, "settings_scroll_frame", None), self)
         layout = SettingsLayoutHelper.build_state(logical_width)
 
-        if hasattr(self, "_settings_addon_intro_label"):
+        previous_state = getattr(self, "_settings_layout_state", None)
+
+        if hasattr(self, "_settings_addon_intro_label") and (
+            previous_state is None or previous_state.wraplength != layout.wraplength
+        ):
             self._settings_addon_intro_label.configure(wraplength=layout.wraplength)
-        if hasattr(self, "_settings_addon_review_launcher_label"):
+        if hasattr(self, "_settings_addon_review_launcher_label") and (
+            previous_state is None or previous_state.wraplength != layout.wraplength
+        ):
             self._settings_addon_review_launcher_label.configure(wraplength=layout.wraplength)
-        if hasattr(self, "_settings_note_label"):
+        if hasattr(self, "_settings_note_label") and (
+            previous_state is None or previous_state.wraplength != layout.wraplength
+        ):
             self._settings_note_label.configure(wraplength=layout.wraplength)
-        if hasattr(self, "local_http_status_label"):
+        if hasattr(self, "local_http_status_label") and (
+            previous_state is None or previous_state.local_http_status_wraplength != layout.local_http_status_wraplength
+        ):
             self.local_http_status_label.configure(wraplength=layout.local_http_status_wraplength)
 
-        if hasattr(self, "local_http_copy_btn"):
+        if hasattr(self, "local_http_copy_btn") and (
+            previous_state is None or previous_state.local_http_copy_button_width != layout.local_http_copy_button_width
+        ):
             self.local_http_copy_btn.configure(width=layout.local_http_copy_button_width)
-        if hasattr(self, "local_http_docs_box"):
+        if hasattr(self, "local_http_docs_box") and (
+            previous_state is None or previous_state.local_http_docs_height != layout.local_http_docs_height
+        ):
             self.local_http_docs_box.configure(height=layout.local_http_docs_height)
-        if hasattr(self, "addon_summary_box"):
+        if hasattr(self, "addon_summary_box") and (
+            previous_state is None or previous_state.addon_summary_height != layout.addon_summary_height
+        ):
             self.addon_summary_box.configure(height=layout.addon_summary_height)
-        if hasattr(self, "addon_diagnostics_box"):
+        if hasattr(self, "addon_diagnostics_box") and (
+            previous_state is None or previous_state.addon_diagnostics_height != layout.addon_diagnostics_height
+        ):
             self.addon_diagnostics_box.configure(height=layout.addon_diagnostics_height)
 
         format_checkboxes = list(getattr(self, "_settings_output_format_checkboxes", []))
-        if format_checkboxes:
+        buttons = tuple(
+            button
+            for button in (
+                getattr(self, "_settings_save_btn", None),
+                getattr(self, "_settings_reset_btn", None),
+                getattr(self, "detach_settings_btn", None),
+                getattr(self, "_detached_settings_redock_btn", None),
+            )
+            if button is not None and bool(getattr(button, "winfo_exists", lambda: False)())
+        )
+        structure_state = SettingsLayoutHelper.build_structure_state(
+            layout,
+            checkboxes=format_checkboxes,
+            buttons=buttons,
+        )
+        if format_checkboxes and getattr(self, "_settings_layout_structure_state", None) != structure_state:
             SettingsLayoutHelper.apply_output_format_layout(
                 self._settings_output_formats_frame,
                 format_checkboxes,
                 layout.output_format_columns,
             )
 
-        if hasattr(self, "_settings_button_frame"):
+        if hasattr(self, "_settings_button_frame") and getattr(self, "_settings_layout_structure_state", None) != structure_state:
             SettingsLayoutHelper.apply_button_layout(
-                tuple(
-                    button
-                    for button in (
-                        getattr(self, "_settings_save_btn", None),
-                        getattr(self, "_settings_reset_btn", None),
-                        getattr(self, "detach_settings_btn", None),
-                        getattr(self, "_detached_settings_redock_btn", None),
-                    )
-                    if button is not None and bool(getattr(button, "winfo_exists", lambda: False)())
-                ),
+                buttons,
                 stacked=layout.stack_settings_buttons,
             )
 
-        if hasattr(self, "_refresh_addons_btn"):
+        if hasattr(self, "_refresh_addons_btn") and (
+            previous_state is None or previous_state.refresh_addons_sticky != layout.refresh_addons_sticky
+        ):
             self._refresh_addons_btn.grid_configure(sticky=layout.refresh_addons_sticky)
 
-        if hasattr(self, "addon_contributions_frame"):
+        if hasattr(self, "addon_contributions_frame") and (
+            previous_state is None or previous_state.contribution_wraplength != layout.contribution_wraplength
+        ):
             SettingsLayoutHelper.apply_contribution_wraplength(
                 self.addon_contributions_frame,
                 wraplength=layout.contribution_wraplength,
             )
+        self._settings_layout_state = layout
+        self._settings_layout_structure_state = structure_state
 
     # ══════════════════════════════════════════════════════════════════════
     #  SETTINGS TAB  – sectioned with tooltips
@@ -142,6 +177,11 @@ class SettingsTabMixin:
 
     @staticmethod
     def _clear_settings_container(container: Any) -> None:
+        if hasattr(container, "master"):
+            host = getattr(container, "master", None)
+            if host is not None:
+                setattr(host, "_settings_layout_state", None)
+                setattr(host, "_settings_layout_structure_state", None)
         for child in container.winfo_children():
             child.destroy()
 
@@ -268,9 +308,19 @@ class SettingsTabMixin:
 
         win.protocol("WM_DELETE_WINDOW", _on_close)
         win.bind("<Configure>", _persist_geometry, add="+")
+        win.bind(
+            "<Configure>",
+            lambda _event=None: self._schedule_debounced(
+                "_detached_settings_layout_refresh_after_id",
+                50,
+                self._refresh_settings_tab_layout,
+            ),
+            add="+",
+        )
         self._app_helpers().surfaces().set_page_detached("settings", True)
         if restoring:
             self._show_toast(t("gui.settings.window_restored"))
+        self._refresh_detach_action_state()
 
     def _settings_redock_detached_window(self) -> None:
         if not self._is_settings_detached():
@@ -279,6 +329,7 @@ class SettingsTabMixin:
         self._destroy_detached_settings_window(persist_detached_state=True)
         self._rebuild_main_settings_surface(state)
         self.tabs.set(t("gui.tab.settings"))
+        self._refresh_detach_action_state()
 
     def _build_backend_display_map(self) -> dict[str, str]:
         builtin_labels = {
@@ -370,6 +421,8 @@ class SettingsTabMixin:
 
     def _sync_review_to_menu(self, *args):
         if not hasattr(self, "_settings_backend_var") or not hasattr(self, "backend_var"):
+            return
+        if self._settings_backend_var is None:
             return
         internal_val = self.backend_var.get()
         display_val = getattr(self, "_backend_display_map", {}).get(

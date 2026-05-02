@@ -93,6 +93,8 @@ aicodereviewer serve-api --host 127.0.0.1 --port 8765
 
 The desktop GUI now uses a clearer sectioned Review tab and a Results tab with overview cards, quick triage filters, and richer issue cards. The Review tab can also pin a recommended review-type bundle as the startup default, distinct from ordinary last-used selections. See [docs/gui.md](docs/gui.md) for the full workflow and all screenshots.
 
+On Windows, the default GUI configuration now prefers stable behavior on mixed-DPI multi-monitor setups over maximum per-monitor sharpness. If you mainly use a single display or matched-DPI monitors and want CustomTkinter to rescale more aggressively, you can re-enable `gui.automatic_dpi_awareness` in `config.ini`.
+
 ## Documentation
 
 - Documentation is the source of truth for supported user-facing behavior, workflows, configuration, and operational expectations.

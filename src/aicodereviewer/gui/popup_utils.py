@@ -114,4 +114,5 @@ def schedule_titlebar_fix(
         except tk.TclError:
             return
 
-    schedule_popup_after(window, 10, _apply, host=host, skip_in_tests=True)
+    for delay in (10, 60, 180):
+        schedule_popup_after(window, delay, _apply, host=host, skip_in_tests=True)
