@@ -37,3 +37,4 @@
 
 - only incremental manual polish is still justified from the current baseline; a further broad coverage pass is not needed unless a new user-facing workflow lands
 - possible small follow-ups are wording cleanup, command-example freshness checks, and any future annotated capture added for a newly shipped flow rather than for current baseline coverage
+- that later condition has now been exercised by the dedicated Addon Review workflow added after this slice; the maintained manual has been expanded accordingly without reopening the broader Milestone 12 coverage pass

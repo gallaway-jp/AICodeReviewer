@@ -4,6 +4,8 @@ This guide records the Milestone 15 Windows-installer baseline for AICodeReviewe
 
 It is currently maintainer-focused: it documents the chosen installer technology, the checked-in installer build inputs, and the remaining gaps before Milestone 15 can be treated as fully complete.
 
+Versioned file names and metadata examples below are historical validation evidence from the first installer baseline. For current release work, substitute the active version from `pyproject.toml` and `src/aicodereviewer/__init__.py`.
+
 ## Chosen Approach
 
 The current repository baseline chooses Inno Setup for the first native Windows installer implementation.
@@ -181,7 +183,7 @@ You can repeat the same artifact preflight locally with:
 pwsh -File tools/manual_checks/installer/inspect_installer_artifact.ps1 -ArtifactRoot artifacts/installer-ci-24111725510
 ```
 
-Observed payload:
+Observed payload from the first validated artifact snapshot:
 
 - `windows-installer/AICodeReviewer.exe`
 - `windows-installer/AICodeReviewer.exe.sha256`
@@ -191,7 +193,7 @@ The current milestone branch extends that artifact contract with `windows-instal
 
 That checksum path has now been validated in GitHub Actions workflow run `24130238872` on the active Milestone 15 branch: the downloaded artifact included `AICodeReviewer-Setup-0.2.0.exe.sha256`, and local inspection of `artifacts/installer-ci-24130238872` reported `InstallerChecksumStatus = Match`.
 
-Observed properties:
+Observed properties from that validated `0.2.0` artifact snapshot:
 
 - the checksum file matches the packaged EXE payload
 - the installer file reports version `0.2.0`
@@ -202,12 +204,12 @@ Observed properties:
 
 The checked-in `AICodeReviewer.spec` now stamps Windows version-resource metadata onto the packaged EXE using the version from `pyproject.toml`.
 
-Local validation on the current Milestone 15 branch produced:
+Local validation on the Milestone 15 validation branch produced:
 
 - `FileVersion = 0.2.0.0`
 - `ProductVersion = 0.2.0`
 
-CI validation on workflow run `24117477221` produced the same EXE metadata in the downloaded `windows-installer` artifact:
+CI validation on workflow run `24117477221` produced the same EXE metadata in the downloaded `windows-installer` artifact for that baseline:
 
 - `ExeFileVersion = 0.2.0.0`
 - `ExeProductVersion = 0.2.0`

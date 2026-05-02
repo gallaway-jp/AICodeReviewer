@@ -31,6 +31,7 @@
 - The detached-workflow screenshot currently shows the shipped placeholder/redock state in the main app while the benchmark browser is detached; that still matches the documented workflow even though it is not a separate cropped toplevel-only capture.
 - This slice included a small tooling change so `tools/capture_gui_screenshots.ps1` can regenerate the benchmark and detached-workflow images in future doc refreshes.
 - The addon guide is intentionally limited to the currently shipped extension surface: review-pack manifests, backend providers, Settings-surface UI contributors, and popup-editor hooks.
+- Later Milestone 16 work added the dedicated Addon Review page and extended the detachable-page baseline beyond the three pages documented in this earlier Milestone 11 slice; the maintained docs now cover that later surface separately.
 - No automated tests were required beyond error checks and visual verification because the functional behavior was already covered in earlier GUI test slices.
 
 ## Next logical documentation slices

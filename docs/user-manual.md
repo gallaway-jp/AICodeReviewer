@@ -14,6 +14,7 @@ Start here based on what you want to do:
 - Review only part of a project with selected files or diff filters: go to [Partial Project Workflow](#partial-project-workflow)
 - Review code against an external requirements document: go to [Specification Review Workflow](#specification-review-workflow)
 - Use the desktop app: go to [GUI First Session](#gui-first-session)
+- Review a generated addon preview in the desktop app: go to [Addon Review Workflow](#addon-review-workflow)
 - Generate benchmark summaries for later comparison: go to [Benchmark Runner Workflow](#benchmark-runner-workflow)
 - Create or update a benchmark fixture: go to [Benchmark Authoring Workflow](#benchmark-authoring-workflow)
 - Generate, inspect, and apply AI fixes in the GUI: go to [AI Fix Workflow](#ai-fix-workflow)
@@ -324,11 +325,38 @@ After a review completes:
 
 Useful companion workflows:
 
-- detach Benchmarks, Settings, or Output Log into their own windows when you want a multi-window layout
+- detach Addon Review, Benchmarks, Settings, or Output Log into their own windows when you want a multi-window layout
 - pin a preferred review-type bundle if you repeat the same startup selection often
 - use Benchmarks to compare saved benchmark runs if you are tuning prompts, models, or review bundles
 
 Use [GUI Guide](gui.md) for the full tab-by-tab flow.
+
+## Addon Review Workflow
+
+Use this path when you want to inspect a generated addon preview in the desktop app before deciding whether to approve it.
+
+1. Generate or update the preview scaffold.
+
+```bash
+aicodereviewer analyze-repo . --output-dir artifacts/generated-addon-preview --addon-id my-repo-adaptive-review
+```
+
+2. Launch the GUI.
+3. Open the Addon Review tab.
+4. Paste or browse to the preview directory.
+5. Confirm the reviewer name and optional install directory.
+6. Load the preview and inspect the status, metadata, checklist, and diff selector.
+7. Add reviewer notes if you want the approval or rejection record to include extra rationale.
+8. Approve the preview if it is ready to activate, or reject it if the generated bundle still needs changes.
+
+Useful notes:
+
+- the page uses the same generated preview directory produced by `analyze-repo`
+- the Addon Review page can be detached into its own window when you want the diff surface visible beside the rest of the app
+- approval writes the decision record and installs the addon into the default or chosen install directory
+- rejection records the decision without activating the addon
+
+Use [Addons Guide](addons.md) when you need the full manifest contract or the CLI approval commands.
 
 ## Benchmark Runner Workflow
 

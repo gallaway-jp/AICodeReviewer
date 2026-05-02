@@ -15,6 +15,7 @@ The GUI has reached a practical stable point:
 - `App` is the composition root in `src/aicodereviewer/gui/app.py`
 - tab behavior is split across mixins:
   - `review_mixin.py`
+  - `addon_review_mixin.py`
   - `results_mixin.py`
   - `settings_mixin.py`
   - `health_mixin.py`
@@ -107,6 +108,7 @@ The app shell should not grow new feature-specific workflow logic.
 Each major GUI feature should move toward a dedicated module boundary that owns only one surface area:
 
 - Review feature
+- Addon Review feature
 - Results feature
 - Settings feature
 - Health feature

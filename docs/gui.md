@@ -1,6 +1,6 @@
 # GUI Guide
 
-The GUI exposes the same core review system as the CLI through a five-tab desktop workflow.
+The GUI exposes the same core review system as the CLI through a six-surface desktop workflow.
 
 ## Launch
 
@@ -14,7 +14,7 @@ The screenshots below are generated from the real test-mode GUI with:
 ./tools/capture_gui_screenshots.ps1
 ```
 
-The checked-in screenshots now cover the main review, results, AI Fix, log, benchmark, and detached-window workflow surfaces. The detached-workflow image shows the shipped placeholder-and-redock state that appears in the main app while the benchmark browser is detached into its own window.
+The checked-in screenshots now cover the main review, results, AI Fix, log, benchmark, and detached-window workflow surfaces. The dedicated Addon Review page is documented below even though it does not yet have a checked-in standalone screenshot. The detached-workflow image shows the shipped placeholder-and-redock state that appears in the main app while the benchmark browser is detached into its own window.
 
 ## Screenshots
 
@@ -37,6 +37,10 @@ The checked-in screenshots now cover the main review, results, AI Fix, log, benc
 ### Benchmarks Tab
 
 ![Benchmarks tab screenshot](images/gui-benchmarks-tab.png)
+
+### Addon Review Tab
+
+The Addon Review page is a dedicated desktop surface for loading generated addon previews, inspecting their checklist and diffs, recording reviewer notes, and approving or rejecting the preview without leaving the app.
 
 ### Detached Benchmark Workflow
 
@@ -101,6 +105,17 @@ Capabilities:
 - open the active scenario folder, main summary JSON, and generated report directory from the tab
 - open the page in a detached window and redock it later without losing the loaded compare state
 
+### Addon Review Tab
+
+Use the Addon Review tab to inspect generated addon previews before approval.
+
+Capabilities:
+- load a generated preview directory produced by `analyze-repo`
+- review rendered status, metadata, checklist items, and bundle diffs in one place
+- add reviewer notes before recording the decision
+- approve the preview into the configured addon install location or reject it without activating the addon
+- open the page in a detached window and redock it later without losing the loaded preview state
+
 ### Settings Tab
 
 Use the Settings tab to manage persistent configuration.
@@ -160,7 +175,8 @@ Keyboard shortcuts:
 6. Use the Results tab overview cards and quick triage filters to prioritize findings.
 7. Inspect issue cards, apply fixes, save sessions, reload sessions, and finalize reports from the current in-memory issue list.
 8. Use the Benchmarks tab when you need to compare saved benchmark runs or inspect scenario-level deltas between two review setups.
-9. Use the Settings or Output Log tabs if you need configuration changes or runtime detail, and detach those pages into their own windows when a multi-window layout is more convenient.
+9. Use the Addon Review tab when you need to inspect a generated addon preview, review its diffs, and approve or reject it.
+10. Use the Settings or Output Log tabs if you need configuration changes or runtime detail, and detach supported pages into their own windows when a multi-window layout is more convenient.
 
 ## GUI Workflow Diagram
 
@@ -181,6 +197,9 @@ flowchart TD
 	Results --> Benchmarks[Benchmarks Tab]
 	Benchmarks --> Compare[Load main and comparison benchmark runs]
 	Compare --> Diff[Inspect fixture diffs / previews]
+	Review --> AddonReview[Addon Review Tab]
+	AddonReview --> Preview[Load preview / inspect checklist and diffs]
+	Preview --> Decide[Approve or reject preview]
 	Settings[Settings Tab] --> Review
 	Backend --> Health[Check setup / health]
 	Health --> Log
@@ -192,15 +211,18 @@ flowchart TD
 flowchart LR
 	ReviewTab[Review Tab] --> ResultsTab[Results Tab]
 	ResultsTab --> BenchmarksTab[Benchmarks Tab]
+	ReviewTab --> AddonReviewTab[Addon Review Tab]
 	ReviewTab --> LogTab[Output Log Tab]
 	SettingsTab[Settings Tab] --> ReviewTab
 	SettingsTab --> ResultsTab
 	SettingsTab --> BenchmarksTab
+	AddonReviewTab --> ReviewTab
+	AddonReviewTab --> LogTab
 	HealthChecks[Health / Model Refresh] --> ReviewTab
 	HealthChecks --> SettingsTab
 	ResultsTab --> LogTab
 	BenchmarksTab --> LogTab
-	DetachedPages[Detached Benchmarks / Settings / Log Windows] --> ReviewTab
+	DetachedPages[Detached Benchmarks / Addon Review / Settings / Log Windows] --> ReviewTab
 	DetachedPages --> ResultsTab
 	DetachedPages --> BenchmarksTab
 ```

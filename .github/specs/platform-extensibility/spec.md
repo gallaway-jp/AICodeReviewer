@@ -489,7 +489,7 @@ Current baseline status:
 - complete the program’s technical and reference documentation set
 
 Current baseline status:
-- completed in the current repository baseline; the maintained docs set now covers the shipped five-tab GUI, the desktop Benchmarks browser, the detached-window workflow for Benchmarks, Settings, and Output Log, the embedded local HTTP configuration and architecture seams, the addon manifest/runtime contract, and the typed deferred-report/session-state path behind restored GUI finalization
+- completed in the current repository baseline; the maintained docs set now covers the shipped desktop GUI, including the later Addon Review surface alongside Review, Results, Benchmarks, Settings, and Output Log, the detached-window workflow for Benchmarks, Addon Review, Settings, and Output Log, the embedded local HTTP configuration and architecture seams, the addon manifest/runtime contract, and the typed deferred-report/session-state path behind restored GUI finalization
 - examples and release notes have been refreshed to match the current maintained docs set, including the addon examples and contributor-facing local HTTP references
 - the checked-in screenshot set is intentionally capped at the durable GUI surfaces already covered by the review, results, AI Fix, log, benchmark, and detached-workflow images; a separate queue-state screenshot is not required for milestone close because queue state is already represented in the stable Review tab surface and the standalone queue states are transient
 

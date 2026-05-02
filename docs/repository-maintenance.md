@@ -285,7 +285,7 @@ For the remaining follow-up on these items:
 
 ### Root Items To Revisit During Release Normalization
 
-These are valid root files today, but Milestone 14 should confirm their long-term role while the `release/0.2.0` flow is prepared:
+These are valid root files today, but Milestone 14 originally flagged them for long-term ownership review during the release-normalization work:
 
 - `AICodeReviewer.spec`
 - `build_exe.bat`
@@ -315,30 +315,22 @@ Current release-packaging status:
 2. Add ignore rules only for clearly local or reproducible outputs.
 3. Do not ignore maintained docs, reference screenshots, or milestone handoffs.
 
-### Phase 3: Release Normalization
+### Phase 3: Release Normalization And Ongoing Hygiene
 
-Execute the first standardized maintained pre-1.0 release from `release/0.2.0`:
+The first standardized maintained pre-1.0 release was normalized and published as `v0.2.0` during Milestone 14. That historical cut established the current release-process conventions; it is no longer the standing target version for later releases.
 
-1. branch from `main` to `release/0.2.0`
-2. align `pyproject.toml` to `0.2.0`
-3. move the relevant `Unreleased` release-note content into a `v0.2.0` section while reopening an empty `Unreleased` heading for future work
-4. validate docs and targeted tests for the release scope, including `python tools/check_release_metadata.py --target-version 0.2.0 --require-aligned`
-5. merge `release/0.2.0` back into `main`
-6. create the `v0.2.0` tag from the merged `main` commit
+Historical outcome:
 
-Current repository baseline:
+- `tools/check_release_metadata.py` can validate metadata alignment plus local branch/tag readiness for an explicit target version
+- the Windows packaging path was revalidated around the normalization flow: `build_exe.bat` rebuilds `dist/AICodeReviewer.exe`, regenerates `dist/AICodeReviewer.exe.sha256`, and smoke-tests cleanly via `dist/AICodeReviewer.exe --help`
+- the release-normalization path was executed end to end for `v0.2.0`, including branch cut, merge, tag, push, and GitHub publication with the validated Windows asset pair
 
-- `pyproject.toml` and `RELEASE_NOTES.md` are now aligned to `0.2.0` in-repo
-- `tools/check_release_metadata.py` can now also report local branch/tag readiness for `release/0.2.0` and `v0.2.0`
-- the Windows packaging path has now been validated again on the current baseline: `build_exe.bat` rebuilds `dist/AICodeReviewer.exe`, regenerates `dist/AICodeReviewer.exe.sha256`, and smoke-tests cleanly via `dist/AICodeReviewer.exe --help`
-- the release-normalization path has now been executed end to end: `release/0.2.0` was cut, validated, merged into `main`, tagged as `v0.2.0`, pushed to `origin`, and published with the validated Windows asset pair
+Use this plan going forward:
 
-Current git preflight baseline:
-
-- current branch: `main`
-- local `release/0.2.0` branch: merged and no longer required for the published baseline
-- local and remote `v0.2.0` tag: present
-- current release publication state: the GitHub `v0.2.0` release is live with `AICodeReviewer.exe` and `AICodeReviewer.exe.sha256`
+1. treat Milestone 14 normalization as complete historical cleanup rather than an active checklist
+2. use [Release Process](release-process.md) for the current `release/<version>` workflow instead of reusing the old `release/0.2.0` example literally
+3. determine the active target version from `pyproject.toml`, `src/aicodereviewer/__init__.py`, and `RELEASE_NOTES.md` at release time
+4. keep this maintenance plan focused on repository layout, retention rules, and cleanup boundaries rather than repeating the release runbook
 
 ### Phase 4: Retention And Archive Rules
 

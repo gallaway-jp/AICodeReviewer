@@ -202,6 +202,7 @@ Detached-window state:
 - `gui.detached_log_geometry`
 - `gui.detached_settings_geometry`
 - `gui.detached_benchmark_geometry`
+- `gui.detached_addon_review_geometry`
 
 Benchmark-browser state:
 - `gui.benchmark_fixtures_root`
@@ -212,7 +213,7 @@ Benchmark-browser state:
 
 Behavior notes:
 - `gui.detached_pages` tracks which approved non-Review pages should reopen in detached windows after restart.
-- Detached window geometry is persisted per page so the Output Log, Settings, and Benchmarks windows can reopen in their last desktop positions.
+- Detached window geometry is persisted per page so the Output Log, Settings, Benchmarks, and Addon Review windows can reopen in their last desktop positions.
 - Benchmark filter and sort preferences persist independently from detached-window state and comparison-specific benchmark view state is keyed by the active primary/comparison summary pair.
 
 ## Embedded Local HTTP API

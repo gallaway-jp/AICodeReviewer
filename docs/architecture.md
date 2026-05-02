@@ -224,6 +224,7 @@ Key design points:
 
 The GUI is composed around mixins:
 - review tab behavior
+- addon-review preview loading, diff rendering, approval, and detach/redock behavior
 - results and AI Fix behavior
 - settings mapping and persistence
 - backend health checks and model refreshes
@@ -244,6 +245,7 @@ The current GUI shell is split between page mixins and helper modules:
 | `gui/app_surfaces.py` | status bar, Output Log tab, shared toasts, and detached-window lifecycle helpers |
 | `gui/app_local_http.py` | embedded local HTTP server startup and status wiring from GUI settings |
 | `gui/review_mixin.py` | review setup, validation, execution start, dry-run flow |
+| `gui/addon_review_mixin.py` | generated-addon preview loading, checklist/diff rendering, decisions, and detached Addon Review behavior |
 | `gui/benchmark_mixin.py` | benchmark browser loading, comparison state, preview/diff actions, and detached benchmark behavior |
 | `gui/results_mixin.py` | issue cards, filtering, AI fix mode, sessions, finalization |
 | `gui/settings_mixin.py` | config editing and persistence |
@@ -252,7 +254,7 @@ The current GUI shell is split between page mixins and helper modules:
 | `gui/widgets.py` | shared widgets, tooltips, log handler |
 
 Recent GUI/runtime behaviors worth knowing:
-- the Review page remains anchored in the main window, but Benchmarks, Settings, and Output Log can be detached into their own windows and redocked later
+- the Review page remains anchored in the main window, but Addon Review, Benchmarks, Settings, and Output Log can be detached into their own windows and redocked later
 - detached-window restore and geometry persistence are part of the main shell lifecycle, not ad hoc page-local popups
 - the embedded local HTTP API can start automatically from GUI settings and shares the same execution runtime as the desktop app
 

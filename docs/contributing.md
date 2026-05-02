@@ -62,7 +62,7 @@ Use the following branch families for maintained work:
 	- example: `feature/release-branch-policy-docs`
 - `release/<version>`
 	- use for release preparation, version alignment, release-note cutover, and tag preparation
-	- example: `release/0.2.0`
+	- example: `release/0.3.1`
 
 ## Commit Expectations
 

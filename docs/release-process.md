@@ -52,11 +52,11 @@ Use this one-time normalization plan:
 4. On that release branch, align `pyproject.toml`, `RELEASE_NOTES.md`, and the final git tag to the same `0.2.0` version before merging back to `main`.
 5. After `v0.2.0`, continue future maintained releases from aligned `release/<version>` branches and matching tags on the pre-1.0 line until the project is ready for a deliberate `1.0.0` cutover.
 
-Current normalized baseline:
+Historical normalization outcome:
 
-- the one-time release normalization is complete in the current repository state
-- `main` is aligned to the published `v0.2.0` release
-- the GitHub release for `v0.2.0` now carries the validated Windows asset pair `AICodeReviewer.exe` and `AICodeReviewer.exe.sha256`
+- the one-time release normalization was completed at `v0.2.0`
+- treat `v0.2.0` as the historical example of the first standardized maintained pre-1.0 release, not as the standing target version for future work
+- determine the current release target from `pyproject.toml`, `src/aicodereviewer/__init__.py`, and `RELEASE_NOTES.md`
 
 ## Pre-Release Checklist
 
@@ -124,25 +124,25 @@ Use more targeted commands when a change is narrow.
 For the `release/<version>` cutover, run the metadata check in strict mode before merge and tagging:
 
 ```bash
-python tools/check_release_metadata.py --target-version 0.2.0 --require-aligned
+python tools/check_release_metadata.py --target-version <version> --require-aligned
 ```
 
 When you want the same command to validate local branch/tag readiness as well:
 
 ```bash
-python tools/check_release_metadata.py --target-version 0.2.0 --require-aligned --check-git --require-release-branch
+python tools/check_release_metadata.py --target-version <version> --require-aligned --check-git --require-release-branch
 ```
 
 After the merge and tag steps are complete, confirm the matching tag exists locally:
 
 ```bash
-python tools/check_release_metadata.py --target-version 0.2.0 --check-git --require-release-tag
+python tools/check_release_metadata.py --target-version <version> --check-git --require-release-tag
 ```
 
 After pushing the release to the remote, confirm the published release page and attached assets as well:
 
 ```bash
-gh release view v0.2.0 --json url,assets
+gh release view v<version> --json url,assets
 ```
 
 ## Changelog Rules
@@ -168,7 +168,7 @@ If you publish a release:
 6. run `build_exe.bat` and confirm the regenerated `dist/AICodeReviewer.exe` plus `dist/AICodeReviewer.exe.sha256` pair matches the release commit you are publishing
 7. push the branch and tag, then publish the release artifact set according to your team process
 
-For the current normalized baseline, those steps have already been executed for `v0.2.0`; use the same sequence for future maintained releases instead of repeating the historical normalization work.
+Those steps were first executed during the Milestone 14 normalization release at `v0.2.0`; use the same sequence for later maintained releases instead of repeating the historical normalization work.
 
 If packaging workflows evolve later, extend this document rather than scattering release instructions across unrelated docs.
 

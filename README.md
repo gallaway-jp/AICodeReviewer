@@ -8,7 +8,7 @@ It supports four backends:
 - GitHub Copilot CLI
 - Local LLM servers via LM Studio, Ollama, OpenAI-compatible, or Anthropic-compatible APIs
 
-It supports 22 selectable review types across quality, architecture, and compliance domains, plus an interactive CLI review flow and a GUI with review, results, benchmarks, settings, and log views.
+It supports 22 selectable review types across quality, architecture, and compliance domains, plus an interactive CLI review flow and a GUI with review, addon review, results, benchmarks, settings, and log views.
 
 The repository also includes holistic benchmark fixtures that score review quality against known cross-file and UI/UX scenarios.
 
@@ -91,7 +91,7 @@ aicodereviewer serve-api --host 127.0.0.1 --port 8765
 
 ![AICodeReviewer GUI Results tab](docs/images/gui-results-tab.png)
 
-The desktop GUI now uses a clearer sectioned Review tab and a Results tab with overview cards, quick triage filters, and richer issue cards. The Review tab can also pin a recommended review-type bundle as the startup default, distinct from ordinary last-used selections. See [docs/gui.md](docs/gui.md) for the full workflow and all screenshots.
+The desktop GUI now uses a clearer sectioned Review tab and a Results tab with overview cards, quick triage filters, and richer issue cards. It also includes a dedicated Addon Review surface for inspecting generated addon previews before approval. The Review tab can also pin a recommended review-type bundle as the startup default, distinct from ordinary last-used selections. See [docs/gui.md](docs/gui.md) for the full workflow and all screenshots.
 
 On Windows, the default GUI configuration now prefers stable behavior on mixed-DPI multi-monitor setups over maximum per-monitor sharpness. If you mainly use a single display or matched-DPI monitors and want CustomTkinter to rescale more aggressively, you can re-enable `gui.automatic_dpi_awareness` in `config.ini`.
 
@@ -178,7 +178,7 @@ Quality regression:
 - Project and diff review scopes
 - Multi-type reviews in one session
 - Interactive CLI workflow with resolve, ignore, AI fix, view code, skip, and force-resolve paths
-- GUI workflows for review setup, issue management, AI fix mode, session save/load, and output logs
+- GUI workflows for review setup, generated-addon preview review, issue management, AI fix mode, session save/load, and output logs
 - Structured outputs in JSON, TXT, and Markdown
 - English and Japanese localization support
 

@@ -49,6 +49,7 @@ Use these guides if you are:
 - Starting from the shortest task-oriented path: read [User Manual](user-manual.md)
 - A first-time user: start with [Getting Started](getting-started.md)
 - Building or debugging addons: read [Addons Guide](addons.md)
+- Reviewing generated addon previews in the desktop app: read [Addons Guide](addons.md) and [GUI Guide](gui.md)
 - Choosing a backend: read [Backend Guide](backends.md)
 - Running reviews from the terminal: read [CLI Guide](cli.md)
 - Integrating with the local HTTP surface: read [HTTP API Guide](http-api.md)
