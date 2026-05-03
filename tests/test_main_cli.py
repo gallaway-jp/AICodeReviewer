@@ -127,6 +127,15 @@ def test_dry_run_does_not_require_backend(monkeypatch):
     assert exit_code == 0
 
 
+def test_load_spec_content_reads_file_for_dry_run(tmp_path: Path):
+    spec_file = tmp_path / "requirements.md"
+    spec_file.write_text("display_name is required\n", encoding="utf-8")
+
+    loaded = cli._load_spec_content(str(spec_file), dry_run=True)
+
+    assert loaded == "display_name is required\n"
+
+
 def test_recommend_types_prints_recommendation_summary(monkeypatch, capsys):
     class _FakeBackend:
         pass

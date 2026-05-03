@@ -1107,7 +1107,7 @@ def _apply_fix_to_file(file_path: str, fixed_content: str) -> str:
 
 def _load_spec_content(spec_file: str | None, dry_run: bool) -> str | None:
     """Read specification review content when required."""
-    if not spec_file or dry_run:
+    if not spec_file:
         return None
 
     try:

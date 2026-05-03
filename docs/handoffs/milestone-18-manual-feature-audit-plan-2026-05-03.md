@@ -40,7 +40,7 @@ Backend-specific execution rule for this milestone:
 | S1 | Install and startup baseline | no backend dependency; packaged and source install paths both available now | completed | pass for source install and packaged installer smoke validation; GUI opened on Review tab; earlier Copilot startup noise was traced and reduced |
 | S2 | Backend configuration and health | all four configured backends are now runnable on this machine | in progress | local, copilot, kiro, and bedrock health checks all pass with explicit low-cost test models; health surfaces are normalized and the Local LLM Settings save/rotate/revoke path is now covered through the real GUI widgets |
 | S3 | Core CLI review flows | run with local backend first | in progress | dry run, preset expansion, patch diff, commit diff, specification-only, and mixed specification review surfaces are now all exercised live; diff-scope widening and mixed-spec prompt loss were both fixed during the audit |
-| S4 | Tool mode and report artifacts | run with local backend first | not started | pending |
+| S4 | Tool mode and report artifacts | run with local backend first | in progress | local tool-mode review, resume, fix-plan, apply-fixes, and cancellation envelopes are now exercised on an isolated fixture; specification dry-run spec loading was fixed during the pass |
 | S5 | GUI core review workflow | run with local backend first | not started | pending |
 | S6 | GUI detach, restore, desktop ergonomics | backend-agnostic after startup | not started | pending |
 | S7 | Addons and generated addon review | mostly backend-agnostic; use local only if generation path is exercised | not started | pending |
@@ -470,3 +470,24 @@ Observed so far on 2026-05-03:
 Follow-up notes:
 
 - Session 3 now has enough live coverage to fold the verified behaviors back into `docs/cli.md` and `docs/user-manual.md`; the next active slice can move to Session 4 tool-mode/report-artifact coverage.
+
+## Session 4 Working Log
+
+Current status: tool-mode and report-artifact coverage is underway on an isolated local fixture; the main artifact chain is now exercised live and one tool-mode specification dry-run bug was fixed during the pass
+
+Observed so far on 2026-05-04:
+
+- Session 4 artifacts are isolated under `artifacts/manual-session4/` using a copied `specification-profile-display-name-contract` fixture so tool-mode review and apply-fixes can run without mutating checked-in sample or benchmark files.
+- Tool-mode `health --backend local --json-out artifacts/manual-session4/health-local.json` now has live coverage. On this machine the envelope returned `ready=false` with `failure_categories=["provider"]` because the LM Studio server responded with HTTP 200 but did not advertise any models, so configured model `qwen/qwen3.5-9b` could not be confirmed.
+- Tool-mode specification dry run exposed a real bug in the milestone worktree: `review --dry-run --type specification --spec-file ...` failed with `Specification reviews require spec content` because `_load_spec_content(...)` discarded the spec file whenever `dry_run` was set even though tool-mode validation still requires loaded spec content.
+- That tool-mode specification dry-run bug is now patched in the milestone worktree, and a focused regression now passes in `tests/test_main_cli.py` (`1 passed` selected). A rerun of the same command now emits a successful dry-run envelope with `status="dry_run"`, `files_scanned=1`, and the expected target path for `artifacts/manual-session4/spec-profile-fixture/src/profile_api.py`.
+- Tool-mode `review` is now exercised end to end on the same isolated fixture with both `--json-out` and `--output`. The command wrote `review-envelope.json`, `review-report.json`, `review-report_summary.txt`, and `review-report.md` under `artifacts/manual-session4/`, and the envelope preserved stable `issue_id` values (`issue-0001`, `issue-0002`).
+- Tool-mode `resume` now has live coverage for both dry-run and completed review artifacts. The dry-run artifact normalizes to `workflow_stage="dry-run"` with `next_command=null`, while the completed review envelope normalizes to `workflow_stage="reviewed"`, `next_command="fix-plan"`, and respects `--issue-id issue-0001` filtering.
+- Tool-mode `fix-plan` is now exercised against the saved review envelope rather than only a raw report file. A selected run for `issue-0001` completed successfully with `generated_count=1`, `failed_count=0`, and a focused `proposed_content` payload.
+- Tool-mode `apply-fixes` is now exercised against that fix-plan artifact on the isolated fixture copy. The apply result completed successfully with `applied_count=1`, created `artifacts/manual-session4/spec-profile-fixture/src/profile_api.py.backup`, and rewrote only the copied fixture file.
+- Tool-mode `resume` now also has live coverage for both `fix-plan` and `apply-fixes` artifacts. The fix-plan artifact normalizes to `workflow_stage="fix-planned"` with `next_command="apply-fixes"`, and the apply-results artifact normalizes to `workflow_stage="fixes-applied"` with `can_resume=false`.
+- Timeout and cancel-file behavior are now both exercised on the tool-mode `review` path. Deterministic runs with `--timeout-seconds 0` and a pre-created `--cancel-file` sentinel both emitted JSON envelopes with `status="cancelled"`, `exit_code=3`, and machine-readable `cancel_reason` values (`timeout` and `cancel_file:...`).
+
+Follow-up notes:
+
+- The next Session 4 checkpoint is to decide whether the Local LM Studio model-advertisement false-negative in tool-mode health is product drift or an environment-only limitation, then continue with any remaining report/provenance slices that need deeper manual judgment.
