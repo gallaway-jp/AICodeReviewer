@@ -40,8 +40,8 @@ Backend-specific execution rule for this milestone:
 | S1 | Install and startup baseline | no backend dependency; packaged and source install paths both available now | completed | pass for source install and packaged installer smoke validation; GUI opened on Review tab; earlier Copilot startup noise was traced and reduced |
 | S2 | Backend configuration and health | all four configured backends are now runnable on this machine | in progress | local, copilot, kiro, and bedrock health checks all pass with explicit low-cost test models; health surfaces are normalized and the Local LLM Settings save/rotate/revoke path is now covered through the real GUI widgets |
 | S3 | Core CLI review flows | run with local backend first | in progress | dry run, preset expansion, patch diff, commit diff, specification-only, and mixed specification review surfaces are now all exercised live; diff-scope widening and mixed-spec prompt loss were both fixed during the audit |
-| S4 | Tool mode and report artifacts | run with local backend first | in progress | local tool-mode review, resume, fix-plan, apply-fixes, and cancellation envelopes are now exercised on an isolated fixture; specification dry-run spec loading was fixed during the pass |
-| S5 | GUI core review workflow | run with local backend first | not started | pending |
+| S4 | Tool mode and report artifacts | run with local backend first | completed | local tool-mode review, health, resume, fix-plan, apply-fixes, and cancellation envelopes are exercised end to end on an isolated fixture; LM Studio model advertisement parsing and specification dry-run spec loading were fixed during the pass |
+| S5 | GUI core review workflow | run with local backend first | in progress | harness-backed review/results/session/fix flows and Review-tab diff-filter controls are now exercised; live desktop-only Output Log actions and multi-backend GUI health wording still need a manual pass |
 | S6 | GUI detach, restore, desktop ergonomics | backend-agnostic after startup | not started | pending |
 | S7 | Addons and generated addon review | mostly backend-agnostic; use local only if generation path is exercised | not started | pending |
 | S8 | Benchmarks and quality tooling | local preferred; others blocked unless setup changes | not started | pending |
@@ -473,14 +473,15 @@ Follow-up notes:
 
 ## Session 4 Working Log
 
-Current status: tool-mode and report-artifact coverage is underway on an isolated local fixture; the main artifact chain is now exercised live and one tool-mode specification dry-run bug was fixed during the pass
+Current status: completed on the isolated local fixture; the main artifact chain, local health path, and cancellation envelopes are exercised live, and both discovered Session 4 product defects were fixed during the pass
 
 Observed so far on 2026-05-04:
 
 - Session 4 artifacts are isolated under `artifacts/manual-session4/` using a copied `specification-profile-display-name-contract` fixture so tool-mode review and apply-fixes can run without mutating checked-in sample or benchmark files.
-- Tool-mode `health --backend local --json-out artifacts/manual-session4/health-local.json` now has live coverage. On this machine the envelope returned `ready=false` with `failure_categories=["provider"]` because the LM Studio server responded with HTTP 200 but did not advertise any models, so configured model `qwen/qwen3.5-9b` could not be confirmed.
+- Tool-mode `health --backend local --json-out artifacts/manual-session4/health-local.json` initially exposed a real product defect rather than an environment-only limitation. The current LM Studio native `/api/v1/models` response advertises models under `models[].key`, but the milestone worktree still parsed only OpenAI-style `data[].id`, so the configured model `qwen/qwen3.5-9b` was falsely reported as unavailable.
 - Tool-mode specification dry run exposed a real bug in the milestone worktree: `review --dry-run --type specification --spec-file ...` failed with `Specification reviews require spec content` because `_load_spec_content(...)` discarded the spec file whenever `dry_run` was set even though tool-mode validation still requires loaded spec content.
 - That tool-mode specification dry-run bug is now patched in the milestone worktree, and a focused regression now passes in `tests/test_main_cli.py` (`1 passed` selected). A rerun of the same command now emits a successful dry-run envelope with `status="dry_run"`, `files_scanned=1`, and the expected target path for `artifacts/manual-session4/spec-profile-fixture/src/profile_api.py`.
+- The LM Studio model-advertisement false-negative is also now patched in the milestone worktree. A focused backend-health slice now passes (`3 passed` selected), and a rerun of `health --backend local --json-out artifacts/manual-session4/health-local-rerun.json` now returns `ready=true`, confirms `Model Availability`, and completes the live local-health path with a successful connection test.
 - Tool-mode `review` is now exercised end to end on the same isolated fixture with both `--json-out` and `--output`. The command wrote `review-envelope.json`, `review-report.json`, `review-report_summary.txt`, and `review-report.md` under `artifacts/manual-session4/`, and the envelope preserved stable `issue_id` values (`issue-0001`, `issue-0002`).
 - Tool-mode `resume` now has live coverage for both dry-run and completed review artifacts. The dry-run artifact normalizes to `workflow_stage="dry-run"` with `next_command=null`, while the completed review envelope normalizes to `workflow_stage="reviewed"`, `next_command="fix-plan"`, and respects `--issue-id issue-0001` filtering.
 - Tool-mode `fix-plan` is now exercised against the saved review envelope rather than only a raw report file. A selected run for `issue-0001` completed successfully with `generated_count=1`, `failed_count=0`, and a focused `proposed_content` payload.
@@ -490,4 +491,22 @@ Observed so far on 2026-05-04:
 
 Follow-up notes:
 
-- The next Session 4 checkpoint is to decide whether the Local LM Studio model-advertisement false-negative in tool-mode health is product drift or an environment-only limitation, then continue with any remaining report/provenance slices that need deeper manual judgment.
+- Session 4 now has enough verified coverage to move forward. Any further tool-mode work should be adjacent polish or cross-backend follow-up rather than core-flow validation.
+
+## Session 5 Working Log
+
+Current status: underway with harness-backed coverage for the main GUI review/results/session/fix flow; the next live-only pass still needs to cover Output Log actions and GUI health wording against the full configured backend set
+
+Observed so far on 2026-05-04:
+
+- The documented Session 5 surfaces in `docs/gui.md` and `docs/user-manual.md` are broadly aligned with the current GUI architecture: Review and Results stay anchored in the main window; session save/load and finalize remain Results-tab actions; selected-file mode and project-scope diff filtering are described as GUI-first workflows.
+- Focused GUI workflow coverage for the core review path now passes on the milestone worktree: `tests/test_gui_workflows.py -k "review_workflow_displays_results_and_releases_backend or cancel_review_workflow_reports_requested_then_cancelled or dry_run_workflow_switches_to_log_tab_and_records_output or finalize_workflow_saves_report_and_clears_results or health_check_workflow_shows_report_and_restores_controls or restored_session_review_changes_recreates_backend_and_finalizes"` completed with `5 passed` selected.
+- That slice verifies the main Review-tab start flow, cancellation path, dry-run handoff into Output Log, finalize reporting, the health-check dialog lifecycle, and restored-session review actions that recreate the backend before finalization.
+- A second focused GUI workflow slice now also passes on the milestone worktree: `tests/test_gui_workflows.py -k "results_filters_match_visible_issue_cards or ai_fix_preview_edit_save_applies_user_edited_fix or ai_fix_preview_save_and_close_stages_edited_content_until_apply or session_can_be_saved_and_loaded_into_a_fresh_app"` completed with `4 passed` selected.
+- That slice verifies Results-tab filters, session save/load into a fresh app instance, AI Fix preview/edit/apply for user-edited content, and the staged-edit behavior where `Save and Close` does not write the file until `Apply Selected Fixes` runs.
+- Review-tab diff-filter controls also now have a fresh verification pass through the GUI smoke suite: `tests/test_gui_smoke.py -k "diff_filter_frame_exists or browse_diff_filter_noop or enable_diff_filter or disable_diff_filter"` completed with `4 passed` selected.
+- The repository includes a real interactive GUI harness at `tools/manual_test_gui.py`, but on this machine it is still a manual launcher only (`--lang`, `--theme`) rather than a scripted desktop driver, so the remaining GUI-only checks still need explicit human interaction or a dedicated automation shim.
+
+Follow-up notes:
+
+- Session 5 is no longer blocked on core review/results/fix/session regressions, but it is not complete yet. The next pass should focus on live desktop-only behaviors that the current harness tests do not exercise directly: Output Log save/clear/filter actions, GUI health-check wording for the non-local configured backends, queue-panel visibility under scheduler-backed execution, and any wording drift observed in the actual desktop surfaces.

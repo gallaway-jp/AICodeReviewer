@@ -537,7 +537,7 @@ class LocalLLMBackend(AIBackend):
     @staticmethod
     def _parse_model_list(data: dict[str, Any], parser: str) -> list[str]:
         """Extract model identifiers from an API response."""
-        if parser in ("openai", "lmstudio"):
+        if parser == "openai":
             items = data.get("data", [])
             if not isinstance(items, list):
                 return []
@@ -548,6 +548,22 @@ class LocalLLMBackend(AIBackend):
                     continue
                 item_dict = cast(dict[str, Any], item)
                 model_id = item_dict.get("id")
+                if isinstance(model_id, str) and model_id:
+                    model_ids.append(model_id)
+            return model_ids
+        if parser == "lmstudio":
+            items = data.get("models")
+            if not isinstance(items, list):
+                items = data.get("data", [])
+            if not isinstance(items, list):
+                return []
+            typed_items = cast(list[Any], items)
+            model_ids: list[str] = []
+            for item in typed_items:
+                if not isinstance(item, dict):
+                    continue
+                item_dict = cast(dict[str, Any], item)
+                model_id = item_dict.get("key") or item_dict.get("id")
                 if isinstance(model_id, str) and model_id:
                     model_ids.append(model_id)
             return model_ids

@@ -215,6 +215,29 @@ def test_check_local_llm_uses_lmstudio_models_endpoint_after_normalization(monke
     assert "OpenAI-compatible chat-completions path" in reasoning_check.detail
 
 
+def test_check_local_llm_accepts_current_lmstudio_models_payload(monkeypatch):
+    monkeypatch.setattr(health.config, "get", lambda section, key, default=None: {
+        ("local_llm", "api_url"): "http://localhost:1234",
+        ("local_llm", "api_type"): "lmstudio",
+        ("local_llm", "model"): "qwen/qwen3.5-9b",
+        ("local_llm", "api_key"): "",
+    }.get((section, key), default))
+    monkeypatch.setattr(
+        "requests.get",
+        lambda url, timeout, headers: _Response(200, {
+            "models": [
+                {"key": "qwen/qwen3.5-9b", "display_name": "Qwen3.5 9B"},
+            ],
+        }),
+    )
+
+    report = health.check_local_llm()
+
+    assert report.ready is True
+    model_check = next(check for check in report.checks if check.name == "Model Availability")
+    assert model_check.passed is True
+
+
 def test_check_local_llm_openai_reports_lmstudio_reasoning_limit(monkeypatch):
     monkeypatch.setattr(health.config, "get", lambda section, key, default=None: {
         ("local_llm", "api_url"): "http://localhost:1234/v1",
