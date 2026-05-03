@@ -13,6 +13,41 @@ This milestone is intentionally verification-first:
 - confirm the docs describe the actual behavior rather than an earlier milestone snapshot
 - log gaps as either product defects, documentation defects, or environment-specific limits
 
+## Current Environment Backend Profile
+
+The audit plan should reflect what this machine can actually exercise right now rather than treating every documented backend as equally available.
+
+Backend status as of 2026-05-03:
+
+| Backend | Local prerequisite status | Product health result | Audit stance |
+|---|---|---|---|
+| `local` | configured in `config.ini`; OpenAI-compatible endpoint at `http://localhost:1234` responded with HTTP 200 | `ready=true` | fully runnable now; use as the default backend for this milestone's manual execution |
+| `bedrock` | AWS CLI installed | `ready=false` because credentials are missing | keep in scope for docs review, but classify execution steps as blocked by environment until AWS auth is configured |
+| `kiro` | WSL installed and healthy | `ready=false` because Kiro CLI is not installed in WSL | keep in scope for docs review, but defer execution unless Kiro CLI is installed |
+| `copilot` | Copilot CLI stub is present on disk | `ready=false` because the CLI did not respond during health checks | treat as blocked until the local Copilot CLI installation is repaired or replaced |
+
+Backend-specific execution rule for this milestone:
+
+1. Run backend-dependent manual sessions against `local` first.
+2. Keep `bedrock`, `kiro`, and `copilot` in the checklist so documentation and workflow claims are still audited.
+3. Record those three as `blocked by environment` unless we deliberately repair their prerequisites during the milestone.
+4. Do not weaken the docs just because this machine lacks a prerequisite; only update docs when the product claim itself is wrong, incomplete, or misleading.
+
+## Live Session Tracker
+
+| Session | Focus | Backend scope on this machine | Status | Latest result |
+|---|---|---|---|---|
+| S1 | Install and startup baseline | no backend dependency; local path available for smoke checks | in progress | source install passed; CLI help passed; GUI visible confirmation pending; startup logged Copilot model-discovery failure; packaged installer artifact not present locally |
+| S2 | Backend configuration and health | local runnable; bedrock/kiro/copilot blocked by environment | not started | pending |
+| S3 | Core CLI review flows | run with local backend first | not started | pending |
+| S4 | Tool mode and report artifacts | run with local backend first | not started | pending |
+| S5 | GUI core review workflow | run with local backend first | not started | pending |
+| S6 | GUI detach, restore, desktop ergonomics | backend-agnostic after startup | not started | pending |
+| S7 | Addons and generated addon review | mostly backend-agnostic; use local only if generation path is exercised | not started | pending |
+| S8 | Benchmarks and quality tooling | local preferred; others blocked unless setup changes | not started | pending |
+| S9 | Local HTTP and shared scheduler | local backend path is the primary runnable slice | not started | pending |
+| S10 | Recovery, security, localization, polish | local fully runnable; other backends doc-only unless setup changes | not started | pending |
+
 ## Branch Strategy
 
 This audit is broad enough to justify a `milestone/*` branch rather than mixing the work into unrelated feature branches.
@@ -103,10 +138,10 @@ Primary docs:
 
 Manual scope:
 
-- Bedrock health path
-- Kiro health path
-- Copilot health path
 - Local LLM health path
+- Bedrock health path as an environment-blocked verification unless AWS auth is added during the milestone
+- Kiro health path as an environment-blocked verification unless Kiro CLI is installed during the milestone
+- Copilot health path as an environment-blocked verification unless the local CLI install is repaired during the milestone
 - Local LLM keyring-backed save / rotate / revoke behavior
 - Local LLM web-search toggle behavior
 - tool-aware file access enablement and fallback expectations
@@ -127,13 +162,13 @@ Primary docs:
 
 Manual scope:
 
-- project review
-- diff review from commits
-- diff review from patch file
-- specification review
-- dry run
-- multi-type review
-- preset-driven review selection
+- project review on `local`
+- diff review from commits on `local`
+- diff review from patch file on `local`
+- specification review on `local`
+- dry run on `local`
+- multi-type review on `local`
+- preset-driven review selection on `local`
 - legacy interactive flow actions where feasible
 
 Expected evidence:
@@ -152,11 +187,11 @@ Primary docs:
 
 Manual scope:
 
-- `review`
-- `health`
-- `fix-plan`
-- `apply-fixes`
-- `resume`
+- `review` on `local`
+- `health` on `local` plus blocked-environment checks for other backends
+- `fix-plan` on locally generated artifacts
+- `apply-fixes` on locally generated artifacts
+- `resume` on locally generated artifacts
 - JSON envelope behavior
 - report output naming and override behavior
 - provenance in JSON/TXT/Markdown outputs
@@ -178,7 +213,7 @@ Primary docs:
 Manual scope:
 
 - Review tab setup flow
-- backend health checks from the GUI
+- backend health checks from the GUI, with `local` expected to pass and the other configured backends expected to surface environment-blocked diagnostics
 - project vs diff scope
 - selected-files and diff-filter behavior
 - queue panel visibility and cancellation path when scheduler-backed execution is active
@@ -258,7 +293,7 @@ Primary docs:
 Manual scope:
 
 - benchmark harness tests
-- benchmark runner on at least one backend
+- benchmark runner on at least the `local` backend
 - compare-run workflow in the GUI Benchmarks tab
 - fixture authoring workflow sanity check
 - `tools/compare_review_reports.py`
@@ -280,7 +315,7 @@ Primary docs:
 
 Manual scope:
 
-- `serve-api`
+- `serve-api` on `local`
 - `/api/backends`
 - `/api/review-types`
 - `/api/recommendations/review-types`
@@ -356,3 +391,23 @@ Start with these in order:
 4. Session 6: GUI Detach, Restore, And Desktop Ergonomics
 
 That sequence gives the fastest signal on whether the current docs and user-facing product still match the core promised experience before we spend time on the more specialized addon, benchmark, and local-HTTP paths.
+
+## Session 1 Working Log
+
+Current status: in progress
+
+Observed so far on 2026-05-03:
+
+- Source install step succeeded with `python -m pip install -e ".[gui]"` from the milestone worktree.
+- The install step replaced an older preexisting editable install that still reported `aicodereviewer 0.1.0` in this environment; after reinstall, the imported package version is `0.3.0`.
+- The installed console entrypoint launched successfully with `aicodereviewer.exe --help`.
+- No packaged `AICodeReviewer-Setup-<version>.exe` artifact is present in the current workspace, so the packaged-installer slice cannot be executed from local artifacts yet.
+- The GUI launch command started from the same editable install without an immediate process crash.
+- GUI startup emitted `SDK Copilot model discovery failed: Missing required fields in ModelCapabilities: supports=None, limits=None` even though Copilot is not a runnable backend on this machine right now.
+- Visible confirmation from the active desktop session is still required to decide whether that startup diagnostic is only noisy logging or a user-visible Session 1 defect.
+
+Pending Session 1 confirmations:
+
+- confirm the GUI window opened normally
+- confirm the initial startup surface matches the current docs closely enough for a `pass` or identify the first visible drift
+- decide whether to fetch or build a packaged installer artifact later in the milestone or record that slice as pending-artifact for now
