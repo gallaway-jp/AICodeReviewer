@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+from types import SimpleNamespace
 
 import aicodereviewer.gui.health_mixin as health_mixin
 from aicodereviewer.gui.health_mixin import HealthMixin
@@ -123,3 +124,53 @@ def test_refresh_kiro_model_list_async_skips_work_when_refresh_is_already_active
     assert controller.finish_calls == []
     assert combo.configured_values is None
     assert combo.set_calls == []
+
+
+def test_split_fix_hint_url_extracts_before_url_and_after() -> None:
+    parts = HealthMixin._split_fix_hint_url(
+        "Install the AWS CLI from https://aws.amazon.com/cli/ and run 'aws configure sso'."
+    )
+
+    assert parts == (
+        "Install the AWS CLI from",
+        "https://aws.amazon.com/cli/",
+        "and run 'aws configure sso'.",
+    )
+
+
+def test_render_health_fix_hint_with_url_renders_text_and_clickable_doc_link(monkeypatch: Any) -> None:
+    created: list[Any] = []
+    opened: list[str] = []
+
+    class _DummyLabel:
+        def __init__(self, _parent: Any, **kwargs: Any) -> None:
+            self.kwargs = kwargs
+            self.grid_kwargs: dict[str, Any] | None = None
+            self.bindings: list[tuple[str, Any]] = []
+            created.append(self)
+
+        def grid(self, **kwargs: Any) -> None:
+            self.grid_kwargs = kwargs
+
+        def bind(self, event: str, callback: Any) -> None:
+            self.bindings.append((event, callback))
+
+    monkeypatch.setattr(health_mixin.ctk, "CTkLabel", _DummyLabel)
+    monkeypatch.setattr(health_mixin.ctk, "CTkFont", lambda **kwargs: SimpleNamespace(**kwargs))
+    monkeypatch.setattr(health_mixin.webbrowser, "open", lambda url: opened.append(url))
+
+    harness = _Harness(_DummyController(), _DummyCombo("claude-sonnet-4"))
+    hint = "Install the AWS CLI from https://aws.amazon.com/cli/ and run 'aws configure sso'."
+
+    harness._render_health_fix_hint(object(), 7, hint)
+
+    assert len(created) == 2
+    assert created[0].kwargs["text"] == f"💡 {hint}"
+    assert created[0].grid_kwargs == {"row": 7, "column": 1, "sticky": "w", "padx": 4, "pady": (0, 2)}
+    assert created[1].kwargs["text"] == f"{health_mixin.t('health.link_label')} https://aws.amazon.com/cli/"
+    assert created[1].grid_kwargs == {"row": 8, "column": 1, "sticky": "w", "padx": 18, "pady": (0, 4)}
+    assert created[1].bindings and created[1].bindings[0][0] == "<Button-1>"
+
+    created[1].bindings[0][1](None)
+
+    assert opened == ["https://aws.amazon.com/cli/"]

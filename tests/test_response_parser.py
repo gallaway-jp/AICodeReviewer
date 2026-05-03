@@ -157,6 +157,41 @@ class TestJsonParse:
         assert len(issues) == 1
         assert "CWE-79" in issues[0].ai_feedback
 
+    def test_json_reassigns_issue_to_file_matching_code_context(self):
+        file_entries = [
+            {
+                "name": "utils.py",
+                "path": "/project/utils.py",
+                "content": "def helper():\n    return 1\n",
+            },
+            {
+                "name": "user_auth.py",
+                "path": "/project/user_auth.py",
+                "content": (
+                    "def hash_password(password):\n"
+                    "    return hashlib.md5(password.encode()).hexdigest()\n"
+                ),
+            },
+        ]
+        response = json.dumps({
+            "files": [{
+                "filename": "utils.py",
+                "findings": [{
+                    "severity": "critical",
+                    "category": "cryptographic_weakness",
+                    "title": "Weak hash",
+                    "description": "MD5 is not safe for password hashing.",
+                    "code_context": "return hashlib.md5(password.encode()).hexdigest()",
+                }],
+            }],
+        })
+
+        issues = _try_json_parse(response, file_entries, "security")
+
+        assert len(issues) == 1
+        assert issues[0].file_path == "/project/user_auth.py"
+        assert issues[0].code_snippet == "return hashlib.md5(password.encode()).hexdigest()"
+
     def test_json_with_systemic_metadata(self, file_entries):
         response = json.dumps({
             "files": [{

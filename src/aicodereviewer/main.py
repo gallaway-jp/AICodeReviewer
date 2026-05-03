@@ -30,6 +30,7 @@ from aicodereviewer.backends.health import check_backend, HealthReport
 from aicodereviewer.config import config
 from aicodereviewer.diagnostics import (
     FailureDiagnostic,
+    backend_connection_fix_hint,
     build_failure_diagnostic,
     diagnostic_from_exception,
     failure_fix_hint,
@@ -42,6 +43,7 @@ from aicodereviewer.http_api import create_local_http_app, run_local_http_server
 from aicodereviewer.i18n import t, set_locale
 from aicodereviewer.recommendations import recommend_review_types
 from aicodereviewer.registries import get_review_registry
+from aicodereviewer.reviewer import LocalReasoningOnlyResponseError
 from aicodereviewer.review_definitions import install_review_registry, merge_review_pack_paths
 from aicodereviewer.review_presets import REVIEW_TYPE_PRESETS, format_review_type_preset_lines, resolve_review_preset_key
 
@@ -356,19 +358,23 @@ def _run_review(args: argparse.Namespace, review_types: list[str], target_lang: 
         return 1
 
     runner = AppRunner(client, scan_fn=scan_project_with_scope, backend_name=backend_name)
-    runner.run(
-        path=args.path,
-        scope=args.scope,
-        diff_file=args.diff_file,
-        commits=args.commits,
-        review_types=review_types,
-        spec_content=spec_content,
-        target_lang=target_lang,
-        programmers=args.programmers or [],
-        reviewers=args.reviewers or [],
-        dry_run=args.dry_run,
-        output_file=args.output,
-    )
+    try:
+        runner.run(
+            path=args.path,
+            scope=args.scope,
+            diff_file=args.diff_file,
+            commits=args.commits,
+            review_types=review_types,
+            spec_content=spec_content,
+            target_lang=target_lang,
+            programmers=args.programmers or [],
+            reviewers=args.reviewers or [],
+            dry_run=args.dry_run,
+            output_file=args.output,
+        )
+    except LocalReasoningOnlyResponseError as exc:
+        logger.error(str(exc))
+        return 1
     return 0
 
 
@@ -1599,7 +1605,7 @@ def _check_connection(backend_name: str | None) -> int:
         diagnostic = {
             "category": "provider",
             "detail": str(exc),
-            "fix_hint": t("health.hint_conn_test"),
+            "fix_hint": backend_connection_fix_hint(backend_name, "provider"),
             "origin": "connection_test",
         }
         logger.error("%s", exc)
@@ -1625,6 +1631,8 @@ def _check_connection(backend_name: str | None) -> int:
             origin = str(diagnostic.get("origin") or "connection_test")
             detail = str(diagnostic.get("detail") or "").strip()
             fix_hint = str(diagnostic.get("fix_hint") or "").strip()
+            if not fix_hint and category not in {"", "unknown", "none"}:
+                fix_hint = backend_connection_fix_hint(backend_name, category)
             retryable = bool(diagnostic.get("retryable"))
             retry_delay_seconds = diagnostic.get("retry_delay_seconds")
             _print_console(t("conn.category", category=category.replace("_", " ")))
@@ -1638,21 +1646,6 @@ def _check_connection(backend_name: str | None) -> int:
                     _print_console(t("conn.retry_after", seconds=retry_delay_seconds))
                 else:
                     _print_console(t("conn.retry"))
-        # Provide helpful hints
-        if backend_name == "bedrock":
-            _print_console(t("conn.hint_bedrock_sso"))
-            _print_console(t("conn.hint_bedrock_profile"))
-            _print_console(t("conn.hint_bedrock_model"))
-        elif backend_name == "kiro":
-            _print_console(t("conn.hint_kiro_wsl"))
-            _print_console(t("conn.hint_kiro_cli"))
-        elif backend_name == "copilot":
-            _print_console(t("conn.hint_copilot_install"))
-            _print_console(t("conn.hint_copilot_auth"))
-        elif backend_name == "local":
-            _print_console(t("conn.hint_local_url"))
-            _print_console(t("conn.hint_local_model"))
-            _print_console(t("conn.hint_local_api_type"))
         return 1
 
 

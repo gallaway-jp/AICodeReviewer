@@ -350,6 +350,10 @@ class _ReviewSession:
         self.total_tokens_sent += tokens_sent
         self.estimated_tokens_received += tokens_received
 
+
+class LocalReasoningOnlyResponseError(RuntimeError):
+    """Local backend returned reasoning without any parseable assistant content."""
+
 # ── cross-issue interaction analysis ─────────────────────────────────────────
 
 _INTERACTION_RELATIONSHIP_TYPES = frozenset(
@@ -710,7 +714,7 @@ def _augment_documentation_review_targets(
     target_files: Sequence[FileInfo],
     review_types: Sequence[str],
 ) -> List[FileInfo]:
-    if "documentation" not in review_types:
+    if "documentation" not in review_types or any(isinstance(file_info, dict) for file_info in target_files):
         return list(target_files)
 
     project_root = _infer_review_root(target_files)
@@ -732,7 +736,7 @@ def _augment_dependency_review_targets(
     target_files: Sequence[FileInfo],
     review_types: Sequence[str],
 ) -> List[FileInfo]:
-    if "dependency" not in review_types:
+    if "dependency" not in review_types or any(isinstance(file_info, dict) for file_info in target_files):
         return list(target_files)
 
     project_root = _infer_review_root(target_files)
@@ -754,7 +758,7 @@ def _augment_license_review_targets(
     target_files: Sequence[FileInfo],
     review_types: Sequence[str],
 ) -> List[FileInfo]:
-    if "license" not in review_types:
+    if "license" not in review_types or any(isinstance(file_info, dict) for file_info in target_files):
         return list(target_files)
 
     project_root = _infer_review_root(target_files)
@@ -1080,6 +1084,9 @@ def collect_review_issues(
             except Exception as exc:
                 session.failed_batches += 1
                 session.record_call()
+                if isinstance(exc, LocalReasoningOnlyResponseError):
+                    logger.error("Batch failed: %s", exc)
+                    raise
                 logger.error("Batch failed: %s — retrying individually", exc)
                 if session.has_budget():
                     fallback = _process_files_individually(
@@ -3102,6 +3109,34 @@ def _is_local_reasoning_only_error(feedback: str, client: AIBackend) -> bool:
     return _is_local_backend(client) and "reasoning_content only" in feedback.lower()
 
 
+def _local_reasoning_only_error_message(feedback: str) -> str:
+    if feedback.startswith("Error:"):
+        return feedback.removeprefix("Error:").strip()
+    return feedback.strip()
+
+
+def _summarize_failed_review_files(display_names: Sequence[str]) -> str:
+    names = [Path(name).name for name in display_names if str(name).strip()]
+    if not names:
+        return "unknown files"
+    if len(names) <= 3:
+        return ", ".join(names)
+    remaining = len(names) - 3
+    return f"{', '.join(names[:3])} (+{remaining} more)"
+
+
+def _partial_local_reasoning_only_error_message(
+    display_names: Sequence[str],
+    base_message: str,
+) -> str:
+    file_summary = _summarize_failed_review_files(display_names)
+    return (
+        "Local reasoning-only output prevented a complete per-file review for "
+        f"{file_summary}. The run was aborted rather than returning an incomplete result. "
+        f"{base_message}"
+    )
+
+
 def _supports_local_reasoning_only_short_circuit(review_type: str) -> bool:
     supported = {
         "accessibility",
@@ -3126,6 +3161,45 @@ def _supports_local_reasoning_only_short_circuit(review_type: str) -> bool:
         "ui_ux",
     }
     return any(entry in supported for entry in review_type.split("+"))
+
+
+def _supports_local_reasoning_only_short_circuit_for_entries(
+    review_type: str,
+    client: AIBackend,
+    file_entries: Sequence[Dict[str, Any]],
+) -> bool:
+    if not _is_local_backend(client):
+        return False
+
+    contextual_checks: Dict[
+        str,
+        Callable[[str, AIBackend, Sequence[Dict[str, Any]]], bool],
+    ] = {
+        "architecture": _supports_local_architecture_error_short_circuit,
+        "data_validation": _supports_local_data_validation_error_short_circuit,
+        "dependency": _supports_local_dependency_error_short_circuit,
+        "documentation": _supports_local_documentation_error_short_circuit,
+        "error_handling": _supports_local_error_handling_error_short_circuit,
+        "license": _supports_local_license_error_short_circuit,
+        "scalability": _supports_local_scalability_error_short_circuit,
+        "security": _supports_local_security_error_short_circuit,
+        "testing": _supports_local_testing_error_short_circuit,
+        "ui_ux": _supports_local_ui_ux_error_short_circuit,
+    }
+
+    review_parts = [part.strip() for part in review_type.split("+") if part.strip()]
+    if not review_parts:
+        return False
+
+    for review_part in review_parts:
+        contextual_check = contextual_checks.get(review_part)
+        if contextual_check is not None:
+            if not contextual_check(review_part, client, file_entries):
+                return False
+            continue
+        if not _supports_local_reasoning_only_short_circuit(review_part):
+            return False
+    return True
 
 
 def _issue_text(issue: ReviewIssue) -> str:
@@ -8009,6 +8083,9 @@ def _process_files_individually(
     """
     batch_issues: List[ReviewIssue] = []
     tool_access_enabled = _tool_file_access_enabled_for_client(client)
+    file_entries = _load_target_file_entries(target_files)
+    reasoning_only_failures: List[str] = []
+    reasoning_only_message: str | None = None
 
     for file_info in target_files:
         # Check for cancellation before processing each file
@@ -8074,20 +8151,39 @@ def _process_files_individually(
                     )
                     batch_issues.append(issue)
             elif feedback and feedback.startswith("Error:"):
-                if (
-                    _is_local_reasoning_only_error(feedback, client)
-                    and _supports_local_reasoning_only_short_circuit(review_type)
-                ):
-                    logger.warning(
-                        "Local reasoning-only output for %s [%s]; skipping per-file retry and relying on deterministic supplements",
-                        display_name,
+                if _is_local_reasoning_only_error(feedback, client):
+                    if _supports_local_reasoning_only_short_circuit_for_entries(
                         review_type,
+                        client,
+                        file_entries,
+                    ):
+                        logger.warning(
+                            "Local reasoning-only output for %s [%s]; skipping per-file retry and relying on deterministic supplements",
+                            display_name,
+                            review_type,
+                        )
+                        continue
+                    raise LocalReasoningOnlyResponseError(
+                        _local_reasoning_only_error_message(feedback)
                     )
-                    continue
                 logger.warning("Backend returned error for %s: %s", display_name, feedback[:120])
 
+        except LocalReasoningOnlyResponseError as exc:
+            reasoning_only_failures.append(display_name)
+            if reasoning_only_message is None:
+                reasoning_only_message = str(exc)
+            logger.error("Error analysing %s: %s", display_name, exc)
         except Exception as exc:
             logger.error("Error analysing %s: %s", display_name, exc)
+
+    if reasoning_only_failures:
+        raise LocalReasoningOnlyResponseError(
+            _partial_local_reasoning_only_error_message(
+                reasoning_only_failures,
+                reasoning_only_message
+                or "Configure a non-thinking model or disable server-side thinking mode for tool-mode JSON reviews.",
+            )
+        )
 
     return batch_issues
 
@@ -8203,15 +8299,19 @@ def _process_combined_batch(
         if cancel_check and cancel_check():
             logger.info("Combined review cancelled by user")
             return []
-        if (
-            feedback
-            and _is_local_reasoning_only_error(feedback, client)
-            and _supports_local_reasoning_only_short_circuit(review_type)
-        ):
-            logger.warning(
-                "Combined review returned Local reasoning-only output; skipping individual fallback and relying on deterministic supplements"
+        if feedback and _is_local_reasoning_only_error(feedback, client):
+            if _supports_local_reasoning_only_short_circuit_for_entries(
+                review_type,
+                client,
+                file_entries,
+            ):
+                logger.warning(
+                    "Combined review returned Local reasoning-only output; skipping individual fallback and relying on deterministic supplements"
+                )
+                return []
+            raise LocalReasoningOnlyResponseError(
+                _local_reasoning_only_error_message(feedback)
             )
-            return []
         if (
             feedback
             and _is_retryable_review_error(feedback)
@@ -8793,7 +8893,7 @@ def _merge_combined_with_fallback(
     unrepresented_paths = {fe["path"] for fe in unrepresented}
     retry_files: List["FileInfo"] = []
     for tf in target_files:
-        tf_path = tf["path"] if isinstance(tf, dict) else str(tf)
+        tf_path = str(tf["path"]) if isinstance(tf, dict) else str(tf)
         if tf_path in unrepresented_paths:
             retry_files.append(tf)
 

@@ -117,7 +117,7 @@ def test_settings_persistence_controller_reenables_json_when_no_output_format_se
 
     assert host._format_vars["json"].get() is True
     assert any(
-        message == "At least one output format must be selected. JSON has been re-enabled." and error
+        message == t("gui.settings.output_formats_required") and error
         for message, error in host.toasts
     )
     monkeypatch.undo()

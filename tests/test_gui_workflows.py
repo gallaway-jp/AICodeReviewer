@@ -515,6 +515,344 @@ def test_review_backend_dropdown_stays_in_sync_with_settings(
     assert harness.app.review_backend_display_var.get() == t("gui.review.backend_local")
 
 
+def test_settings_local_llm_api_key_save_rotate_and_revoke_via_gui(
+    app_factory: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    temporary_config_path = tmp_path / "config.ini"
+    original_config_path = config.config_path or (Path.cwd() / "config.ini")
+    credential_ref = auth.build_credential_reference("local_llm", "api_key")
+    keyring_store: dict[tuple[str, str], str] = {}
+
+    def _set_password(service: str, account: str, secret: str) -> None:
+        keyring_store[(service, account)] = secret
+
+    def _get_password(service: str, account: str) -> str | None:
+        return keyring_store.get((service, account))
+
+    def _delete_password(service: str, account: str) -> None:
+        keyring_store.pop((service, account), None)
+
+    monkeypatch.setattr(auth.keyring, "set_password", _set_password)
+    monkeypatch.setattr(auth.keyring, "get_password", _get_password)
+    monkeypatch.setattr(auth.keyring, "delete_password", _delete_password)
+
+    try:
+        _save_default_config_to_path(temporary_config_path)
+        config.set_value("backend", "type", "local")
+        config.save()
+
+        first_harness = GuiTestHarness(app_factory())
+        first_harness.app._build_tab_if_needed(t("gui.tab.settings"))
+        first_harness.pump()
+
+        first_harness.app._settings_backend_var.set(t("gui.settings.backend_local"))
+        first_harness.set_entry(first_harness.app._setting_entries[("local_llm", "api_url")], "http://127.0.0.1:11434")
+        first_harness.app._setting_entries[("local_llm", "api_type")].set("openai")
+        first_harness.app._setting_entries[("local_llm", "model")].set("qwen/qwen3.5-9b")
+        first_harness.set_entry(first_harness.app._setting_entries[("local_llm", "api_key")], "session-secret-1")
+        first_harness.app._settings_save_btn.invoke()
+        first_harness.pump()
+
+        assert config.get("backend", "type") == "local"
+        assert config.get("local_llm", "api_url") == "http://127.0.0.1:11434"
+        assert config.get("local_llm", "api_type") == "openai"
+        assert config.get("local_llm", "model") == "qwen/qwen3.5-9b"
+        assert config.get("local_llm", "api_key") == credential_ref
+        assert auth.get_config_credential("local_llm", "api_key").secret == "session-secret-1"
+        assert any(message == t("gui.settings.saved_ok") and not error for message, error in first_harness.toasts)
+
+        _reset_config_to_path(temporary_config_path)
+
+        second_harness = GuiTestHarness(app_factory())
+        second_harness.app._build_tab_if_needed(t("gui.tab.settings"))
+        second_harness.pump()
+
+        assert second_harness.app._setting_entries[("local_llm", "api_key")].get() == "session-secret-1"
+        assert second_harness.app._setting_entries[("local_llm", "api_url")].get() == "http://127.0.0.1:11434"
+        assert second_harness.app._setting_entries[("local_llm", "api_type")].get() == "openai"
+        assert second_harness.app._setting_entries[("local_llm", "model")].get() == "qwen/qwen3.5-9b"
+
+        second_harness.app._local_api_key_rotate_btn.invoke()
+        second_harness.pump()
+
+        assert second_harness.app._setting_entries[("local_llm", "api_key")].get() == ""
+        assert config.get("local_llm", "api_key") == credential_ref
+        assert auth.get_config_credential("local_llm", "api_key").missing_reference is True
+        assert any(message == t("gui.settings.local_api_key_rotated") and not error for message, error in second_harness.toasts)
+
+        second_harness.set_entry(second_harness.app._setting_entries[("local_llm", "api_key")], "session-secret-2")
+        second_harness.app._settings_save_btn.invoke()
+        second_harness.pump()
+
+        assert config.get("local_llm", "api_key") == credential_ref
+        assert auth.get_config_credential("local_llm", "api_key").secret == "session-secret-2"
+
+        _reset_config_to_path(temporary_config_path)
+
+        third_harness = GuiTestHarness(app_factory())
+        third_harness.app._build_tab_if_needed(t("gui.tab.settings"))
+        third_harness.pump()
+
+        assert third_harness.app._setting_entries[("local_llm", "api_key")].get() == "session-secret-2"
+
+        third_harness.app._local_api_key_revoke_btn.invoke()
+        third_harness.pump()
+
+        assert third_harness.app._setting_entries[("local_llm", "api_key")].get() == ""
+        assert config.get("local_llm", "api_key") == ""
+        assert auth.get_config_credential("local_llm", "api_key").source == "none"
+        assert any(message == t("gui.settings.local_api_key_revoked") and not error for message, error in third_harness.toasts)
+
+        _reset_config_to_path(temporary_config_path)
+
+        fourth_harness = GuiTestHarness(app_factory())
+        fourth_harness.app._build_tab_if_needed(t("gui.tab.settings"))
+        fourth_harness.pump()
+
+        assert fourth_harness.app._setting_entries[("local_llm", "api_key")].get() == ""
+    finally:
+        _reset_config_to_path(original_config_path)
+
+
+def test_settings_backend_specific_values_persist_across_app_restart_via_gui(
+    app_factory: Any,
+    tmp_path: Path,
+) -> None:
+    temporary_config_path = tmp_path / "config.ini"
+    original_config_path = config.config_path or (Path.cwd() / "config.ini")
+
+    try:
+        _save_default_config_to_path(temporary_config_path)
+
+        first_harness = GuiTestHarness(app_factory())
+        first_harness.app._build_tab_if_needed(t("gui.tab.settings"))
+        first_harness.pump()
+
+        first_harness.app._settings_backend_var.set(t("gui.settings.backend_copilot"))
+
+        first_harness.app._setting_entries[("model", "model_id")].set("amazon.nova-micro-v1:0")
+        first_harness.set_entry(first_harness.app._setting_entries[("aws", "region")], "us-west-2")
+        first_harness.set_entry(first_harness.app._setting_entries[("aws", "sso_session")], "colin-sso")
+        first_harness.set_entry(first_harness.app._setting_entries[("aws", "access_key_id")], "AKIATEST123")
+
+        first_harness.app._setting_entries[("kiro", "wsl_distro")].set("Ubuntu-24.04")
+        first_harness.set_entry(first_harness.app._setting_entries[("kiro", "cli_command")], "C:/Tools/kiro-cli.exe")
+        first_harness.set_entry(first_harness.app._setting_entries[("kiro", "timeout")], "450")
+        first_harness.app._setting_entries[("kiro", "model")].set("minimax-m2.1")
+
+        first_harness.set_entry(first_harness.app._setting_entries[("copilot", "copilot_path")], "C:/Tools/copilot.exe")
+        first_harness.set_entry(first_harness.app._setting_entries[("copilot", "timeout")], "123")
+        first_harness.app._setting_entries[("copilot", "model")].set("gpt-5-mini")
+
+        first_harness.app._settings_save_btn.invoke()
+        first_harness.pump()
+
+        assert config.get("backend", "type") == "copilot"
+        assert config.get("model", "model_id") == "amazon.nova-micro-v1:0"
+        assert config.get("aws", "region") == "us-west-2"
+        assert config.get("aws", "sso_session") == "colin-sso"
+        assert config.get("aws", "access_key_id") == "AKIATEST123"
+        assert config.get("kiro", "wsl_distro") == "Ubuntu-24.04"
+        assert config.get("kiro", "cli_command") == "C:/Tools/kiro-cli.exe"
+        assert config.get("kiro", "timeout") == "450"
+        assert config.get("kiro", "model") == "minimax-m2.1"
+        assert config.get("copilot", "copilot_path") == "C:/Tools/copilot.exe"
+        assert config.get("copilot", "timeout") == "123"
+        assert config.get("copilot", "model") == "gpt-5-mini"
+        assert any(message == t("gui.settings.saved_ok") and not error for message, error in first_harness.toasts)
+
+        _reset_config_to_path(temporary_config_path)
+
+        second_harness = GuiTestHarness(app_factory())
+        second_harness.app._build_tab_if_needed(t("gui.tab.settings"))
+        second_harness.pump()
+
+        assert second_harness.app._settings_backend_var.get() == t("gui.settings.backend_copilot")
+        assert second_harness.app._setting_entries[("model", "model_id")].get() == "amazon.nova-micro-v1:0"
+        assert second_harness.app._setting_entries[("aws", "region")].get() == "us-west-2"
+        assert second_harness.app._setting_entries[("aws", "sso_session")].get() == "colin-sso"
+        assert second_harness.app._setting_entries[("aws", "access_key_id")].get() == "AKIATEST123"
+        assert second_harness.app._setting_entries[("kiro", "wsl_distro")].get() == "Ubuntu-24.04"
+        assert second_harness.app._setting_entries[("kiro", "cli_command")].get() == "C:/Tools/kiro-cli.exe"
+        assert second_harness.app._setting_entries[("kiro", "timeout")].get() == "450"
+        assert second_harness.app._setting_entries[("kiro", "model")].get() == "minimax-m2.1"
+        assert second_harness.app._setting_entries[("copilot", "copilot_path")].get() == "C:/Tools/copilot.exe"
+        assert second_harness.app._setting_entries[("copilot", "timeout")].get() == "123"
+        assert second_harness.app._setting_entries[("copilot", "model")].get() == "gpt-5-mini"
+    finally:
+        _reset_config_to_path(original_config_path)
+
+
+def test_settings_runtime_tuning_values_persist_across_app_restart_via_gui(
+    app_factory: Any,
+    tmp_path: Path,
+) -> None:
+    temporary_config_path = tmp_path / "config.ini"
+    original_config_path = config.config_path or (Path.cwd() / "config.ini")
+
+    try:
+        _save_default_config_to_path(temporary_config_path)
+
+        first_harness = GuiTestHarness(app_factory())
+        first_harness.app._build_tab_if_needed(t("gui.tab.settings"))
+        first_harness.pump()
+
+        first_harness.set_entry(first_harness.app._setting_entries[("performance", "max_requests_per_minute")], "37")
+        first_harness.set_entry(first_harness.app._setting_entries[("performance", "min_request_interval_seconds")], "2.5")
+        first_harness.set_entry(first_harness.app._setting_entries[("performance", "max_file_size_mb")], "24")
+        first_harness.set_entry(first_harness.app._setting_entries[("processing", "batch_size")], "8")
+        first_harness.app._setting_entries[("processing", "combine_files")].set(False)
+
+        first_harness.app._settings_save_btn.invoke()
+        first_harness.pump()
+
+        assert config.get("performance", "max_requests_per_minute") == 37
+        assert config.get("performance", "min_request_interval_seconds") == 2.5
+        assert config.get("performance", "max_file_size_mb") == 24 * 1024 * 1024
+        assert config.get("processing", "batch_size") == 8
+        assert config.get("processing", "combine_files") == "false"
+        assert any(message == t("gui.settings.saved_ok") and not error for message, error in first_harness.toasts)
+
+        _reset_config_to_path(temporary_config_path)
+
+        second_harness = GuiTestHarness(app_factory())
+        second_harness.app._build_tab_if_needed(t("gui.tab.settings"))
+        second_harness.pump()
+
+        assert second_harness.app._setting_entries[("performance", "max_requests_per_minute")].get() == "37"
+        assert second_harness.app._setting_entries[("performance", "min_request_interval_seconds")].get() == "2.5"
+        assert second_harness.app._setting_entries[("performance", "max_file_size_mb")].get() == "24"
+        assert second_harness.app._setting_entries[("processing", "batch_size")].get() == "8"
+        assert second_harness.app._setting_entries[("processing", "combine_files")].get() is False
+    finally:
+        _reset_config_to_path(original_config_path)
+
+
+def test_settings_invalid_numeric_value_blocks_gui_save_without_persisting_other_edits(
+    app_factory: Any,
+    tmp_path: Path,
+) -> None:
+    temporary_config_path = tmp_path / "config.ini"
+    original_config_path = config.config_path or (Path.cwd() / "config.ini")
+
+    try:
+        _save_default_config_to_path(temporary_config_path)
+
+        first_harness = GuiTestHarness(app_factory())
+        first_harness.app._build_tab_if_needed(t("gui.tab.settings"))
+        first_harness.pump()
+
+        first_harness.set_entry(first_harness.app._setting_entries[("performance", "max_requests_per_minute")], "0")
+        first_harness.set_entry(first_harness.app._setting_entries[("processing", "batch_size")], "8")
+
+        first_harness.app._settings_save_btn.invoke()
+        first_harness.pump()
+
+        assert any("not a valid" in message and error for message, error in first_harness.toasts)
+        assert first_harness.app._setting_entries[("performance", "max_requests_per_minute")].get() == "0"
+        assert first_harness.app._setting_entries[("processing", "batch_size")].get() == "8"
+        assert config.get("performance", "max_requests_per_minute") == 10
+        assert config.get("processing", "batch_size") == 5
+
+        _reset_config_to_path(temporary_config_path)
+
+        second_harness = GuiTestHarness(app_factory())
+        second_harness.app._build_tab_if_needed(t("gui.tab.settings"))
+        second_harness.pump()
+
+        assert second_harness.app._setting_entries[("performance", "max_requests_per_minute")].get() == "10"
+        assert second_harness.app._setting_entries[("processing", "batch_size")].get() == "5"
+    finally:
+        _reset_config_to_path(original_config_path)
+
+
+def test_settings_save_failure_shows_error_and_keeps_on_disk_config_unchanged_across_restart(
+    app_factory: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    temporary_config_path = tmp_path / "config.ini"
+    original_config_path = config.config_path or (Path.cwd() / "config.ini")
+
+    try:
+        _save_default_config_to_path(temporary_config_path)
+
+        first_harness = GuiTestHarness(app_factory())
+        first_harness.app._build_tab_if_needed(t("gui.tab.settings"))
+        first_harness.pump()
+
+        first_harness.set_entry(first_harness.app._setting_entries[("performance", "max_requests_per_minute")], "37")
+        first_harness.set_entry(first_harness.app._setting_entries[("processing", "batch_size")], "8")
+
+        monkeypatch.setattr(config, "save", lambda: (_ for _ in ()).throw(OSError("disk full")))
+
+        first_harness.app._settings_save_btn.invoke()
+        first_harness.pump()
+
+        assert any(
+            message == t("gui.settings.save_error", error="disk full") and error
+            for message, error in first_harness.toasts
+        )
+        assert first_harness.app._setting_entries[("performance", "max_requests_per_minute")].get() == "37"
+        assert first_harness.app._setting_entries[("processing", "batch_size")].get() == "8"
+
+        _reset_config_to_path(temporary_config_path)
+
+        second_harness = GuiTestHarness(app_factory())
+        second_harness.app._build_tab_if_needed(t("gui.tab.settings"))
+        second_harness.pump()
+
+        assert second_harness.app._setting_entries[("performance", "max_requests_per_minute")].get() == "10"
+        assert second_harness.app._setting_entries[("processing", "batch_size")].get() == "5"
+    finally:
+        _reset_config_to_path(original_config_path)
+
+
+def test_settings_output_formats_guard_reenables_json_and_keeps_on_disk_config_unchanged_across_restart(
+    app_factory: Any,
+    tmp_path: Path,
+) -> None:
+    temporary_config_path = tmp_path / "config.ini"
+    original_config_path = config.config_path or (Path.cwd() / "config.ini")
+
+    try:
+        _save_default_config_to_path(temporary_config_path)
+
+        first_harness = GuiTestHarness(app_factory())
+        first_harness.app._build_tab_if_needed(t("gui.tab.settings"))
+        first_harness.pump()
+
+        first_harness.set_entry(first_harness.app._setting_entries[("performance", "max_requests_per_minute")], "37")
+        first_harness.app._format_vars["json"].set(False)
+        first_harness.app._format_vars["txt"].set(False)
+        first_harness.app._format_vars["md"].set(False)
+
+        first_harness.app._settings_save_btn.invoke()
+        first_harness.pump()
+
+        assert first_harness.app._format_vars["json"].get() is True
+        assert any(
+            message == t("gui.settings.output_formats_required") and error
+            for message, error in first_harness.toasts
+        )
+        assert first_harness.app._setting_entries[("performance", "max_requests_per_minute")].get() == "37"
+
+        _reset_config_to_path(temporary_config_path)
+
+        second_harness = GuiTestHarness(app_factory())
+        second_harness.app._build_tab_if_needed(t("gui.tab.settings"))
+        second_harness.pump()
+
+        assert second_harness.app._setting_entries[("performance", "max_requests_per_minute")].get() == "10"
+        assert second_harness.app._format_vars["json"].get() is True
+        assert second_harness.app._format_vars["txt"].get() is True
+        assert second_harness.app._format_vars["md"].get() is False
+    finally:
+        _reset_config_to_path(original_config_path)
+
+
 def test_benchmark_tab_opens_fixture_diff_report_json_files(
     harness: GuiTestHarness,
     monkeypatch: pytest.MonkeyPatch,

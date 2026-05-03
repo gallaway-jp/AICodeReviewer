@@ -358,6 +358,17 @@ class TestBuildSystemPromptFrameworks:
         assert ARCHITECTURE_REVIEW_METHOD_SUPPLEMENT in prompt
         assert "set category to exactly 'architecture'" in prompt
 
+    def test_build_user_message_includes_spec_document_for_mixed_specification_review(self):
+        prompt = AIBackend._build_user_message(
+            "def build_profile_response(user):\n    return {'name': user.display_name}\n",
+            "specification+maintainability",
+            spec_content="display_name is required",
+        )
+
+        assert "SPECIFICATION DOCUMENT:" in prompt
+        assert "display_name is required" in prompt
+        assert "CODE TO REVIEW:" in prompt
+
     def test_performance_review_rules_force_performance_category_and_hot_path_focus(self):
         prompt = AIBackend._build_system_prompt("performance", "en")
         assert "PERFORMANCE REVIEW RULES" in prompt

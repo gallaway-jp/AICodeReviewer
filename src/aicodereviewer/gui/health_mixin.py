@@ -30,6 +30,54 @@ __all__ = ["HealthMixin"]
 class HealthMixin:
     """Mixin supplying backend health checking and model list refresh."""
 
+    @staticmethod
+    def _split_fix_hint_url(fix_hint: str) -> tuple[str, str, str] | None:
+        """Return ``(before, url, after)`` when a hint contains a link."""
+        url_match = re.search(r'https?://[^\s]+', fix_hint)
+        if not url_match:
+            return None
+        before = fix_hint[:url_match.start()].rstrip()
+        url = url_match.group(0)
+        after = fix_hint[url_match.end():].lstrip()
+        return before, url, after
+
+    def _render_health_fix_hint(self, parent: Any, row: int, fix_hint: str) -> None:
+        """Render a remediation hint, keeping surrounding text visible around links."""
+        split_hint = self._split_fix_hint_url(fix_hint)
+        if not split_hint:
+            ctk.CTkLabel(
+                parent,
+                text=f"💡 {fix_hint}",
+                anchor="w",
+                wraplength=450,
+                justify="left",
+                text_color="#2563eb",
+                font=ctk.CTkFont(size=11),
+            ).grid(row=row, column=1, sticky="w", padx=4, pady=(0, 4))
+            return
+
+        _before, url, _after = split_hint
+        ctk.CTkLabel(
+            parent,
+            text=f"💡 {fix_hint}",
+            anchor="w",
+            wraplength=450,
+            justify="left",
+            text_color="#2563eb",
+            font=ctk.CTkFont(size=11),
+        ).grid(row=row, column=1, sticky="w", padx=4, pady=(0, 2))
+
+        link_label = ctk.CTkLabel(
+            parent,
+            text=f"{t('health.link_label')} {url}",
+            anchor="w",
+            text_color="#0066cc",
+            font=ctk.CTkFont(size=11, underline=True),
+            cursor="hand2",
+        )
+        link_label.grid(row=row + 1, column=1, sticky="w", padx=18, pady=(0, 4))
+        link_label.bind("<Button-1>", lambda e, u=url: webbrowser.open(u))
+
     def _dispatch_health_ui(self, callback: Any, *args: Any, **kwargs: Any) -> bool:
         """Marshal worker-thread callbacks onto the main UI loop when available."""
         dispatcher = getattr(self, "_run_on_ui_thread", None)
@@ -190,20 +238,22 @@ class HealthMixin:
         scroll.pack(fill="both", expand=True, padx=10, pady=4)
         scroll.grid_columnconfigure(1, weight=1)
 
-        for i, check in enumerate(report.checks):
+        row_cursor = 0
+        for check in report.checks:
+            base_row = row_cursor
             icon = "✅" if check.passed else "❌"
             color = "green" if check.passed else "#dc2626"
 
             ctk.CTkLabel(scroll, text=icon, width=24).grid(
-                row=i * 3, column=0, sticky="nw", padx=(4, 2), pady=(4, 0))
+                row=base_row, column=0, sticky="nw", padx=(4, 2), pady=(4, 0))
             ctk.CTkLabel(scroll, text=check.name,
                           font=ctk.CTkFont(weight="bold"),
                           text_color=color).grid(
-                row=i * 3, column=1, sticky="w", padx=4, pady=(4, 0))
+                row=base_row, column=1, sticky="w", padx=4, pady=(4, 0))
             ctk.CTkLabel(scroll, text=check.detail, anchor="w",
                           wraplength=450,
                           text_color=("gray30", "gray70")).grid(
-                row=i * 3 + 1, column=1, sticky="w", padx=4)
+                row=base_row + 1, column=1, sticky="w", padx=4)
 
             meta_parts: list[str] = []
             category = getattr(check, "category", "none")
@@ -220,44 +270,12 @@ class HealthMixin:
                     wraplength=450,
                     text_color=("gray45", "gray60"),
                     font=ctk.CTkFont(size=11),
-                ).grid(row=i * 3 + 2, column=1, sticky="w", padx=4)
+                ).grid(row=base_row + 2, column=1, sticky="w", padx=4)
 
+            row_cursor = base_row + 3
             if check.fix_hint and not check.passed:
-                url_match = re.search(r'https?://[^\s]+', check.fix_hint)
-                if url_match:
-                    url = url_match.group(0)
-                    text_before = check.fix_hint[:url_match.start()].rstrip(': ')
-
-                    hint_frame = ctk.CTkFrame(scroll, fg_color="transparent")
-                    hint_frame.grid(row=i * 3 + 3, column=1, sticky="w",
-                                    padx=4, pady=(0, 4))
-
-                    if text_before:
-                        ctk.CTkLabel(hint_frame, text=f"💡 {text_before}: ",
-                                      anchor="w",
-                                      text_color="#2563eb",
-                                      font=ctk.CTkFont(size=11)).pack(
-                            side="left", padx=(0, 2))
-                    else:
-                        ctk.CTkLabel(hint_frame, text="💡 ",
-                                      text_color="#2563eb",
-                                      font=ctk.CTkFont(size=11)).pack(
-                            side="left")
-
-                    link_label = ctk.CTkLabel(hint_frame, text=url,
-                                               anchor="w",
-                                               text_color="#0066cc",
-                                               font=ctk.CTkFont(size=11, underline=True),
-                                               cursor="hand2")
-                    link_label.pack(side="left")
-                    link_label.bind("<Button-1>", lambda e, u=url: webbrowser.open(u))
-                else:
-                    ctk.CTkLabel(scroll, text=f"💡 {check.fix_hint}",
-                                  anchor="w", wraplength=450,
-                                  text_color="#2563eb",
-                                  font=ctk.CTkFont(size=11)).grid(
-                        row=i * 3 + 3, column=1, sticky="w", padx=4,
-                        pady=(0, 4))
+                self._render_health_fix_hint(scroll, row_cursor, check.fix_hint)
+                row_cursor += 2 if self._split_fix_hint_url(check.fix_hint) else 1
 
         ctk.CTkButton(win, text=t("common.close"),
                        command=win.destroy).pack(pady=8)

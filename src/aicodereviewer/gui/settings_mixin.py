@@ -376,10 +376,19 @@ class SettingsTabMixin:
             self._show_toast(t("gui.settings.addons_refreshed"))
 
     def _auto_populate_models(self):
-        """Auto-populate Copilot and Bedrock models when Settings tab opens."""
-        self._refresh_copilot_model_list_async()
-        self._refresh_kiro_model_list_async()
-        self._refresh_bedrock_model_list_async()
+        """Populate models only for the backend currently selected in Settings."""
+        if hasattr(self, "_settings_backend_var"):
+            display_val = self._settings_backend_var.get()
+            current_backend = getattr(self, "_backend_reverse_map", {}).get(display_val, "")
+        else:
+            current_backend = self.backend_var.get() if hasattr(self, "backend_var") else ""
+
+        if current_backend == "copilot":
+            self._refresh_copilot_model_list_async()
+        elif current_backend == "kiro":
+            self._refresh_kiro_model_list_async()
+        elif current_backend == "bedrock":
+            self._refresh_bedrock_model_list_async()
 
     # ══════════════════════════════════════════════════════════════════════
     #  SETTINGS save / reset

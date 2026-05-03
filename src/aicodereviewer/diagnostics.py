@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from aicodereviewer.i18n import t
+
 
 @dataclass(frozen=True)
 class FailureDiagnostic:
@@ -96,6 +98,47 @@ def failure_fix_hint(category: str) -> str:
         "provider": "Check the backend service status or logs, then retry.",
     }
     return hints.get(category, "Review the error detail and backend state, then retry.")
+
+
+def backend_connection_fix_hint(backend: str, category: str) -> str:
+    """Return a translated backend-specific remediation hint for connection tests."""
+    normalized_backend = str(backend or "").strip().lower()
+    normalized_category = str(category or "").strip().lower()
+
+    key = {
+        ("bedrock", "auth"): "health.hint_aws_creds",
+        ("bedrock", "permission"): "health.hint_model_access",
+        ("bedrock", "configuration"): "health.hint_model",
+        ("copilot", "tool_compatibility"): "health.hint_copilot_install",
+        ("copilot", "auth"): "health.hint_copilot_auth",
+        ("copilot", "configuration"): "health.hint_copilot_model",
+        ("kiro", "tool_compatibility"): "health.hint_kiro_install",
+        ("kiro", "auth"): "health.hint_kiro_auth",
+        ("local", "configuration"): "health.hint_local_api_type",
+        ("local", "transport"): "health.hint_server",
+        ("local", "timeout"): "health.hint_local_timeout",
+        ("local", "auth"): "health.hint_local_credentials",
+        ("local", "provider"): "health.hint_local_validation",
+    }.get((normalized_backend, normalized_category))
+
+    if key:
+        return t(key)
+    return t("health.hint_conn_test")
+
+
+def backend_connection_detail(backend: str, detail_key: str, **kwargs: Any) -> str:
+    """Return a translated backend-specific detail string for connection tests."""
+    normalized_backend = str(backend or "").strip().lower()
+    normalized_key = str(detail_key or "").strip().lower()
+    translation_key = f"health.detail_{normalized_backend}_{normalized_key}"
+    translated = t(translation_key, **kwargs)
+    if translated != translation_key:
+        return translated
+    fallback_key = f"health.detail_{normalized_key}"
+    fallback = t(fallback_key, **kwargs)
+    if fallback != fallback_key:
+        return fallback
+    return translation_key
 
 
 def diagnostic_from_exception(exc: Exception, *, origin: str) -> FailureDiagnostic:

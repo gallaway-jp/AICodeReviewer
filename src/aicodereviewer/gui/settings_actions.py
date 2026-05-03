@@ -57,7 +57,7 @@ class SettingsPersistenceController:
         if not selected_formats:
             self._host._format_vars["json"].set(True)
             self._host._show_toast(
-                "At least one output format must be selected. JSON has been re-enabled.",
+                t("gui.settings.output_formats_required"),
                 error=True,
             )
             return
@@ -95,13 +95,13 @@ class SettingsPersistenceController:
     def reset_defaults(self) -> None:
         if self._host._testing_mode:
             self._host._show_toast(
-                "Reset Defaults is disabled in testing mode — settings are isolated",
+                t("gui.settings.reset_disabled_in_testing"),
                 error=False,
             )
             return
         if not messagebox.askyesno(
-            "Reset Defaults",
-            "This will reset all settings to their default values. Continue?",
+            t("gui.settings.reset_defaults"),
+            t("gui.settings.reset_confirm"),
         ):
             return
 
@@ -112,9 +112,9 @@ class SettingsPersistenceController:
 
         try:
             config.save()
-            self._host._show_toast("Settings have been reset to defaults")
+            self._host._show_toast(t("gui.settings.reset_done"))
         except Exception as exc:
-            self._host._show_toast(f"Error saving defaults: {exc}", error=True)
+            self._host._show_toast(t("gui.settings.reset_error", error=exc), error=True)
 
     def _validate_numeric_fields(self) -> str | None:
         for (section, key), (label, num_type, min_val) in self._numeric_settings.items():

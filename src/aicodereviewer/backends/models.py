@@ -107,6 +107,44 @@ def _resolve_copilot_exe(cli_path: str) -> str:
     return resolved
 
 
+def _resolve_kiro_exe(cli_path: str) -> str:
+    """Resolve a Kiro CLI command to a native executable when possible.
+
+    Resolution order:
+    1. Configured command/path
+    2. ``kiro-cli`` fallback
+    3. ``kiro`` fallback
+    """
+    candidates: list[str] = []
+    if cli_path:
+        candidates.append(cli_path)
+    for fallback in ("kiro-cli", "kiro"):
+        if fallback not in candidates:
+            candidates.append(fallback)
+
+    for candidate in candidates:
+        if os.path.isabs(candidate) and os.path.isfile(candidate):
+            return candidate
+
+        resolved = shutil.which(candidate)
+        if resolved and os.path.isfile(resolved):
+            return resolved
+
+        if os.path.isfile(candidate):
+            return os.path.abspath(candidate)
+
+    if os.name == "nt":
+        local_app_data = os.environ.get("LOCALAPPDATA", "")
+        default_windows_paths = [
+            os.path.join(local_app_data, "Kiro-Cli", "kiro-cli.exe"),
+        ] if local_app_data else []
+        for default_path in default_windows_paths:
+            if os.path.isfile(default_path):
+                return default_path
+
+    return cli_path or "kiro-cli"
+
+
 # ── GitHub Copilot model discovery ─────────────────────────────────────────
 
 _copilot_models_cache: Dict[str, List[str]] = {}
@@ -232,9 +270,8 @@ def _discover_kiro_models(kiro_path: str = "kiro", wsl_distro: str = "") -> List
     e.g. ``echo '' | kiro-cli chat --model INVALID__ --no-interactive``
     produces: ``error: Model 'INVALID__' does not exist. Available models: auto, ...``
 
-    On Windows, runs inside WSL via ``bash -lc`` so that ``~/.local/bin``
-    (where kiro-cli lives) is on the PATH.
-    Falls back to a curated Claude model list when the CLI is unavailable.
+    On Windows, prefers a native ``kiro-cli.exe`` install and falls back to
+    WSL only when no native executable is available.
 
     Results are cached in ``_kiro_models_cache`` keyed by CLI path and distro.
     """
@@ -251,21 +288,29 @@ def _discover_kiro_models(kiro_path: str = "kiro", wsl_distro: str = "") -> List
     bash_cmd = f"{kiro_path} chat --model {_INVALID} --no-interactive"
 
     if os.name == "nt":
-        try:
-            from aicodereviewer.path_utils import run_in_wsl
-            distro_param = wsl_distro.strip() or None
-            # Pass a non-empty, non-whitespace prompt so kiro-cli accepts it in --no-interactive mode.
-            rc, stdout, stderr = run_in_wsl(
-                ["bash", "-lc", bash_cmd],
-                distro=distro_param,
+        resolved_path = _resolve_kiro_exe(kiro_path)
+        if resolved_path and os.path.isfile(resolved_path):
+            rc, stdout, stderr = _run_quiet(
+                [resolved_path, "chat", "--model", _INVALID, "--no-interactive", "Hello"],
                 timeout=10,
-                stdin_data="Hello\n",
             )
             combined = (stdout or "") + "\n" + (stderr or "")
-            logger.debug("kiro-cli probe exit=%d stderr=%s", rc, stderr[:200] if stderr else "")
-        except Exception as e:
-            logger.debug("Failed to run kiro-cli probe in WSL: %s", e)
-            combined = ""
+            logger.debug("Native kiro-cli probe exit=%d stderr=%s", rc, stderr[:200] if stderr else "")
+        else:
+            try:
+                from aicodereviewer.path_utils import run_in_wsl
+                distro_param = wsl_distro.strip() or None
+                rc, stdout, stderr = run_in_wsl(
+                    ["bash", "-lc", bash_cmd],
+                    distro=distro_param,
+                    timeout=10,
+                    stdin_data="Hello\n",
+                )
+                combined = (stdout or "") + "\n" + (stderr or "")
+                logger.debug("WSL kiro-cli probe exit=%d stderr=%s", rc, stderr[:200] if stderr else "")
+            except Exception as e:
+                logger.debug("Failed to run kiro-cli probe in WSL: %s", e)
+                combined = ""
     else:
         import subprocess as _sp
         try:

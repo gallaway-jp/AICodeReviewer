@@ -5,6 +5,7 @@ AI-powered code fix generation.
 Delegates to the active :class:`AIBackend` to produce corrected source code
 for a given review issue.
 """
+import json
 import os
 import logging
 from dataclasses import dataclass
@@ -18,6 +19,29 @@ from .diagnostics import build_failure_diagnostic, diagnostic_from_exception, Fa
 __all__ = ["FixGenerationResult", "generate_ai_fix_result", "apply_ai_fix"]
 
 logger = logging.getLogger(__name__)
+
+
+def _looks_like_review_payload(text: str) -> bool:
+    """Return True when backend output resembles review JSON rather than file content."""
+    stripped = text.strip()
+    if not stripped or stripped[:1] not in "[{":
+        return False
+
+    try:
+        payload = json.loads(stripped)
+    except Exception:
+        return False
+
+    if isinstance(payload, dict):
+        files = payload.get("files") or payload.get("results")
+        if isinstance(files, list) and any(
+            isinstance(item, dict) and isinstance(item.get("findings") or item.get("issues"), list)
+            for item in files
+        ):
+            return True
+        if "review_type" in payload and ("files" in payload or "results" in payload):
+            return True
+    return False
 
 
 @dataclass(frozen=True)
@@ -96,6 +120,15 @@ def generate_ai_fix_result(
             result = client.get_review(fix_prompt, review_type="fix", lang=lang)
 
         if result and not result.startswith("Error:"):
+            if _looks_like_review_payload(result):
+                return FixGenerationResult(
+                    content=None,
+                    diagnostic=build_failure_diagnostic(
+                        category="provider",
+                        origin="fix_generation",
+                        detail="Backend returned review JSON instead of corrected code.",
+                    ),
+                )
             return FixGenerationResult(content=result.strip())
 
         detail = "Backend returned no usable fix content."

@@ -7,7 +7,7 @@ AICodeReviewer supports four execution backends. Choose the one that matches you
 | Backend | Best For | Requirements | Notes |
 |---|---|---|---|
 | `bedrock` | Managed cloud inference on AWS | AWS credentials or SSO, Bedrock model access | Best default path for production use |
-| `kiro` | Teams already using Kiro on Windows | WSL plus Kiro CLI inside WSL | Windows paths are translated to WSL paths |
+| `kiro` | Teams already using Kiro | Kiro CLI for Windows or inside WSL | Native Windows is preferred; WSL remains a fallback |
 | `copilot` | Teams standardized on GitHub tooling | GitHub Copilot CLI and auth | Long prompts use a temp-file workaround |
 | `local` | Local/offline or self-hosted inference | Running LLM server | Supports `lmstudio`, `ollama`, `openai`, `anthropic` API modes |
 
@@ -29,12 +29,15 @@ Relevant config:
 type = bedrock
 
 [model]
-model_id = anthropic.claude-3-5-sonnet-20240620-v1:0
+model_id = amazon.nova-micro-v1:0
 
 [aws]
 region = us-east-1
 sso_session =
 ```
+
+Operational note:
+- `amazon.nova-micro-v1:0` is the low-cost default path in this project because it is active in `us-east-1` and materially cheaper than the older Claude default.
 
 ## Kiro
 
@@ -43,10 +46,11 @@ Use when Kiro CLI is already part of your development environment.
 Windows setup summary:
 
 ```bash
-wsl --install
-wsl -- kiro-cli --version
+kiro-cli --version
 aicodereviewer --check-connection --backend kiro
 ```
+
+If you still run Kiro inside WSL, the existing `wsl_distro` setting remains available as a fallback.
 
 Relevant config:
 
@@ -55,17 +59,14 @@ Relevant config:
 type = kiro
 
 [kiro]
-wsl_distro = Ubuntu
 cli_command = kiro-cli
+model = minimax-m2.1
+wsl_distro =
 timeout = 300
 ```
 
-Path translation example:
-
-| Windows | WSL |
-|---|---|
-| `D:\Projects\myapp` | `/mnt/d/Projects/myapp` |
-| `C:\Users\me\code` | `/mnt/c/Users/me/code` |
+Operational note:
+- `minimax-m2.1` is the explicit ultra-low-cost Kiro test model used in this audit branch.
 
 ## Copilot
 
@@ -87,10 +88,11 @@ type = copilot
 [copilot]
 copilot_path = copilot
 timeout = 300
-model = auto
+model = gpt-5-mini
 ```
 
 Operational note:
+- `gpt-5-mini` is the explicit low-cost Copilot model used for testing in this audit branch so premium requests are not consumed by accident.
 - The backend uses a temp-file path for large prompts to avoid Windows command-line length and prompt-size issues.
 - Very wide multi-type sessions still produce substantially larger prompts than focused review bundles. Prefer targeted bundles of related review types over `--type all`, especially when you include `specification`, `license`, `architecture`, or other large guidance blocks.
 
@@ -113,7 +115,7 @@ type = local
 [local_llm]
 api_url = http://localhost:1234
 api_type = openai
-model = default
+model = qwen/qwen3.5-9b
 api_key = keyring://local_llm/api_key
 timeout = 300
 max_tokens = 4096
@@ -127,6 +129,7 @@ aicodereviewer --check-connection --backend local
 ```
 
 Operational notes:
+- `qwen/qwen3.5-9b` is the current low-cost default because it is already available in the local model server on this machine and is materially lighter than the larger local models.
 - The GUI stores `local_llm.api_key` in the system keyring and leaves only a `keyring://...` reference in `config.ini`; older plain-text values still load, but re-saving migrates them.
 - The Local LLM settings section now includes explicit `Rotate` and `Revoke` actions so users can clear the stored keyring secret without manually editing `config.ini`.
 - Local backend health checks now distinguish a missing keyring-backed credential from ordinary server reachability failures.

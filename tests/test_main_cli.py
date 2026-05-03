@@ -421,6 +421,54 @@ def test_parse_review_types_custom_preset_alias(tmp_path: Path):
     assert result == ["secure_defaults", "data_validation"]
 
 
+def test_check_connection_uses_diagnostic_fix_hint_without_legacy_extra_hints(monkeypatch: pytest.MonkeyPatch) -> None:
+    printed: list[str] = []
+
+    class _FakeBackend:
+        def validate_connection_diagnostic(self):
+            return {
+                "ok": False,
+                "category": "auth",
+                "detail": "GitHub Copilot CLI is not authenticated.",
+                "fix_hint": t("health.hint_copilot_auth"),
+                "origin": "connection_test",
+            }
+
+    monkeypatch.setattr(cli, "resolve_backend_type", lambda backend_name: (backend_name or "copilot", {}))
+    monkeypatch.setattr(cli, "create_backend", lambda _backend: _FakeBackend())
+    monkeypatch.setattr(cli, "_print_console", printed.append)
+
+    exit_code = cli._check_connection("copilot")
+
+    assert exit_code == 1
+    assert t("conn.fix_hint", fix_hint=t("health.hint_copilot_auth")) in printed
+    assert not any("Install GitHub Copilot CLI" in line for line in printed)
+    assert not any("/login to authenticate" in line for line in printed if line != t("conn.fix_hint", fix_hint=t("health.hint_copilot_auth")))
+
+
+def test_check_connection_falls_back_to_backend_specific_hint_when_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    printed: list[str] = []
+
+    class _FakeBackend:
+        def validate_connection_diagnostic(self):
+            return {
+                "ok": False,
+                "category": "configuration",
+                "detail": "Unknown api_type 'bogus'.",
+                "fix_hint": "",
+                "origin": "connection_test",
+            }
+
+    monkeypatch.setattr(cli, "resolve_backend_type", lambda backend_name: (backend_name or "local", {}))
+    monkeypatch.setattr(cli, "create_backend", lambda _backend: _FakeBackend())
+    monkeypatch.setattr(cli, "_print_console", printed.append)
+
+    exit_code = cli._check_connection("local")
+
+    assert exit_code == 1
+    assert t("conn.fix_hint", fix_hint=t("health.hint_local_api_type")) in printed
+
+
 def test_list_type_presets_prints_definitions(capsys):
     """Listing presets should print the preset names and included review types."""
     exit_code = run_main_with_args(["--list-type-presets"])
@@ -499,7 +547,13 @@ def test_list_addons_reads_checked_in_example_addon_from_configured_paths(monkey
 def test_check_connection_success(monkeypatch, capsys):
     """--check-connection with a successful backend prints success."""
     mock_backend = MagicMock()
-    mock_backend.validate_connection.return_value = True
+    mock_backend.validate_connection_diagnostic.return_value = {
+        "ok": True,
+        "category": "none",
+        "detail": "",
+        "fix_hint": "",
+        "origin": "connection_test",
+    }
     monkeypatch.setattr(cli, "create_backend", lambda name: mock_backend)
 
     exit_code = run_main_with_args(["--check-connection", "--backend", "bedrock"])
@@ -510,14 +564,13 @@ def test_check_connection_success(monkeypatch, capsys):
 
 
 def test_check_connection_failure(monkeypatch, capsys):
-    """--check-connection with a failing backend prints failure and hints."""
+    """--check-connection with a failing backend prints the normalized diagnostic hint."""
     mock_backend = MagicMock()
-    mock_backend.validate_connection.return_value = False
     mock_backend.validate_connection_diagnostic.return_value = {
         "ok": False,
         "category": "auth",
-        "detail": "GitHub Copilot CLI is not authenticated.",
-        "fix_hint": "Run 'copilot' and use /login to authenticate.",
+        "detail": t("health.copilot_auth_fail"),
+        "fix_hint": t("health.hint_copilot_auth"),
         "origin": "connection_test",
     }
     monkeypatch.setattr(cli, "create_backend", lambda name: mock_backend)
@@ -529,14 +582,19 @@ def test_check_connection_failure(monkeypatch, capsys):
     assert "❌" in captured.out or "fail" in captured.out.lower()
     assert "Failure category" in captured.out or "失敗分類" in captured.out
     assert "auth" in captured.out.lower()
-    # Should include local backend hints
-    assert "Hint" in captured.out or "ヒント" in captured.out
+    assert t("conn.fix_hint", fix_hint=t("health.hint_copilot_auth")) in captured.out
 
 
 def test_check_connection_is_standalone(monkeypatch):
     """--check-connection should NOT require --programmers/--reviewers/path."""
     mock_backend = MagicMock()
-    mock_backend.validate_connection.return_value = True
+    mock_backend.validate_connection_diagnostic.return_value = {
+        "ok": True,
+        "category": "none",
+        "detail": "",
+        "fix_hint": "",
+        "origin": "connection_test",
+    }
     monkeypatch.setattr(cli, "create_backend", lambda name: mock_backend)
 
     # Should not raise SystemExit
@@ -546,7 +604,13 @@ def test_check_connection_is_standalone(monkeypatch):
 def test_check_connection_accepts_backend_alias(monkeypatch):
     received_names = []
     mock_backend = MagicMock()
-    mock_backend.validate_connection.return_value = True
+    mock_backend.validate_connection_diagnostic.return_value = {
+        "ok": True,
+        "category": "none",
+        "detail": "",
+        "fix_hint": "",
+        "origin": "connection_test",
+    }
 
     def _fake_create_backend(name):
         received_names.append(name)

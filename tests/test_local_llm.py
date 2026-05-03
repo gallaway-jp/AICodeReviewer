@@ -23,6 +23,7 @@ def _make_backend(api_type: str = "openai", **overrides: Any) -> LocalLLMBackend
         api_type=api_type,
         model="test-model",
         api_key="test-key",
+        reasoning="default",
         enable_web_search=True,
     )
     defaults.update(overrides)
@@ -34,6 +35,7 @@ def _make_backend(api_type: str = "openai", **overrides: Any) -> LocalLLMBackend
             ("local_llm", "api_key"): defaults["api_key"],
             ("local_llm", "timeout"): "30",
             ("local_llm", "max_tokens"): "512",
+            ("local_llm", "reasoning"): defaults["reasoning"],
             ("local_llm", "enable_web_search"): defaults["enable_web_search"],
             ("performance", "min_request_interval_seconds"): 0.0,
             ("performance", "max_content_length"): 100_000,
@@ -91,6 +93,7 @@ class TestLocalLLMConstruction:
                 ("local_llm", "api_key"): "test-key",
                 ("local_llm", "timeout"): "600.0",
                 ("local_llm", "max_tokens"): "512",
+                ("local_llm", "reasoning"): "default",
                 ("local_llm", "enable_web_search"): True,
                 ("performance", "min_request_interval_seconds"): 0.0,
             }.get((section, key), default)
@@ -109,6 +112,7 @@ class TestLocalLLMConstruction:
                 ("local_llm", "api_key"): "keyring://local_llm/api_key",
                 ("local_llm", "timeout"): "30",
                 ("local_llm", "max_tokens"): "512",
+                ("local_llm", "reasoning"): "default",
                 ("local_llm", "enable_web_search"): False,
                 ("performance", "min_request_interval_seconds"): 0.0,
             }.get((section, key), default)
@@ -120,6 +124,14 @@ class TestLocalLLMConstruction:
     def test_ollama_url_normalizes_api_suffix(self):
         backend = _make_backend(api_type="ollama", api_url="http://localhost:11434/api/")
         assert backend.api_url == "http://localhost:11434"
+
+    def test_reasoning_auto_alias_normalizes_to_default(self):
+        backend = _make_backend(api_type="lmstudio", reasoning="auto")
+        assert backend.reasoning == "default"
+
+    def test_invalid_reasoning_value_falls_back_to_default(self):
+        backend = _make_backend(api_type="lmstudio", reasoning="surprise")
+        assert backend.reasoning == "default"
 
 
 # ── OpenAI-compatible review ───────────────────────────────────────────────
@@ -283,6 +295,20 @@ class TestOpenAIReview:
         assert result == "fixed_code()"
 
     @patch("aicodereviewer.backends.local_llm.requests.post")
+    def test_get_fix_system_prompt_omits_review_json_schema(self, mock_post):
+        mock_post.return_value = _mock_response(200, {
+            "choices": [{"message": {"content": "fixed_code()"}}]
+        })
+        backend = _make_backend()
+
+        backend.get_fix("buggy()", "Fix the bug", "security", "en")
+
+        payload = mock_post.call_args.kwargs["json"]
+        system_prompt = payload["messages"][0]["content"]
+        assert "IMPORTANT — OUTPUT FORMAT" not in system_prompt
+        assert "Do NOT return JSON" in system_prompt
+
+    @patch("aicodereviewer.backends.local_llm.requests.post")
     def test_get_fix_returns_none_on_error(self, mock_post):
         mock_post.return_value = _mock_response(502, text="Bad Gateway")
         backend = _make_backend()
@@ -298,6 +324,36 @@ class TestOpenAIReview:
             }.get((s, k), d)
             result = backend.get_review(huge, "security", "en")
         assert "too large" in result.lower() or "Error" in result
+
+
+class TestLMStudioReview:
+    """Test get_review with LM Studio native responses."""
+
+    @patch("aicodereviewer.backends.local_llm.requests.post")
+    def test_get_review_includes_reasoning_when_configured(self, mock_post):
+        mock_post.return_value = _mock_response(200, {
+            "output": [{"type": "message", "content": "LM Studio review"}]
+        })
+        backend = _make_backend(api_type="lmstudio", api_url="http://localhost:1234", reasoning="off")
+
+        result = backend.get_review("def foo(): pass", "security", "en")
+
+        assert result == "LM Studio review"
+        payload = mock_post.call_args.kwargs["json"]
+        assert payload["reasoning"] == "off"
+
+    @patch("aicodereviewer.backends.local_llm.requests.post")
+    def test_get_review_omits_reasoning_when_default(self, mock_post):
+        mock_post.return_value = _mock_response(200, {
+            "output": [{"type": "message", "content": "LM Studio review"}]
+        })
+        backend = _make_backend(api_type="lmstudio", api_url="http://localhost:1234", reasoning="default")
+
+        result = backend.get_review("def foo(): pass", "security", "en")
+
+        assert result == "LM Studio review"
+        payload = mock_post.call_args.kwargs["json"]
+        assert "reasoning" not in payload
 
 
 # ── Anthropic-compatible review ────────────────────────────────────────────

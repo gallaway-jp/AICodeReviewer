@@ -133,6 +133,7 @@ Common next moves:
 
 - use `--scope diff` with `--commits` or `--diff-file`
 - choose a smaller review bundle instead of `--type all`
+- inspect preset bundles with `aicodereviewer --list-type-presets` and reuse a preset key such as `runtime_safety`
 - pass `--backend` explicitly in scripts and repeatable runs
 
 Use [CLI Guide](cli.md) for the full flag and tool-mode reference.
@@ -140,6 +141,14 @@ Use [CLI Guide](cli.md) for the full flag and tool-mode reference.
 ## Diff Review Workflow
 
 Use this path when you want to review only changed files or a specific patch instead of the whole project.
+
+If you repeat the same review bundles often, you can also use a built-in preset key in `--type`.
+
+Example:
+
+```bash
+aicodereviewer . --scope diff --commits HEAD~3..HEAD --type release_safety --dry-run
+```
 
 ### Review a commit range
 
@@ -165,6 +174,7 @@ Important rules:
 
 - use either `--commits` or `--diff-file`, not both
 - keep the review bundle focused when the diff is small and specific
+- the real diff review stays constrained to the selected patch or commit range, even for documentation, dependency, or license review types
 - use a dry run first if you are unsure whether the diff input covers the files you expect
 
 This is usually the best starting point for pull-request review, pre-merge validation, or targeted regression checking.
@@ -276,6 +286,12 @@ Example:
 aicodereviewer . --type specification --spec-file requirements.md --programmers Alice --reviewers Bob --backend local
 ```
 
+Combined example:
+
+```bash
+aicodereviewer . --type specification,maintainability --spec-file requirements.md --programmers Alice --reviewers Bob --backend local
+```
+
 You can combine `specification` with other review types, but a focused specification-only run is often easier to validate first.
 
 Common uses:
@@ -288,6 +304,7 @@ Important rules:
 
 - `--spec-file` is required for specification reviews
 - use a readable project or diff target so the review has both the code and the spec context
+- when `specification` is combined with other review types, the same `--spec-file` content is still applied to the mixed review prompt
 - if you are reviewing a recent change only, combine `--type specification` with `--scope diff`
 
 ## GUI First Session

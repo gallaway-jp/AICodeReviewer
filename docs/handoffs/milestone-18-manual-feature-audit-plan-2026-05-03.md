@@ -21,25 +21,25 @@ Backend status as of 2026-05-03:
 
 | Backend | Local prerequisite status | Product health result | Audit stance |
 |---|---|---|---|
-| `local` | configured in `config.ini`; OpenAI-compatible endpoint at `http://localhost:1234` responded with HTTP 200 | `ready=true` | fully runnable now; use as the default backend for this milestone's manual execution |
-| `bedrock` | AWS CLI installed | `ready=false` because credentials are missing | keep in scope for docs review, but classify execution steps as blocked by environment until AWS auth is configured |
-| `kiro` | WSL installed and healthy | `ready=false` because Kiro CLI is not installed in WSL | keep in scope for docs review, but defer execution unless Kiro CLI is installed |
-| `copilot` | Copilot CLI stub is present on disk | `ready=false` because the CLI did not respond during health checks | treat as blocked until the local Copilot CLI installation is repaired or replaced |
+| `local` | configured in `config.ini`; OpenAI-compatible endpoint at `http://localhost:1234` responded with HTTP 200; explicit test model pinned to `qwen/qwen3.5-9b` | `ready=true` | fully runnable now; use as the default backend for this milestone's manual execution |
+| `bedrock` | AWS CLI installed; SSO profile `colin` refreshed; explicit test model pinned to `amazon.nova-micro-v1:0` | `ready=true` | runnable now; use Nova Micro for low-cost Bedrock validation on this machine |
+| `kiro` | native Windows `kiro-cli.exe` installed and authenticated; explicit test model pinned to `minimax-m2.1` | `ready=true` on the native Windows path | runnable now; use native Windows Kiro and keep WSL only as a fallback compatibility path |
+| `copilot` | native Copilot CLI installed and authenticated; explicit test model pinned to `gpt-5-mini` | `ready=true` | runnable now; avoid `auto` during testing so premium requests are not consumed |
 
 Backend-specific execution rule for this milestone:
 
 1. Run backend-dependent manual sessions against `local` first.
 2. Keep `bedrock`, `kiro`, and `copilot` in the checklist so documentation and workflow claims are still audited.
-3. Record those three as `blocked by environment` unless we deliberately repair their prerequisites during the milestone.
+3. Reclassify a backend from `blocked by environment` to runnable as soon as we verify a real local path, and record any remaining mismatch as product or docs drift rather than keeping a stale environment block.
 4. Do not weaken the docs just because this machine lacks a prerequisite; only update docs when the product claim itself is wrong, incomplete, or misleading.
 
 ## Live Session Tracker
 
 | Session | Focus | Backend scope on this machine | Status | Latest result |
 |---|---|---|---|---|
-| S1 | Install and startup baseline | no backend dependency; local path available for smoke checks | completed | pass for source-install startup path; GUI opened on Review tab; non-blocking Copilot startup warning observed; packaged installer slice deferred pending artifact |
-| S2 | Backend configuration and health | local runnable; bedrock/kiro/copilot blocked by environment | not started | pending |
-| S3 | Core CLI review flows | run with local backend first | not started | pending |
+| S1 | Install and startup baseline | no backend dependency; packaged and source install paths both available now | completed | pass for source install and packaged installer smoke validation; GUI opened on Review tab; earlier Copilot startup noise was traced and reduced |
+| S2 | Backend configuration and health | all four configured backends are now runnable on this machine | in progress | local, copilot, kiro, and bedrock health checks all pass with explicit low-cost test models; health surfaces are normalized and the Local LLM Settings save/rotate/revoke path is now covered through the real GUI widgets |
+| S3 | Core CLI review flows | run with local backend first | in progress | dry run, preset expansion, patch diff, commit diff, specification-only, and mixed specification review surfaces are now all exercised live; diff-scope widening and mixed-spec prompt loss were both fixed during the audit |
 | S4 | Tool mode and report artifacts | run with local backend first | not started | pending |
 | S5 | GUI core review workflow | run with local backend first | not started | pending |
 | S6 | GUI detach, restore, desktop ergonomics | backend-agnostic after startup | not started | pending |
@@ -394,20 +394,79 @@ That sequence gives the fastest signal on whether the current docs and user-faci
 
 ## Session 1 Working Log
 
-Current status: completed for the source-install baseline; packaged installer slice deferred pending artifact
+Current status: completed for both the source-install baseline and the packaged-installer smoke slice
 
 Observed so far on 2026-05-03:
 
 - Source install step succeeded with `python -m pip install -e ".[gui]"` from the milestone worktree.
 - The install step replaced an older preexisting editable install that still reported `aicodereviewer 0.1.0` in this environment; after reinstall, the imported package version is `0.3.0`.
 - The installed console entrypoint launched successfully with `aicodereviewer.exe --help`.
-- No packaged `AICodeReviewer-Setup-<version>.exe` artifact is present in the current workspace, so the packaged-installer slice cannot be executed from local artifacts yet.
+- A packaged installer artifact was fetched from CI (`AICodeReviewer-Setup-0.3.1.exe`, run `24192855653`) and passed current-user smoke validation.
 - The GUI launch command started from the same editable install without an immediate process crash.
-- GUI startup emitted `SDK Copilot model discovery failed: Missing required fields in ModelCapabilities: supports=None, limits=None` even though Copilot is not a runnable backend on this machine right now.
+- An earlier Copilot startup warning was traced to eager inactive-backend model refresh plus a stale Copilot SDK minimum; the startup path was quiet on rerun after the fix and SDK upgrade.
 - Visible confirmation from the active desktop session showed that the GUI opened normally and landed on the expected Review tab.
-- Current Session 1 classification: `pass` for the documented source-install startup path.
+- Current Session 1 classification: `pass` for the documented source-install startup path and the packaged-installer smoke path.
 
 Follow-up notes:
 
-- The Copilot model-discovery startup warning did not block launch on this machine, but it is worth auditing later to decide whether it should remain in startup logs when Copilot is not a usable backend.
-- The packaged Windows installer portion of Session 1 remains intentionally deferred until we fetch or build a real installer artifact.
+- Installer smoke evidence is stored under `artifacts/manual-installer-validation/20260503-181225/summary.md`.
+- Session 2 should now record backend-specific outcomes rather than treating Copilot and Kiro as environment-blocked on this machine.
+
+## Session 2 Working Log
+
+Current status: backend readiness repaired; health reporting is normalized; Local LLM credential actions and backend-specific Bedrock, Kiro, and Copilot Settings persistence now have real GUI-surface coverage before broader manual GUI and CLI passes
+
+Observed so far on 2026-05-03:
+
+- Local, Bedrock, Kiro, and Copilot all pass current connection and setup checks on this machine with explicit low-cost test models.
+- The GUI health dialog now preserves full remediation sentences when a hint includes a URL and renders the documentation link on its own clickable row.
+- The CLI `--check-connection` path now prints one normalized remediation hint from the shared backend/category mapping instead of appending the older extra `conn.hint_*` block.
+- Focused regression coverage now exists for the health-dialog helper rendering path and for CLI connection-hint fallback behavior.
+- The legacy `conn.hint_*` translation entries were removed after the CLI path stopped referencing them, reducing drift between the CLI and GUI health surfaces.
+- The checked-in example addon now advertises a compatible minimum app version again, so the broader CLI addon-discovery suite no longer fails on the example manifest.
+- The Local LLM Settings surface now has a restart-style GUI workflow regression covering API key save, rotate, replacement save, and revoke behavior with the same widgets and buttons exposed to users.
+- Bedrock model and AWS fields, plus Kiro and Copilot CLI, model, and timeout fields, now also have restart-style GUI workflow coverage that saves in one app instance, reloads `config.ini`, and verifies restored widget state in a fresh app instance.
+- Performance and Processing controls now have matching restart-style GUI workflow coverage for request rate, request interval, max file size, batch size, and `combine_files`, including the config layer's typed persistence contract for bytes, floats, ints, and raw boolean strings.
+- A real GUI failure-path regression now verifies that an invalid numeric Settings value blocks save and keeps unrelated edits off disk across app restart.
+- Real GUI workflow regressions now also cover forced `config.save()` failures and the minimum-one-output-format guard, including confirmation that the on-disk config stays unchanged across restart when either path blocks persistence.
+- A live Settings-surface wording check on this machine found hardcoded English output-format and Reset Defaults copy plus refresh-button hover text; those labels and tooltips now flow through the localized string catalog and render correctly in Japanese on the real app surface.
+- A live detached-Settings pass on this machine now confirms the detached Settings window opens with the expected localized title, retains the backend sections, redocks successfully, and still exposes the backend-specific hover/help text for Bedrock, Kiro, Copilot, and Local LLM fields on the real GUI surface.
+- The focused Session 2 validation baseline has been widened again and remains clean: six Settings GUI workflow regressions, plus `tests/test_settings_actions.py`, `tests/test_config_and_auth.py`, and `tests/test_main_cli.py`, now pass together (`63 passed`).
+
+Follow-up notes:
+
+- Session 2 is now in good shape to hand off; the next active slice is Session 3 core CLI review-flow validation against `examples/sample_project` on the local backend.
+
+## Session 3 Working Log
+
+Current status: Session 3 is underway on the documented sample-project path; the Local backend false-clean path has been fixed, and the security review is being re-exercised on the live CLI flow
+
+Observed so far on 2026-05-03:
+
+- The local backend passes the current CLI connection check on the milestone code path with `qwen/qwen3.5-9b` against `http://localhost:1234`.
+- The documented dry-run command against `D:\Development\Python\AICodeReviewer\examples\sample_project` behaves as expected: it lists all five sample-project files, keeps the selected type at `security`, and confirms that no API call is made.
+- The preset-discovery CLI surface now has live coverage too: `aicodereviewer --list-type-presets` prints the built-in bundle definitions, and `--type runtime_safety --dry-run` expands to `security, error_handling, data_validation, dependency` on the sample project without spending backend time.
+- The first real legacy interactive review run against the same sample project initially ended in a false clean result (`0 issue(s)` / `レビューで問題は見つかりませんでした！`) because the Local `qwen/qwen3.5-9b` path returned reasoning-only output and the reviewer short-circuited to an empty issue list for unsupported files.
+- The reviewer now raises `LocalReasoningOnlyResponseError` when a Local reasoning-only response cannot be backed by deterministic supplements for the current files, and the legacy CLI entrypoint catches that path and exits `1` with the actionable non-thinking-model guidance instead of claiming the review was clean.
+- Mid-run partial fallback now surfaces the same failure class cleanly too: if a combined batch produced some findings but an unrepresented file hits unsupported Local reasoning-only output during the individual retry pass, the reviewer aborts with a file-specific `LocalReasoningOnlyResponseError` instead of just logging the failed retry and returning an incomplete issue set.
+- Focused reviewer validation now passes in the milestone worktree (`tests/test_reviewer.py -k "reasoning_only or partial_fallback_hits_local_reasoning_only_error or shell_command_injection_security_supplement"` → `8 passed`).
+- A second live rerun of the sample-project security review showed the Local backend is non-deterministic on this model: that rerun parsed `11` combined findings, then entered partial per-file fallback and parsed `4` more findings for `utils.py` before continuing on `data_processor.py`.
+- Local backend health/details now includes an explicit `Reasoning Control` row for LM Studio-native and OpenAI-compatible modes so the app states that per-request reasoning on/off is only available on LM Studio native mode and not on LM Studio's OpenAI-compatible chat-completions path.
+- The latest live rerun on the manual-audit config (`api_type=lmstudio`, `reasoning=off`, same `qwen/qwen3.5-9b` model) no longer false-cleans: it parsed `6` issues from the combined batch, entered partial fallback for four unrepresented files, parsed `1` more issue for `data_processor.py`, and then continued on `calculator.py`.
+- The first live interactive prompt was reached and exercised on the local sample-project security review. Confirmed branches so far: `コード表示`, `スキップ`, `AI修正` with explicit apply/cancel prompt, `無視` with free-text reason, and `解決済み` with re-analysis plus a force-resolve confirmation when the issue still reproduces.
+- The interactive `コード表示` output exposed a real file-mapping defect: security findings whose snippets belonged to `user_auth.py` were displayed under `utils.py`, which only contains maintainability examples in the sample project. The root cause was the JSON response parser defaulting unmatched or unreliable finding filenames to the first file in the batch.
+- That path-mapping bug is now patched in the milestone worktree: the parser prefers a unique `code_context` content match across the batch before falling back to the first file, and a focused regression was added in `tests/test_response_parser.py` to cover the `utils.py` versus `user_auth.py` case (`2 passed`).
+- A fresh post-fix rerun now verifies the combined review path rebinding in live logs: six combined findings were explicitly reassigned from `<combined>` to `D:\Development\Python\AICodeReviewer\examples\sample_project\user_auth.py`, and `user_auth.py` no longer appeared in the fallback retry list.
+- A targeted interactive diff-scope rerun against `examples/sample_project/user_auth.py` now confirms the corrected path on the actual prompt surface too: the first rendered issue showed `ファイル: D:\Development\Python\AICodeReviewer\examples\sample_project\user_auth.py` with the SQL injection snippet from `login()`.
+- The documented commit-range diff workflow was also exercised on the milestone branch itself. The dry run correctly narrowed `HEAD~1..HEAD` to `docs/handoffs/milestone-18-manual-feature-audit-plan-2026-05-03.md`, but the first live documentation review widened that same diff to 15 documentation files because the documentation/dependency/license target augmentation path ignored diff-backed scan results. That scope bug is now fixed in the milestone worktree, focused reviewer regressions pass (`2 passed` selected), and a rerun now stays on the single changed handoff file through the interactive prompt surface.
+- The specification-only legacy CLI path is now exercised on the minimal `specification-profile-display-name-contract` fixture too. A real Local run reached the interactive prompt and correctly reported that the implementation returns `name` where the requirements document mandates `display_name`, confirming that spec content is being read and applied on the live path.
+- A mixed `specification,maintainability` legacy CLI run exposed a second prompt bug: on single-file combined reviews the shared user-message builder only attached the specification document when `review_type == "specification"`, so the live mixed run lost the spec text and inverted the contract, claiming the requirements demanded `name`. That bug is now fixed in the milestone worktree, a focused prompt-builder regression passes, and the rerun again reaches the interactive prompt with the correct `display_name` mismatch on-screen while still reporting `1 ファイル × 2 レビュータイプ`.
+- The `AI修正` preview defect was traced to the shared fix prompt path. `get_fix()` was calling `_build_system_prompt("fix", lang)`, but the shared system-prompt builder still appended the review JSON schema even for fix mode. That made the Local backend return a review-style JSON payload and the fixer accepted it as whole-file replacement content.
+- The AI-fix root cause is now patched in the milestone worktree: fix mode uses a dedicated full-file code-only system prompt, and `generate_ai_fix_result()` now rejects review-shaped JSON payloads instead of treating them as valid replacement content. Focused regressions now pass in `tests/test_fixer.py` and `tests/test_local_llm.py` (`5 passed` selected).
+- A live Local backend fix probe against `examples/sample_project/user_auth.py` now returns code-like full-file content rather than JSON review output (`HAS_RESULT True`, `STARTS_WITH_JSON False`); the preview began with the module docstring and updated imports instead of a review envelope.
+- The direct full-file Local fix probe remains semantically mixed: it is syntactically valid and removes MD5 usage, but it over-fixes unrelated vulnerabilities, adds an unused `os` import, changes pickle-backed data loading to JSON semantics, and rewrites `check_admin()` into a placeholder that effectively always returns `False`.
+- The interactive `AI修正` preview on the rendered SQL injection finding is materially better than that raw full-file probe. On the same prompt surface it produced a focused patch that parameterized the vulnerable `login()` query and aligned `get_password()` to the same placeholder style without returning review JSON; the preview was declined rather than applied so the sample project stayed unchanged.
+
+Follow-up notes:
+
+- Session 3 now has enough live coverage to fold the verified behaviors back into `docs/cli.md` and `docs/user-manual.md`; the next active slice can move to Session 4 tool-mode/report-artifact coverage.
