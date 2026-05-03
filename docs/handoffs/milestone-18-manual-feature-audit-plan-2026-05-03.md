@@ -37,7 +37,7 @@ Backend-specific execution rule for this milestone:
 
 | Session | Focus | Backend scope on this machine | Status | Latest result |
 |---|---|---|---|---|
-| S1 | Install and startup baseline | no backend dependency; local path available for smoke checks | in progress | source install passed; CLI help passed; GUI visible confirmation pending; startup logged Copilot model-discovery failure; packaged installer artifact not present locally |
+| S1 | Install and startup baseline | no backend dependency; local path available for smoke checks | completed | pass for source-install startup path; GUI opened on Review tab; non-blocking Copilot startup warning observed; packaged installer slice deferred pending artifact |
 | S2 | Backend configuration and health | local runnable; bedrock/kiro/copilot blocked by environment | not started | pending |
 | S3 | Core CLI review flows | run with local backend first | not started | pending |
 | S4 | Tool mode and report artifacts | run with local backend first | not started | pending |
@@ -394,7 +394,7 @@ That sequence gives the fastest signal on whether the current docs and user-faci
 
 ## Session 1 Working Log
 
-Current status: in progress
+Current status: completed for the source-install baseline; packaged installer slice deferred pending artifact
 
 Observed so far on 2026-05-03:
 
@@ -404,10 +404,10 @@ Observed so far on 2026-05-03:
 - No packaged `AICodeReviewer-Setup-<version>.exe` artifact is present in the current workspace, so the packaged-installer slice cannot be executed from local artifacts yet.
 - The GUI launch command started from the same editable install without an immediate process crash.
 - GUI startup emitted `SDK Copilot model discovery failed: Missing required fields in ModelCapabilities: supports=None, limits=None` even though Copilot is not a runnable backend on this machine right now.
-- Visible confirmation from the active desktop session is still required to decide whether that startup diagnostic is only noisy logging or a user-visible Session 1 defect.
+- Visible confirmation from the active desktop session showed that the GUI opened normally and landed on the expected Review tab.
+- Current Session 1 classification: `pass` for the documented source-install startup path.
 
-Pending Session 1 confirmations:
+Follow-up notes:
 
-- confirm the GUI window opened normally
-- confirm the initial startup surface matches the current docs closely enough for a `pass` or identify the first visible drift
-- decide whether to fetch or build a packaged installer artifact later in the milestone or record that slice as pending-artifact for now
+- The Copilot model-discovery startup warning did not block launch on this machine, but it is worth auditing later to decide whether it should remain in startup logs when Copilot is not a usable backend.
+- The packaged Windows installer portion of Session 1 remains intentionally deferred until we fetch or build a real installer artifact.
