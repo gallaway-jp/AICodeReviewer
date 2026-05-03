@@ -307,7 +307,13 @@ class BenchmarkTabMixin:
 
         benchmark_root_tab = getattr(self, "benchmark_root_tab", None)
         if benchmark_root_tab is None:
-            return
+            try:
+                self._build_tab_if_needed(t("gui.tab.benchmarks"))
+            except Exception:
+                return
+            benchmark_root_tab = getattr(self, "benchmark_root_tab", None)
+            if benchmark_root_tab is None:
+                return
 
         state = self._snapshot_benchmark_surface_state()
         detached_window = ctk.CTkToplevel(self)

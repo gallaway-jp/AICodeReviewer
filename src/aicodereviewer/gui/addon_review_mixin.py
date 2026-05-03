@@ -173,7 +173,13 @@ class AddonReviewTabMixin:
 
         root_tab = getattr(self, "addon_review_root_tab", None)
         if root_tab is None:
-            return
+            try:
+                self._build_tab_if_needed(t("gui.tab.addon_review"))
+            except Exception:
+                return
+            root_tab = getattr(self, "addon_review_root_tab", None)
+            if root_tab is None:
+                return
 
         state = self._snapshot_addon_review_surface_state()
         detached_window = ctk.CTkToplevel(self)

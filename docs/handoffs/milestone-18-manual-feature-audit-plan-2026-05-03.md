@@ -41,8 +41,8 @@ Backend-specific execution rule for this milestone:
 | S2 | Backend configuration and health | all four configured backends are now runnable on this machine | in progress | local, copilot, kiro, and bedrock health checks all pass with explicit low-cost test models; health surfaces are normalized and the Local LLM Settings save/rotate/revoke path is now covered through the real GUI widgets |
 | S3 | Core CLI review flows | run with local backend first | in progress | dry run, preset expansion, patch diff, commit diff, specification-only, and mixed specification review surfaces are now all exercised live; diff-scope widening and mixed-spec prompt loss were both fixed during the audit |
 | S4 | Tool mode and report artifacts | run with local backend first | completed | local tool-mode review, health, resume, fix-plan, apply-fixes, and cancellation envelopes are exercised end to end on an isolated fixture; LM Studio model advertisement parsing and specification dry-run spec loading were fixed during the pass |
-| S5 | GUI core review workflow | run with local backend first | in progress | harness-backed review/results/session/fix flows and Review-tab diff-filter controls are now exercised; live desktop-only Output Log actions and multi-backend GUI health wording still need a manual pass |
-| S6 | GUI detach, restore, desktop ergonomics | backend-agnostic after startup | not started | pending |
+| S5 | GUI core review workflow | run with local backend first | in progress | Output Log save/clear/filter and GUI health-dialog wording now have live desktop evidence on an isolated app instance; queue-panel visibility under scheduler-backed execution remains the main uncovered GUI-core surface |
+| S6 | GUI detach, restore, desktop ergonomics | backend-agnostic after startup | in progress | detach/redock and restart-restore regressions are now green, and lazy detached-window restore for Benchmarks and Addon Review was fixed during the pass |
 | S7 | Addons and generated addon review | mostly backend-agnostic; use local only if generation path is exercised | not started | pending |
 | S8 | Benchmarks and quality tooling | local preferred; others blocked unless setup changes | not started | pending |
 | S9 | Local HTTP and shared scheduler | local backend path is the primary runnable slice | not started | pending |
@@ -495,7 +495,7 @@ Follow-up notes:
 
 ## Session 5 Working Log
 
-Current status: underway with harness-backed coverage for the main GUI review/results/session/fix flow; the next live-only pass still needs to cover Output Log actions and GUI health wording against the full configured backend set
+Current status: underway with both harness-backed and live desktop evidence for the main GUI review/results/session/fix flow; the remaining GUI-core gap is scheduler-backed queue visibility on the real desktop surface
 
 Observed so far on 2026-05-04:
 
@@ -505,8 +505,27 @@ Observed so far on 2026-05-04:
 - A second focused GUI workflow slice now also passes on the milestone worktree: `tests/test_gui_workflows.py -k "results_filters_match_visible_issue_cards or ai_fix_preview_edit_save_applies_user_edited_fix or ai_fix_preview_save_and_close_stages_edited_content_until_apply or session_can_be_saved_and_loaded_into_a_fresh_app"` completed with `4 passed` selected.
 - That slice verifies Results-tab filters, session save/load into a fresh app instance, AI Fix preview/edit/apply for user-edited content, and the staged-edit behavior where `Save and Close` does not write the file until `Apply Selected Fixes` runs.
 - Review-tab diff-filter controls also now have a fresh verification pass through the GUI smoke suite: `tests/test_gui_smoke.py -k "diff_filter_frame_exists or browse_diff_filter_noop or enable_diff_filter or disable_diff_filter"` completed with `4 passed` selected.
+- Live desktop evidence now exists for the Output Log surface outside the pytest harness. An isolated runtime probe at `artifacts/manual-session5/gui-live-probe.json` exercised real CTk widgets against a temp copy of the current `config.ini`, confirmed log-level filtering (`All` to `WARNING`), main-log save, detached-log save, and clear-log behavior, and left the real GUI config untouched.
+- The same isolated runtime probe also captured GUI health-dialog wording for the configured backends on this machine. The local dialog rendered a passing summary; Copilot surfaced a blocked CLI diagnostic against the stale Winget-installed stub path with the expected remediation hint row; Kiro and Bedrock both rendered passing prerequisite dialogs. This closes the earlier Session 5 gap around GUI health wording with actual desktop dialog content rather than CLI output alone.
+- Supporting desktop screenshots were captured into `artifacts/manual-session5/live-log-tab.png` and `artifacts/manual-session5/live-benchmark-detached.png`. The log screenshot matches the documented Output Log layout, and the detached benchmark screenshot shows the expected main-window placeholder plus `Focus Window` and `Redock` actions.
 - The repository includes a real interactive GUI harness at `tools/manual_test_gui.py`, but on this machine it is still a manual launcher only (`--lang`, `--theme`) rather than a scripted desktop driver, so the remaining GUI-only checks still need explicit human interaction or a dedicated automation shim.
 
 Follow-up notes:
 
-- Session 5 is no longer blocked on core review/results/fix/session regressions, but it is not complete yet. The next pass should focus on live desktop-only behaviors that the current harness tests do not exercise directly: Output Log save/clear/filter actions, GUI health-check wording for the non-local configured backends, queue-panel visibility under scheduler-backed execution, and any wording drift observed in the actual desktop surfaces.
+- Session 5 is no longer blocked on Output Log or health-dialog coverage. The next pass should focus on scheduler-backed queue visibility in the real desktop app and any wording drift that appears only during a fully manual end-to-end review run.
+
+## Session 6 Working Log
+
+Current status: underway with focused regression coverage plus live detached-window evidence; the remaining desktop ergonomics work is status-bar detach behavior, startup presentation polish, and mixed-DPI validation on this machine
+
+Observed so far on 2026-05-04:
+
+- Focused detachable-window coverage now exists for all four supported pages on the milestone worktree: `tests/test_gui_workflows.py -k "log_tab_detach_and_redock_keeps_log_state_synced or settings_tab_detach_and_redock_preserves_unsaved_state or addon_review_tab_detach_and_redock_preserves_loaded_state or benchmark_tab_detach_and_redock_preserves_loaded_state or detachable_pages_support_keyboard_shortcuts_for_open_and_redock or log_tab_detached_window_restores_after_restart or four_detached_pages_restore_after_restart"` completed with `7 passed` selected after the fixes below.
+- This Session 6 pass exposed a real restart-restore product defect: detached-window restore ran before lazily built Benchmarks and Addon Review tabs existed, so `restore_detached_windows()` persisted those pages in `gui.detached_pages` but silently failed to recreate their detached windows on the next app start.
+- That restart-restore defect is now patched in the milestone worktree. The Benchmarks and Addon Review detached-window open paths now build their lazy tabs on demand before restoring the detached surface, and the originally failing `test_four_detached_pages_restore_after_restart` now passes on rerun.
+- Live desktop evidence for the detached-window experience now exists under `artifacts/manual-session5/`. The screenshot `live-benchmark-detached.png` shows the shipped placeholder state in the main window while Benchmarks is detached, including the `Focus Window` and `Redock` actions documented in `docs/gui.md`.
+- The isolated runtime probe at `artifacts/manual-session5/gui-live-probe.json` also now exercises detached-page persistence outside the pytest harness. It detached Log, Settings, Benchmarks, and Addon Review on a temp config, recreated the app, and recorded all four restored detached windows under `detach_restore.restored_windows`.
+
+Follow-up notes:
+
+- Session 6 is not complete yet. The next pass should still cover the shared status-bar detach action on a live desktop surface, startup presentation behavior around reopened detached windows, and mixed-DPI monitor-move validation with and without `gui.automatic_dpi_awareness` where feasible.
