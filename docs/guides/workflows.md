@@ -7,6 +7,11 @@ Quick, step-by-step walkthroughs for the most common tasks. Each guide is intent
 - [First CLI Review](getting-started/first-cli-review.md) — run your first end-to-end review from the terminal.
 - [First GUI Session](getting-started/first-gui-session.md) — set up and run a review in the desktop app.
 
+## Continue In The Desktop App
+
+- [AI Fix Workflow](gui/ai-fix-workflow.md) — generate, review, and apply staged edits for selected findings.
+- [Restore A Session And Finalize](gui/restore-session-and-finalize.md) — reload a saved Results session and finish the report later.
+
 ## Review Targeted Changes
 
 - [Diff Review Workflow](reviews/diff-review-workflow.md) — review a commit range or patch file without scanning the whole project.

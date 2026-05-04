@@ -69,5 +69,5 @@ Useful companion workflows:
 - [User Manual](../../user-manual.md)
 - [GUI Guide](../../gui.md)
 - [Backend Guide](../../backends.md)
-- [AI Fix Workflow](../../user-manual.md#ai-fix-workflow)
-- [Restore A Session And Finalize](../../user-manual.md#restore-a-session-and-finalize)
+- [AI Fix Workflow](../gui/ai-fix-workflow.md)
+- [Restore A Session And Finalize](../gui/restore-session-and-finalize.md)

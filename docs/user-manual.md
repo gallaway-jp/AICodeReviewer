@@ -17,8 +17,8 @@ Start here based on what you want to do:
 - Review a generated addon preview in the desktop app: go to [Addon Review Workflow](#addon-review-workflow)
 - Generate benchmark summaries for later comparison: go to [Benchmark Runner Workflow](#benchmark-runner-workflow)
 - Create or update a benchmark fixture: go to [Benchmark Authoring Workflow](#benchmark-authoring-workflow)
-- Generate, inspect, and apply AI fixes in the GUI: go to [AI Fix Workflow](#ai-fix-workflow)
-- Save a session, come back later, and finalize reports: go to [Restore A Session And Finalize](#restore-a-session-and-finalize)
+- Generate, inspect, and apply AI fixes in the GUI: go to [AI Fix Workflow](guides/gui/ai-fix-workflow.md)
+- Save a session, come back later, and finalize reports: go to [Restore A Session And Finalize](guides/gui/restore-session-and-finalize.md)
 - Compare benchmark runs and triage differences: go to [Benchmark Compare Workflow](#benchmark-compare-workflow)
 - Automate reviews or AI-fix workflows: go to [Tool Automation](#tool-automation)
 - Build a simple addon: go to [Build A Basic Addon](guides/addons/build-basic-addon.md)
@@ -33,6 +33,8 @@ If you prefer step-by-step walkthroughs, see [Guided Workflows](guides/workflows
 - Diff Review Workflow
 - Specification Review Workflow
 - First GUI Session
+- AI Fix Workflow
+- Restore A Session And Finalize
 - Local HTTP Workflow (API-driven reviews)
 - Build A Basic Addon
 
@@ -254,32 +256,10 @@ Use [First GUI Session](guides/getting-started/first-gui-session.md) for the ste
 
 That guide covers:
 
-<<<<<<< HEAD
-### Results workflow
-
-![Results tab screenshot](images/gui-results-tab.png)
-
-After a review completes:
-
-1. Use overview cards and filters to prioritize findings.
-2. Open issue details.
-3. Use AI Fix mode when you want generated edits.
-4. Save a session if you want to return later.
-5. Finalize reports from the current active or restored session.
-
-Useful companion workflows:
-
-- while one review is already running, use the inline queue panel to inspect the active plus queued submissions, target a specific queued item, and cancel it without losing the visible queue state
-- detach Addon Review, Benchmarks, Settings, or Output Log into their own windows when you want a multi-window layout
-- use the shared status-bar window action when you want the current detachable page to open or refocus without hunting for the tab-local button
-- pin a preferred review-type bundle if you repeat the same startup selection often
-- use Benchmarks to compare saved benchmark runs if you are tuning prompts, models, or review bundles
-=======
 - launching the desktop app
 - setting up a first review from the Review tab
 - triaging findings in the Results tab
 - using AI Fix, session save/load, and report finalization in the same workflow
->>>>>>> feature/gui-perf-followup
 
 Use [GUI Guide](gui.md) for the full tab-by-tab flow.
 
@@ -478,59 +458,27 @@ Use [Quality Benchmarks](benchmarks.md) when you need fixture catalog and runner
 
 ## AI Fix Workflow
 
-Use this path when you want the desktop app to generate and stage proposed edits for selected findings.
+Use [AI Fix Workflow](guides/gui/ai-fix-workflow.md) for the step-by-step walkthrough.
 
-![AI Fix mode screenshot](images/gui-ai-fix-mode.png)
+That guide covers:
 
-1. Complete a review and move to the Results tab.
-2. Filter or inspect issue cards until you find the findings you want to address.
-3. Enter AI Fix mode for one issue or a batch of issues.
-4. Wait for generated proposals to appear.
-5. Review the staged preview carefully.
-6. Edit the proposed content if needed.
-7. Apply the selected fixes.
+- entering AI Fix mode from the Results tab
+- reviewing staged edits before anything is written
+- editing or skipping proposals that are not ready to apply
+- applying selected fixes and continuing triage or finalization later
 
-Important behavior:
-
-- generated edits are previewed before they are written
-- preview edits stay staged until you choose `Apply Selected Fixes`
-- fix failures can be surfaced as issue state and should be reviewed before retrying
-- the final report can reflect whether a fix was suggested by AI and whether the applied result was edited before write
-
-Use this workflow when you want assistance with straightforward remediations but still need a human check before the file changes land.
+Use [GUI Guide](gui.md) for the broader Results-tab and desktop-surface reference.
 
 ## Restore A Session And Finalize
 
-Use this path when you want to pause triage and come back later without rerunning the original review.
+Use [Restore A Session And Finalize](guides/gui/restore-session-and-finalize.md) for the step-by-step walkthrough.
 
-### Save and restore
+That guide covers:
 
-1. Run a review in the GUI.
-2. Use the Results tab to save the current session to JSON.
-3. Later, load that session back into the Results tab.
-
-What restore gives you:
-
-- the issue list returns without rerunning the backend
-- issue-level provenance such as AI suggestion and applied-fix details is restored when it was present
-- finalize-ready report metadata is restored with the session so you can continue toward final output
-
-What restore does not do:
-
-- it does not reconnect a live backend client
-- it does not rerun the original scan or review
-
-### Finalize reports from a restored session
-
-1. Load the saved session.
-2. Continue triage, status edits, or AI-fix review as needed.
-3. Finalize the report from the Results workflow when the issue list is ready.
-
-Important behavior:
-
-- finalize uses the issue list currently visible in Results, not an older copy from when the session was first saved
-- if a session has no deferred report metadata, finalize is unavailable
-- restoring a valid session is enough to rebuild report output without rerunning the review request
+- saving a Results session before you pause
+- restoring a saved session without rerunning the backend
+- continuing triage or AI-fix review from the restored state
+- finalizing the report from the current Results state
 
 Use [Reports and Outputs](reports.md) if you need more detail on report formats or provenance fields.
 
@@ -611,89 +559,9 @@ Use [Addons Guide](addons.md) for the full system contract and [Addon Manifest R
 
 ## Local HTTP Workflow
 
-<<<<<<< HEAD
-Use this path when another local tool should submit reviews or read queue state over HTTP.
-
-Start the API explicitly:
-
-```bash
-aicodereviewer serve-api --backend local --host 127.0.0.1 --port 8765
-```
-
-Omit `--backend` when you want the API to use the backend already configured in `config.ini`.
-
-Or enable the embedded loopback API from desktop Settings and restart the GUI.
-
-Typical workflow:
-
-1. Inspect metadata routes such as `/api/backends` and `/api/review-types`.
-2. Optionally request a recommended review bundle from `/api/recommendations/review-types`.
-3. Submit a review job with `POST /api/jobs`.
-4. Observe progress with `/api/events` or `/api/jobs/{job_id}/events`.
-5. Fetch reports or artifacts when the job completes.
-
-### Concrete submit, stream, and fetch example
-
-1. Start the API.
-
-```bash
-aicodereviewer serve-api --backend local --host 127.0.0.1 --port 8765
-```
-
-2. Submit a review job that writes a report inside the project root.
-
-```bash
-curl -X POST http://127.0.0.1:8765/api/jobs \
-	-H "Content-Type: application/json" \
-	-d '{
-		"path": ".",
-		"scope": "project",
-		"review_types": ["security"],
-		"target_lang": "en",
-		"backend_name": "local",
-		"dry_run": false,
-		"output_file": "review_report.json"
-	}'
-```
-
-3. Copy the returned `job_id` into a shell variable.
-
-```bash
-JOB_ID="<returned job_id>"
-```
-
-4. Stream job events while the review runs.
-
-```bash
-curl -N "http://127.0.0.1:8765/api/jobs/${JOB_ID}/events?after=0&heartbeat=5"
-```
-
-Typical event kinds include state changes and a final result-available event.
-
-5. Fetch the finished report once the job completes.
-
-```bash
-curl "http://127.0.0.1:8765/api/jobs/${JOB_ID}/report"
-```
-
-6. If you need the generated file payload itself, inspect artifacts and then download the raw artifact.
-
-```bash
-curl "http://127.0.0.1:8765/api/jobs/${JOB_ID}/artifacts"
-curl "http://127.0.0.1:8765/api/jobs/${JOB_ID}/artifacts/report_primary/raw" --output report.json
-```
-
-Important rules:
-
-- `output_file` must stay inside the requested review root or current workspace root
-- for a quick event backlog instead of an open stream, use `timeout=0`
-- the embedded GUI-started API and CLI-started API expose the same route surface
-- job submission, report fetches, and artifact access emit entries on the dedicated local API audit logger
-=======
 Use [Local HTTP Workflow](guides/automation/local-http-review-workflow.md) for the step-by-step walkthrough.
 
 That guide covers:
->>>>>>> feature/gui-perf-followup
 
 - starting the local API server
 - submitting a review via HTTP
