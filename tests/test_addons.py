@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from aicodereviewer import __version__
 from aicodereviewer.addons import (
     AddonEditorDiagnostic,
     AddonUIContributorSpec,
@@ -49,7 +50,7 @@ def test_load_addon_manifest_resolves_review_pack_entry_points(tmp_path: Path) -
             "id": "secure-defaults-addon",
             "version": "1.0.0",
             "name": "Secure Defaults Addon",
-            "compatibility": {"min_app_version": "2.0.0"},
+            "compatibility": {"min_app_version": __version__},
             "permissions": ["review_definitions"],
             "entry_points": {
                 "review_packs": ["review-pack.json"],

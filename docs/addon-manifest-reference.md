@@ -60,6 +60,7 @@ Optional object with these keys:
 - `max_app_version`
 
 If present, compatibility bounds are validated before activation.
+Set `min_app_version` to the first AICodeReviewer release your addon actually requires.
 
 ### `entry_points`
 
@@ -90,7 +91,7 @@ Example:
   "version": "1.0.0",
   "name": "Secure Defaults Addon",
   "compatibility": {
-    "min_app_version": "2.0.0"
+    "min_app_version": "0.4.0"
   },
   "permissions": [
     "review_definitions"
@@ -138,7 +139,7 @@ Example:
   "version": "1.0.0",
   "name": "Echo Backend Addon",
   "compatibility": {
-    "min_app_version": "2.0.0"
+    "min_app_version": "0.4.0"
   },
   "permissions": [
     "backend_providers",
@@ -245,7 +246,7 @@ Example:
   "version": "1.0.0",
   "name": "Editor Hook Addon",
   "compatibility": {
-    "min_app_version": "2.0.0"
+    "min_app_version": "0.4.0"
   },
   "permissions": [
     "ui_contributors"
