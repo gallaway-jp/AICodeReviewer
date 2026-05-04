@@ -126,4 +126,4 @@ This endpoint does not create a job. It only returns the suggested review bundle
 - [HTTP API Guide](http-api.md)
 - [Local HTTP Quick Reference](local-http-quick-reference.md)
 - [Configuration Reference](configuration.md)
-- [User Manual](user-manual.md#local-http-workflow)
+- [Local HTTP Workflow](guides/automation/local-http-review-workflow.md)
