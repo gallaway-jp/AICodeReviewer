@@ -450,6 +450,11 @@ def _build_tool_parser() -> argparse.ArgumentParser:
         "serve-api",
         help="Run the local HTTP API service",
     )
+    serve_api_parser.add_argument(
+        "--backend",
+        choices=get_backend_choices(),
+        default=None,
+    )
     serve_api_parser.add_argument("--host", default="127.0.0.1", metavar="HOST")
     serve_api_parser.add_argument("--port", type=int, default=8765, metavar="PORT")
     serve_api_parser.add_argument("--max-concurrent-jobs", type=int, default=1, metavar="COUNT")

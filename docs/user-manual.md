@@ -725,8 +725,10 @@ Use this path when another local tool should submit reviews or read queue state 
 Start the API explicitly:
 
 ```bash
-aicodereviewer serve-api --host 127.0.0.1 --port 8765
+aicodereviewer serve-api --backend local --host 127.0.0.1 --port 8765
 ```
+
+Omit `--backend` when you want the API to use the backend already configured in `config.ini`.
 
 Or enable the embedded loopback API from desktop Settings and restart the GUI.
 
@@ -743,7 +745,7 @@ Typical workflow:
 1. Start the API.
 
 ```bash
-aicodereviewer serve-api --host 127.0.0.1 --port 8765
+aicodereviewer serve-api --backend local --host 127.0.0.1 --port 8765
 ```
 
 2. Submit a review job that writes a report inside the project root.
@@ -794,6 +796,7 @@ Important rules:
 - `output_file` must stay inside the requested review root or current workspace root
 - for a quick event backlog instead of an open stream, use `timeout=0`
 - the embedded GUI-started API and CLI-started API expose the same route surface
+- job submission, report fetches, and artifact access emit entries on the dedicated local API audit logger
 
 Use [HTTP API Guide](http-api.md) for route and payload details.
 

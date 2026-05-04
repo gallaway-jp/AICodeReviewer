@@ -1,0 +1,768 @@
+{
+  "config_source": "D:\\Development\\Python\\AICodeReviewer-manual-audit\\config.ini",
+  "temp_config": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-cli-http-w9oe6ul_\\config.ini",
+  "base_url": "http://127.0.0.1:57295",
+  "project_root": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-cli-http-w9oe6ul_\\probe-project",
+  "report_output_file": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-cli-http-w9oe6ul_\\probe-project\\cli-api-report.json",
+  "server_command": [
+    "D:\\Development\\Python\\AICodeReviewer\\.venv\\Scripts\\python.exe",
+    "-m",
+    "aicodereviewer",
+    "serve-api",
+    "--backend",
+    "local",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "57295"
+  ],
+  "server_ready": true,
+  "metadata": {
+    "backends_status": 200,
+    "backends_payload": {
+      "items": [
+        {
+          "key": "bedrock",
+          "display_name": "AWS Bedrock",
+          "aliases": [
+            "aws",
+            "aws-bedrock",
+            "bedrock-runtime"
+          ],
+          "capabilities": []
+        },
+        {
+          "key": "kiro",
+          "display_name": "Kiro CLI",
+          "aliases": [
+            "kiro-cli"
+          ],
+          "capabilities": []
+        },
+        {
+          "key": "copilot",
+          "display_name": "GitHub Copilot CLI",
+          "aliases": [
+            "github-copilot",
+            "copilot-cli"
+          ],
+          "capabilities": [
+            "tool_file_access"
+          ]
+        },
+        {
+          "key": "local",
+          "display_name": "Local LLM",
+          "aliases": [
+            "local-llm",
+            "local-llm-server",
+            "local-llm-backend",
+            "local-llm-api"
+          ],
+          "capabilities": []
+        }
+      ]
+    },
+    "review_types_status": 200,
+    "review_types_payload": {
+      "items": [
+        {
+          "key": "security",
+          "label": "Security Audit",
+          "group": "Quality",
+          "summary_key": "review_type_desc.security",
+          "selectable": true,
+          "parent_key": null,
+          "aliases": [],
+          "requires_spec_content": false
+        },
+        {
+          "key": "performance",
+          "label": "Performance",
+          "group": "Quality",
+          "summary_key": "review_type_desc.performance",
+          "selectable": true,
+          "parent_key": null,
+          "aliases": [],
+          "requires_spec_content": false
+        },
+        {
+          "key": "best_practices",
+          "label": "Best Practices",
+          "group": "Quality",
+          "summary_key": "review_type_desc.best_practices",
+          "selectable": true,
+          "parent_key": null,
+          "aliases": [],
+          "requires_spec_content": false
+        },
+        {
+          "key": "maintainability",
+          "label": "Maintainability",
+          "group": "Quality",
+          "summary_key": "review_type_desc.maintainability",
+          "selectable": true,
+          "parent_key": null,
+          "aliases": [],
+          "requires_spec_content": false
+        },
+        {
+          "key": "dead_code",
+          "label": "Dead Code",
+          "group": "Quality",
+          "summary_key": "review_type_desc.dead_code",
+          "selectable": true,
+          "parent_key": null,
+          "aliases": [],
+          "requires_spec_content": false
+        },
+        {
+          "key": "documentation",
+          "label": "Documentation",
+          "group": "Quality",
+          "summary_key": "review_type_desc.documentation",
+          "selectable": true,
+          "parent_key": null,
+          "aliases": [],
+          "requires_spec_content": false
+        },
+        {
+          "key": "testing",
+          "label": "Testing",
+          "group": "Quality",
+          "summary_key": "review_type_desc.testing",
+          "selectable": true,
+          "parent_key": null,
+          "aliases": [],
+          "requires_spec_content": false
+        },
+        {
+          "key": "accessibility",
+          "label": "Accessibility",
+          "group": "Compliance",
+          "summary_key": "review_type_desc.accessibility",
+          "selectable": true,
+          "parent_key": null,
+          "aliases": [],
+          "requires_spec_content": false
+        },
+        {
+          "key": "scalability",
+          "label": "Scalability",
+          "group": "Architecture",
+          "summary_key": "review_type_desc.scalability",
+          "selectable": true,
+          "parent_key": null,
+          "aliases": [],
+          "requires_spec_content": false
+        },
+        {
+          "key": "compatibility",
+          "label": "Compatibility",
+          "group": "Architecture",
+          "summary_key": "review_type_desc.compatibility",
+          "selectable": true,
+          "parent_key": null,
+          "aliases": [],
+          "requires_spec_content": false
+        },
+        {
+          "key": "error_handling",
+          "label": "Error Handling",
+          "group": "Quality",
+          "summary_key": "review_type_desc.error_handling",
+          "selectable": true,
+          "parent_key": null,
+          "aliases": [],
+          "requires_spec_content": false
+        },
+        {
+          "key": "complexity",
+          "label": "Complexity Analysis",
+          "group": "Quality",
+          "summary_key": "review_type_desc.complexity",
+          "selectable": true,
+          "parent_key": null,
+          "aliases": [],
+          "requires_spec_content": false
+        },
+        {
+          "key": "architecture",
+          "label": "Architecture",
+          "group": "Architecture",
+          "summary_key": "review_type_desc.architecture",
+          "selectable": true,
+          "parent_key": null,
+          "aliases": [],
+          "requires_spec_content": false
+        },
+        {
+          "key": "license",
+          "label": "License Compliance",
+          "group": "Compliance",
+          "summary_key": "review_type_desc.license",
+          "selectable": true,
+          "parent_key": null,
+          "aliases": [],
+          "requires_spec_content": false
+        },
+        {
+          "key": "localization",
+          "label": "Localization / i18n",
+          "group": "Compliance",
+          "summary_key": "review_type_desc.localization",
+          "selectable": true,
+          "parent_key": null,
+          "aliases": [
+            "i18n"
+          ],
+          "requires_spec_content": false
+        },
+        {
+          "key": "specification",
+          "label": "Specification Match",
+          "group": "Compliance",
+          "summary_key": "review_type_desc.specification",
+          "selectable": true,
+          "parent_key": null,
+          "aliases": [
+            "spec"
+          ],
+          "requires_spec_content": true
+        },
+        {
+          "key": "dependency",
+          "label": "Dependency Analysis",
+          "group": "Architecture",
+          "summary_key": "review_type_desc.dependency",
+          "selectable": true,
+          "parent_key": null,
+          "aliases": [],
+          "requires_spec_content": false
+        },
+        {
+          "key": "concurrency",
+          "label": "Concurrency Safety",
+          "group": "Quality",
+          "summary_key": "review_type_desc.concurrency",
+          "selectable": true,
+          "parent_key": null,
+          "aliases": [],
+          "requires_spec_content": false
+        },
+        {
+          "key": "api_design",
+          "label": "API Design",
+          "group": "Architecture",
+          "summary_key": "review_type_desc.api_design",
+          "selectable": true,
+          "parent_key": null,
+          "aliases": [],
+          "requires_spec_content": false
+        },
+        {
+          "key": "data_validation",
+          "label": "Data Validation",
+          "group": "Quality",
+          "summary_key": "review_type_desc.data_validation",
+          "selectable": true,
+          "parent_key": null,
+          "aliases": [],
+          "requires_spec_content": false
+        },
+        {
+          "key": "regression",
+          "label": "Regression Analysis",
+          "group": "Quality",
+          "summary_key": "review_type_desc.regression",
+          "selectable": true,
+          "parent_key": null,
+          "aliases": [],
+          "requires_spec_content": false
+        },
+        {
+          "key": "ui_ux",
+          "label": "UI/UX Review",
+          "group": "Quality",
+          "summary_key": "review_type_desc.ui_ux",
+          "selectable": true,
+          "parent_key": null,
+          "aliases": [],
+          "requires_spec_content": false
+        },
+        {
+          "key": "fix",
+          "label": "Fix",
+          "group": "Internal",
+          "summary_key": "",
+          "selectable": false,
+          "parent_key": null,
+          "aliases": [],
+          "requires_spec_content": false
+        },
+        {
+          "key": "interaction_analysis",
+          "label": "Interaction Analysis",
+          "group": "Internal",
+          "summary_key": "",
+          "selectable": false,
+          "parent_key": null,
+          "aliases": [],
+          "requires_spec_content": false
+        },
+        {
+          "key": "architectural_review",
+          "label": "Architectural Review",
+          "group": "Internal",
+          "summary_key": "",
+          "selectable": false,
+          "parent_key": "architecture",
+          "aliases": [],
+          "requires_spec_content": false
+        }
+      ]
+    },
+    "review_presets_status": 200,
+    "review_presets_payload": {
+      "items": [
+        {
+          "key": "runtime_safety",
+          "label": "ランタイム安全性",
+          "group": "リスクと耐障害性",
+          "summary": "セキュリティ、障害時の挙動、入力検証、依存関係リスクをまとめて確認します。",
+          "aliases": [],
+          "review_types": [
+            "security",
+            "error_handling",
+            "data_validation",
+            "dependency"
+          ]
+        },
+        {
+          "key": "code_health",
+          "label": "コード健全性",
+          "group": "コード品質",
+          "summary": "保守性、不要コード、複雑さ、回帰リスクをまとめて確認します。",
+          "aliases": [],
+          "review_types": [
+            "best_practices",
+            "maintainability",
+            "dead_code",
+            "complexity",
+            "regression"
+          ]
+        },
+        {
+          "key": "interface_platform",
+          "label": "インターフェースとプラットフォーム",
+          "group": "表面領域カバレッジ",
+          "summary": "API品質、互換性、構造境界、スケーリング圧力をまとめて確認します。",
+          "aliases": [],
+          "review_types": [
+            "api_design",
+            "compatibility",
+            "architecture",
+            "scalability"
+          ]
+        },
+        {
+          "key": "product_surface",
+          "label": "プロダクト表面品質",
+          "group": "表面領域カバレッジ",
+          "summary": "使いやすさ、アクセシビリティ、ローカライズ、ドキュメント品質をまとめて確認します。",
+          "aliases": [],
+          "review_types": [
+            "ui_ux",
+            "accessibility",
+            "localization",
+            "documentation"
+          ]
+        },
+        {
+          "key": "release_safety",
+          "label": "リリース安全性",
+          "group": "リスクと耐障害性",
+          "summary": "テスト、回帰、エラー処理、互換性を出荷前に重点確認します。",
+          "aliases": [],
+          "review_types": [
+            "testing",
+            "regression",
+            "error_handling",
+            "compatibility"
+          ]
+        }
+      ]
+    },
+    "recommendations_status": 200,
+    "recommendations_payload": {
+      "review_types": [
+        "best_practices",
+        "maintainability"
+      ],
+      "recommended_review_types": [
+        "best_practices",
+        "maintainability"
+      ],
+      "recommended_preset": "code_health",
+      "project_signals": [
+        "Languages: Python",
+        "Approximate project size: 2 files",
+        "DEPENDENCY SUMMARY: none detected",
+        "DIFF SUMMARY: none detected"
+      ],
+      "rationale": [
+        {
+          "review_type": "best_practices",
+          "reason": "Grounded in the observed signal of a small Python project (2 files), ensuring foundational coding standards are met before scaling."
+        },
+        {
+          "review_type": "maintainability",
+          "reason": "Applicable to the small codebase to ensure the structure remains clean and easy to navigate as the project evolves."
+        }
+      ],
+      "source": "ai"
+    }
+  },
+  "job_submission": {
+    "submit_status": 201,
+    "submit_payload": {
+      "job_id": "job-8cd7b209df284f7fb95bc932dfa1db08",
+      "state": "created",
+      "lifecycle_state": "created",
+      "queue_position": null,
+      "cancel_requested": false,
+      "created_at": "2026-05-04T11:57:50.457770",
+      "started_at": null,
+      "completed_at": null,
+      "error_message": null,
+      "error_diagnostic": null,
+      "request": {
+        "path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-cli-http-w9oe6ul_\\probe-project",
+        "scope": "project",
+        "diff_file": null,
+        "commits": null,
+        "diff_source": null,
+        "review_types": [
+          "security"
+        ],
+        "spec_content_present": false,
+        "target_lang": "en",
+        "backend_name": "local",
+        "programmers": [],
+        "reviewers": [],
+        "dry_run": false
+      },
+      "result": null
+    },
+    "jobs_status": 200,
+    "jobs_payload": {
+      "items": [
+        {
+          "job_id": "job-8cd7b209df284f7fb95bc932dfa1db08",
+          "state": "reviewing",
+          "lifecycle_state": "reviewing",
+          "queue_position": null,
+          "cancel_requested": false,
+          "created_at": "2026-05-04T11:57:50.457770",
+          "started_at": "2026-05-04T11:57:50.458352",
+          "completed_at": null,
+          "error_message": null,
+          "error_diagnostic": null,
+          "request": {
+            "path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-cli-http-w9oe6ul_\\probe-project",
+            "scope": "project",
+            "diff_file": null,
+            "commits": null,
+            "diff_source": null,
+            "review_types": [
+              "security"
+            ],
+            "spec_content_present": false,
+            "target_lang": "en",
+            "backend_name": "local",
+            "programmers": [],
+            "reviewers": [],
+            "dry_run": false
+          },
+          "result": null
+        }
+      ]
+    },
+    "job_visible_in_list": true
+  },
+  "events": {
+    "global_events_status": 200,
+    "global_events_excerpt": "id: 1\nevent: job.state_changed\ndata: {\"sequence\": 1, \"job_id\": \"job-8cd7b209df284f7fb95bc932dfa1db08\", \"kind\": \"job.state_changed\", \"timestamp\": \"2026-05-04T11:57:50.457799\", \"previous_state\": null, \"new_state\": \"created\", \"message\": \"submitted\"}\n\nid: 2\nevent: job.state_changed\ndata: {\"sequence\": 2, \"job_id\": \"job-8cd7b209df284f7fb95bc932dfa1db08\", \"kind\": \"job.state_changed\", \"timestamp\": \"2026-05-04T11:57:50.458341\", \"previous_state\": \"created\", \"new_state\": \"validating\", \"message\": null}\n\nid: 3\nevent: job.state_changed\ndata: {\"sequence\": 3, \"job_id\": \"job-8cd7b209df284f7fb95bc932dfa1db08\", \"kind\": \"job.state_changed\", \"timestamp\": \"2026-05-04T11:57:50.458354\", \"previous_state\": \"validating\", \"new_state\": \"scanning\", \"message\": null}\n\nid: 4\nevent: job.state_changed\ndata: {\"sequence\": 4, \"job_id\": \"job-8cd7b209df284f7fb95bc932dfa1db08\", \"kind\": \"job.state_changed\", \"timestamp\": \"2026-05-04T11:57:50.458579\", \"previous_state\": \"scanning\", \"new_state\": \"reviewing\", \"message\": null}\n\n",
+    "job_events_status": 200,
+    "job_events_excerpt": "id: 1\nevent: job.state_changed\ndata: {\"sequence\": 1, \"job_id\": \"job-8cd7b209df284f7fb95bc932dfa1db08\", \"kind\": \"job.state_changed\", \"timestamp\": \"2026-05-04T11:57:50.457799\", \"previous_state\": null, \"new_state\": \"created\", \"message\": \"submitted\"}\n\nid: 2\nevent: job.state_changed\ndata: {\"sequence\": 2, \"job_id\": \"job-8cd7b209df284f7fb95bc932dfa1db08\", \"kind\": \"job.state_changed\", \"timestamp\": \"2026-05-04T11:57:50.458341\", \"previous_state\": \"created\", \"new_state\": \"validating\", \"message\": null}\n\nid: 3\nevent: job.state_changed\ndata: {\"sequence\": 3, \"job_id\": \"job-8cd7b209df284f7fb95bc932dfa1db08\", \"kind\": \"job.state_changed\", \"timestamp\": \"2026-05-04T11:57:50.458354\", \"previous_state\": \"validating\", \"new_state\": \"scanning\", \"message\": null}\n\nid: 4\nevent: job.state_changed\ndata: {\"sequence\": 4, \"job_id\": \"job-8cd7b209df284f7fb95bc932dfa1db08\", \"kind\": \"job.state_changed\", \"timestamp\": \"2026-05-04T11:57:50.458579\", \"previous_state\": \"scanning\", \"new_state\": \"reviewing\", \"message\": null}\n\nid: 5\nevent: job.progress\ndata: {\"sequence\": 5, \"job_id\": \"job-8cd7b209df284f7fb95bc932dfa1db08\", \"kind\": \"job.progress\", \"timestamp\": \"2026-05-04T11:58:05.265590\", \"current\": 2, \"total\": 2, \"message\": \"["
+  },
+  "job_result": {
+    "job_id": "job-8cd7b209df284f7fb95bc932dfa1db08",
+    "completed": true,
+    "job_status": 200,
+    "job_payload": {
+      "job_id": "job-8cd7b209df284f7fb95bc932dfa1db08",
+      "state": "completed",
+      "lifecycle_state": "completed",
+      "queue_position": null,
+      "cancel_requested": false,
+      "created_at": "2026-05-04T11:57:50.457770",
+      "started_at": "2026-05-04T11:57:50.458352",
+      "completed_at": "2026-05-04T11:58:05.269728",
+      "error_message": null,
+      "error_diagnostic": null,
+      "request": {
+        "path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-cli-http-w9oe6ul_\\probe-project",
+        "scope": "project",
+        "diff_file": null,
+        "commits": null,
+        "diff_source": null,
+        "review_types": [
+          "security"
+        ],
+        "spec_content_present": false,
+        "target_lang": "en",
+        "backend_name": "local",
+        "programmers": [],
+        "reviewers": [],
+        "dry_run": false
+      },
+      "result": {
+        "status": "report_written",
+        "project_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-cli-http-w9oe6ul_\\probe-project",
+        "scope": "project",
+        "diff_source": null,
+        "files_scanned": 2,
+        "target_paths": [
+          "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-cli-http-w9oe6ul_\\probe-project\\admin.py",
+          "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-cli-http-w9oe6ul_\\probe-project\\auth.py"
+        ],
+        "issue_count": 2,
+        "review_types": [
+          "security"
+        ],
+        "language": "en",
+        "backend": "local",
+        "dry_run": false,
+        "report_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-cli-http-w9oe6ul_\\probe-project\\cli-api-report.json",
+        "has_report": true
+      }
+    },
+    "report_status": 200,
+    "report_payload": {
+      "job_id": "job-8cd7b209df284f7fb95bc932dfa1db08",
+      "status": "report_written",
+      "report_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-cli-http-w9oe6ul_\\probe-project\\cli-api-report.json",
+      "report": {
+        "project_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-cli-http-w9oe6ul_\\probe-project",
+        "review_type": "security",
+        "scope": "project",
+        "total_files_scanned": 2,
+        "issues_found": [
+          {
+            "file_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-cli-http-w9oe6ul_\\probe-project\\admin.py",
+            "line_number": 4,
+            "issue_type": "authorization",
+            "severity": "critical",
+            "description": "Missing Role-Based Access Control (RBAC) for Admin Endpoint: The function get_audit_log is intended to return sensitive records. However, it only checks if the user is logged in via require_login, whi",
+            "code_snippet": "def get_audit_log(user_id):\n    user = require_login(user_id)\n    return {'viewer': user['id'], 'records': ['sensitive']}",
+            "ai_feedback": "**Missing Role-Based Access Control (RBAC) for Admin Endpoint**\n\nThe function get_audit_log is intended to return sensitive records. However, it only checks if the user is logged in via require_login, which returns a generic 'user' role. It does not verify that the user has 'admin' or 'auditor' privileges. Any authenticated user can access sensitive audit logs.\n\nCode: def get_audit_log(user_id):\n    user = require_login(user_id)\n    return {'viewer': user['id'], 'records': ['sensitive']}\n\nSuggestion: Modify require_login or create a new guard (e.g., require_admin) that checks the user's role. Ensure the role returned by auth.py supports role checking.\n\nContext Scope: cross_file\n\nRelated Files: C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-cli-http-w9oe6ul_\\probe-project\\auth.py\n\nSystemic Impact: All authenticated users can access sensitive audit data because the authorization guard in admin.py does not enforce role restrictions, relying solely on the presence of a session token.\n\nConfidence: high\n\nEvidence Basis: admin.py calls require_login which returns role='user' for all valid logins, but admin.py does not check for a specific admin role before returning sensitive records.",
+            "status": "pending",
+            "resolution_reason": null,
+            "resolved_at": null,
+            "resolution_provenance": null,
+            "ai_fix_suggested": null,
+            "ai_fix_applied": null,
+            "context_scope": "cross_file",
+            "related_files": [
+              "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-cli-http-w9oe6ul_\\probe-project\\auth.py"
+            ],
+            "systemic_impact": "All authenticated users can access sensitive audit data because the authorization guard in admin.py does not enforce role restrictions, relying solely on the presence of a session token.",
+            "confidence": "high",
+            "evidence_basis": "admin.py calls require_login which returns role='user' for all valid logins, but admin.py does not check for a specific admin role before returning sensitive records.",
+            "issue_id": null,
+            "related_issues": [],
+            "interaction_summary": null
+          },
+          {
+            "file_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-cli-http-w9oe6ul_\\probe-project\\auth.py",
+            "line_number": 4,
+            "issue_type": "authorization",
+            "severity": "high",
+            "description": "Insecure Role Assignment Logic: The require_login function assigns a hardcoded role of 'user' to any valid user_id without verifying the actual user's stored role. This prevents the system from enforc",
+            "code_snippet": "def require_login(user_id):\n    if not user_id:\n        raise PermissionError('missing user')\n    return {'id': user_id, 'role': 'user'}",
+            "ai_feedback": "**Insecure Role Assignment Logic**\n\nThe require_login function assigns a hardcoded role of 'user' to any valid user_id without verifying the actual user's stored role. This prevents the system from enforcing role-based access control (RBAC) based on user attributes.\n\nCode: def require_login(user_id):\n    if not user_id:\n        raise PermissionError('missing user')\n    return {'id': user_id, 'role': 'user'}\n\nSuggestion: Query the user store or database to retrieve the actual role associated with user_id. Do not hardcode the role.\n\nSystemic Impact: The system cannot distinguish between regular users and privileged users (e.g., admins), leading to privilege escalation if admin endpoints rely on this function.\n\nConfidence: high\n\nEvidence Basis: The function returns a static dictionary with 'role': 'user' regardless of the input user_id, ignoring any external user data source.",
+            "status": "pending",
+            "resolution_reason": null,
+            "resolved_at": null,
+            "resolution_provenance": null,
+            "ai_fix_suggested": null,
+            "ai_fix_applied": null,
+            "context_scope": "local",
+            "related_files": [],
+            "systemic_impact": "The system cannot distinguish between regular users and privileged users (e.g., admins), leading to privilege escalation if admin endpoints rely on this function.",
+            "confidence": "high",
+            "evidence_basis": "The function returns a static dictionary with 'role': 'user' regardless of the input user_id, ignoring any external user data source.",
+            "issue_id": null,
+            "related_issues": [],
+            "interaction_summary": null
+          }
+        ],
+        "generated_at": "2026-05-04T11:58:05.267474",
+        "language": "en",
+        "review_types": [
+          "security"
+        ],
+        "diff_source": null,
+        "quality_score": 70,
+        "programmers": [],
+        "reviewers": [],
+        "backend": "local",
+        "interaction_analysis": null,
+        "architecture_summary": null
+      }
+    },
+    "artifacts_status": 200,
+    "artifacts_payload": {
+      "job_id": "job-8cd7b209df284f7fb95bc932dfa1db08",
+      "items": [
+        {
+          "key": "report_primary",
+          "path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-cli-http-w9oe6ul_\\probe-project\\cli-api-report.json",
+          "content_type": "application/json",
+          "size_bytes": 5490,
+          "download_url": "/api/jobs/job-8cd7b209df284f7fb95bc932dfa1db08/artifacts/report_primary/raw"
+        },
+        {
+          "key": "report_summary_txt",
+          "path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-cli-http-w9oe6ul_\\probe-project\\cli-api-report_summary.txt",
+          "content_type": "text/plain",
+          "size_bytes": 2457,
+          "download_url": "/api/jobs/job-8cd7b209df284f7fb95bc932dfa1db08/artifacts/report_summary_txt/raw"
+        },
+        {
+          "key": "report_md",
+          "path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-cli-http-w9oe6ul_\\probe-project\\cli-api-report.md",
+          "content_type": "text/markdown",
+          "size_bytes": 3983,
+          "download_url": "/api/jobs/job-8cd7b209df284f7fb95bc932dfa1db08/artifacts/report_md/raw"
+        }
+      ]
+    },
+    "artifact_key": "report_primary",
+    "artifact_preview_status": 200,
+    "artifact_preview_payload": {
+      "job_id": "job-8cd7b209df284f7fb95bc932dfa1db08",
+      "key": "report_primary",
+      "path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-cli-http-w9oe6ul_\\probe-project\\cli-api-report.json",
+      "content_type": "application/json",
+      "size_bytes": 5490,
+      "download_url": "/api/jobs/job-8cd7b209df284f7fb95bc932dfa1db08/artifacts/report_primary/raw",
+      "content": "{\n  \"project_path\": \"C:\\\\Users\\\\Colin\\\\AppData\\\\Local\\\\Temp\\\\aicr-cli-http-w9oe6ul_\\\\probe-project\",\n  \"review_type\": \"security\",\n  \"scope\": \"project\",\n  \"total_files_scanned\": 2,\n  \"issues_found\": [\n    {\n      \"file_path\": \"C:\\\\Users\\\\Colin\\\\AppData\\\\Local\\\\Temp\\\\aicr-cli-http-w9oe6ul_\\\\probe-project\\\\admin.py\",\n      \"line_number\": 4,\n      \"issue_type\": \"authorization\",\n      \"severity\": \"critical\",\n      \"description\": \"Missing Role-Based Access Control (RBAC) for Admin Endpoint: The function get_audit_log is intended to return sensitive records. However, it only checks if the user is logged in via require_login, whi\",\n      \"code_snippet\": \"def get_audit_log(user_id):\\n    user = require_login(user_id)\\n    return {'viewer': user['id'], 'records': ['sensitive']}\",\n      \"ai_feedback\": \"**Missing Role-Based Access Control (RBAC) for Admin Endpoint**\\n\\nThe function get_audit_log is intended to return sensitive records. However, it only checks if the user is logged in via require_login, which returns a generic 'user' role. It does not verify that the user has 'admin' or 'auditor' privileges. Any authenticated user can access sensitive audit logs.\\n\\nCode: def get_audit_log(user_id):\\n    user = require_login(user_id)\\n    return {'viewer': user['id'], 'records': ['sensitive']}\\n\\nSuggestion: Modify require_login or create a new guard (e.g., require_admin) that checks the user's role. Ensure the role returned by auth.py supports role checking.\\n\\nContext Scope: cross_file\\n\\nRelated Files: C:\\\\Users\\\\Colin\\\\AppData\\\\Local\\\\Temp\\\\aicr-cli-http-w9oe6ul_\\\\probe-project\\\\auth.py\\n\\nSystemic Impact: All authenticated users can access sensitive audit data because the authorization guard in admin.py does not enforce role restrictions, relying solely on the presence of a session token.\\n\\nConfidence: high\\n\\nEvidence Basis: admin.py calls require_login which returns role='user' for all valid logins, but admin.py does not check for a specific admin role before returning sensitive records.\",\n      \"status\": \"pending\",\n      \"resolution_reason\": null,\n      \"resolved_at\": null,\n      \"resolution_provenance\": null,\n      \"ai_fix_suggested\": null,\n      \"ai_fix_applied\": null,\n      \"context_scope\": \"cross_file\",\n      \"related_files\": [\n        \"C:\\\\Users\\\\Colin\\\\AppData\\\\Local\\\\Temp\\\\aicr-cli-http-w9oe6ul_\\\\probe-project\\\\auth.py\"\n      ],\n      \"systemic_impact\": \"All authenticated users can access sensitive audit data because the authorization guard in admin.py does not enforce role restrictions, relying solely on the presence of a session token.\",\n      \"confidence\": \"high\",\n      \"evidence_basis\": \"admin.py calls require_login which returns role='user' for all valid logins, but admin.py does not check for a specific admin role before returning sensitive records.\",\n      \"issue_id\": null,\n      \"related_issues\": [],\n      \"interaction_summary\": null\n    },\n    {\n      \"file_path\": \"C:\\\\Users\\\\Colin\\\\AppData\\\\Local\\\\Temp\\\\aicr-cli-http-w9oe6ul_\\\\probe-project\\\\auth.py\",\n      \"line_number\": 4,\n      \"issue_type\": \"authorization\",\n      \"severity\": \"high\",\n      \"description\": \"Insecure Role Assignment Logic: The require_login function assigns a hardcoded role of 'user' to any valid user_id without verifying the actual user's stored role. This prevents the system from enforc\",\n      \"code_snippet\": \"def require_login(user_id):\\n    if not user_id:\\n        raise PermissionError('missing user')\\n    return {'id': user_id, 'role': 'user'}\",\n      \"ai_feedback\": \"**Insecure Role Assignment Logic**\\n\\nThe require_login function assigns a hardcoded role of 'user' to any valid user_id without verifying the actual user's stored role. This prevents the system from enforcing role-based access control (RBAC) based on user attributes.\\n\\nCode: def require_login(user_id):\\n    if not user_id:\\n        raise PermissionError('missing user')\\n    return {'id': user_id, 'role': 'user'}\\n\\nSuggestion: Query the user store or database to retrieve the actual role associated with user_id. Do not hardcode the role.\\n\\nSystemic Impact: The system cannot distinguish between regular users and privileged users (e.g., admins), leading to privilege escalation if admin endpoints rely on this function.\\n\\nConfidence: high\\n\\nEvidence Basis: The function returns a static dictionary with 'role': 'user' regardless of the input user_id, ignoring any external user data source.\",\n      \"status\": \"pending\",\n      \"resolution_reason\": null,\n      \"resolved_at\": null,\n      \"resolution_provenance\": null,\n      \"ai_fix_suggested\": null,\n      \"ai_fix_applied\": null,\n      \"context_scope\": \"local\",\n      \"related_files\": [],\n      \"systemic_impact\": \"The system cannot distinguish between regular users and privileged users (e.g., admins), leading to privilege escalation if admin endpoints rely on this function.\",\n      \"confidence\": \"high\",\n      \"evidence_basis\": \"The function returns a static dictionary with 'role': 'user' regardless of the input user_id, ignoring any external user data source.\",\n      \"issue_id\": null,\n      \"related_issues\": [],\n      \"interaction_summary\": null\n    }\n  ],\n  \"generated_at\": \"2026-05-04T11:58:05.267474\",\n  \"language\": \"en\",\n  \"review_types\": [\n    \"security\"\n  ],\n  \"diff_source\": null,\n  \"quality_score\": 70,\n  \"programmers\": [],\n  \"reviewers\": [],\n  \"backend\": \"local\",\n  \"interaction_analysis\": null,\n  \"architecture_summary\": null\n}",
+      "json": {
+        "project_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-cli-http-w9oe6ul_\\probe-project",
+        "review_type": "security",
+        "scope": "project",
+        "total_files_scanned": 2,
+        "issues_found": [
+          {
+            "file_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-cli-http-w9oe6ul_\\probe-project\\admin.py",
+            "line_number": 4,
+            "issue_type": "authorization",
+            "severity": "critical",
+            "description": "Missing Role-Based Access Control (RBAC) for Admin Endpoint: The function get_audit_log is intended to return sensitive records. However, it only checks if the user is logged in via require_login, whi",
+            "code_snippet": "def get_audit_log(user_id):\n    user = require_login(user_id)\n    return {'viewer': user['id'], 'records': ['sensitive']}",
+            "ai_feedback": "**Missing Role-Based Access Control (RBAC) for Admin Endpoint**\n\nThe function get_audit_log is intended to return sensitive records. However, it only checks if the user is logged in via require_login, which returns a generic 'user' role. It does not verify that the user has 'admin' or 'auditor' privileges. Any authenticated user can access sensitive audit logs.\n\nCode: def get_audit_log(user_id):\n    user = require_login(user_id)\n    return {'viewer': user['id'], 'records': ['sensitive']}\n\nSuggestion: Modify require_login or create a new guard (e.g., require_admin) that checks the user's role. Ensure the role returned by auth.py supports role checking.\n\nContext Scope: cross_file\n\nRelated Files: C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-cli-http-w9oe6ul_\\probe-project\\auth.py\n\nSystemic Impact: All authenticated users can access sensitive audit data because the authorization guard in admin.py does not enforce role restrictions, relying solely on the presence of a session token.\n\nConfidence: high\n\nEvidence Basis: admin.py calls require_login which returns role='user' for all valid logins, but admin.py does not check for a specific admin role before returning sensitive records.",
+            "status": "pending",
+            "resolution_reason": null,
+            "resolved_at": null,
+            "resolution_provenance": null,
+            "ai_fix_suggested": null,
+            "ai_fix_applied": null,
+            "context_scope": "cross_file",
+            "related_files": [
+              "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-cli-http-w9oe6ul_\\probe-project\\auth.py"
+            ],
+            "systemic_impact": "All authenticated users can access sensitive audit data because the authorization guard in admin.py does not enforce role restrictions, relying solely on the presence of a session token.",
+            "confidence": "high",
+            "evidence_basis": "admin.py calls require_login which returns role='user' for all valid logins, but admin.py does not check for a specific admin role before returning sensitive records.",
+            "issue_id": null,
+            "related_issues": [],
+            "interaction_summary": null
+          },
+          {
+            "file_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-cli-http-w9oe6ul_\\probe-project\\auth.py",
+            "line_number": 4,
+            "issue_type": "authorization",
+            "severity": "high",
+            "description": "Insecure Role Assignment Logic: The require_login function assigns a hardcoded role of 'user' to any valid user_id without verifying the actual user's stored role. This prevents the system from enforc",
+            "code_snippet": "def require_login(user_id):\n    if not user_id:\n        raise PermissionError('missing user')\n    return {'id': user_id, 'role': 'user'}",
+            "ai_feedback": "**Insecure Role Assignment Logic**\n\nThe require_login function assigns a hardcoded role of 'user' to any valid user_id without verifying the actual user's stored role. This prevents the system from enforcing role-based access control (RBAC) based on user attributes.\n\nCode: def require_login(user_id):\n    if not user_id:\n        raise PermissionError('missing user')\n    return {'id': user_id, 'role': 'user'}\n\nSuggestion: Query the user store or database to retrieve the actual role associated with user_id. Do not hardcode the role.\n\nSystemic Impact: The system cannot distinguish between regular users and privileged users (e.g., admins), leading to privilege escalation if admin endpoints rely on this function.\n\nConfidence: high\n\nEvidence Basis: The function returns a static dictionary with 'role': 'user' regardless of the input user_id, ignoring any external user data source.",
+            "status": "pending",
+            "resolution_reason": null,
+            "resolved_at": null,
+            "resolution_provenance": null,
+            "ai_fix_suggested": null,
+            "ai_fix_applied": null,
+            "context_scope": "local",
+            "related_files": [],
+            "systemic_impact": "The system cannot distinguish between regular users and privileged users (e.g., admins), leading to privilege escalation if admin endpoints rely on this function.",
+            "confidence": "high",
+            "evidence_basis": "The function returns a static dictionary with 'role': 'user' regardless of the input user_id, ignoring any external user data source.",
+            "issue_id": null,
+            "related_issues": [],
+            "interaction_summary": null
+          }
+        ],
+        "generated_at": "2026-05-04T11:58:05.267474",
+        "language": "en",
+        "review_types": [
+          "security"
+        ],
+        "diff_source": null,
+        "quality_score": 70,
+        "programmers": [],
+        "reviewers": [],
+        "backend": "local",
+        "interaction_analysis": null,
+        "architecture_summary": null
+      }
+    },
+    "artifact_raw_status": 200,
+    "artifact_raw_excerpt": "{\r\n  \"project_path\": \"C:\\\\Users\\\\Colin\\\\AppData\\\\Local\\\\Temp\\\\aicr-cli-http-w9oe6ul_\\\\probe-project\",\r\n  \"review_type\": \"security\",\r\n  \"scope\": \"project\",\r\n  \"total_files_scanned\": 2,\r\n  \"issues_found\": [\r\n    {\r\n      \"file_path\": \"C:\\\\Users\\\\Colin\\\\AppData\\\\Local\\\\Temp\\\\aicr-cli-http-w9oe6ul_\\\\probe-project\\\\admin.py\",\r\n      \"line_number\": 4,\r\n      \"issue_type\": \"authorization\",\r\n      \"severity\": \"critical\",\r\n      \"description\": \"Missing Role-Based Access Control (RBAC) for Admin Endpoint: The function get_audit_log is intended to return sensitive records. However, it only checks if the "
+  },
+  "audit_log": {
+    "path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-cli-http-w9oe6ul_\\aicodereviewer-audit.log",
+    "excerpt": "[2026-05-04 11:57:50,458] INFO Local HTTP audit: action=job_submit remote_addr=127.0.0.1 job_id=job-8cd7b209df284f7fb95bc932dfa1db08 review_path=C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-cli-http-w9oe6ul_\\probe-project backend=local dry_run=False auto_finalize=True output_file=C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-cli-http-w9oe6ul_\\probe-project\\cli-api-report.json\n[2026-05-04 11:58:05,607] INFO Local HTTP audit: action=report_fetch remote_addr=127.0.0.1 job_id=job-8cd7b209df284f7fb95bc932dfa1db08\n[2026-05-04 11:58:05,621] INFO Local HTTP audit: action=artifact_list remote_addr=127.0.0.1 job_id=job-8cd7b209df284f7fb95bc932dfa1db08\n[2026-05-04 11:58:05,623] INFO Local HTTP audit: action=artifact_fetch remote_addr=127.0.0.1 job_id=job-8cd7b209df284f7fb95bc932dfa1db08 artifact_key=report_primary raw=False\n[2026-05-04 11:58:05,651] INFO Local HTTP audit: action=artifact_fetch remote_addr=127.0.0.1 job_id=job-8cd7b209df284f7fb95bc932dfa1db08 artifact_key=report_primary raw=True\n",
+    "contains_job_submit": true,
+    "contains_report_fetch": true,
+    "contains_artifact_list": true,
+    "contains_artifact_fetch": true
+  },
+  "server_logs": {
+    "stdout_excerpt": "",
+    "stderr_excerpt": "\" 200 670\n127.0.0.1 - - [04/May/2026 11:58:04] \"GET /api/jobs/job-8cd7b209df284f7fb95bc932dfa1db08 HTTP/1.1\" 200 670\nParsed 2 issue(s) via _try_json_parse\nReview session: 1 API call(s), 1 succeeded, 0 failed, 2 issue(s)\nSkipping interaction analysis for Local security review to avoid timeout-heavy second pass\nJSON report saved to C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-cli-http-w9oe6ul_\\probe-project\\cli-api-report.json\nSummary saved to C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-cli-http-w9oe6ul_\\probe-project\\cli-api-report_summary.txt\nMarkdown report saved to C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-cli-http-w9oe6ul_\\probe-project\\cli-api-report.md\n127.0.0.1 - - [04/May/2026 11:58:05] \"GET /api/jobs/job-8cd7b209df284f7fb95bc932dfa1db08 HTTP/1.1\" 200 1316\n127.0.0.1 - - [04/May/2026 11:58:05] \"GET /api/jobs/job-8cd7b209df284f7fb95bc932dfa1db08 HTTP/1.1\" 200 1316\n127.0.0.1 - - [04/May/2026 11:58:05] \"GET /api/jobs/job-8cd7b209df284f7fb95bc932dfa1db08/events?after=0&timeout=0 HTTP/1.1\" 200 3532\nLocal HTTP audit: action=report_fetch remote_addr=127.0.0.1 job_id=job-8cd7b209df284f7fb95bc932dfa1db08\n127.0.0.1 - - [04/May/2026 11:58:05] \"GET /api/jobs/job-8cd7b209df284f7fb95bc932dfa1db08/report HTTP/1.1\" 200 5298\nLocal HTTP audit: action=artifact_list remote_addr=127.0.0.1 job_id=job-8cd7b209df284f7fb95bc932dfa1db08\n127.0.0.1 - - [04/May/2026 11:58:05] \"GET /api/jobs/job-8cd7b209df284f7fb95bc932dfa1db08/artifacts HTTP/1.1\" 200 919\nLocal HTTP audit: action=artifact_fetch remote_addr=127.0.0.1 job_id=job-8cd7b209df284f7fb95bc932dfa1db08 artifact_key=report_primary raw=False\n127.0.0.1 - - [04/May/2026 11:58:05] \"GET /api/jobs/job-8cd7b209df284f7fb95bc932dfa1db08/artifacts/report_primary HTTP/1.1\" 200 11232\nLocal HTTP audit: action=artifact_fetch remote_addr=127.0.0.1 job_id=job-8cd7b209df284f7fb95bc932dfa1db08 artifact_key=report_primary raw=True\n127.0.0.1 - - [04/May/2026 11:58:05] \"GET /api/jobs/job-8cd7b209df284f7fb95bc932dfa1db08/artifacts/report_primary/raw HTTP/1.1\" 200 5490\n"
+  },
+  "config_effective": {
+    "backend_type": "local",
+    "local_api_url": "http://localhost:1234",
+    "local_model": "qwen/qwen3.5-9b",
+    "local_api_type": "lmstudio"
+  },
+  "sanity_checks": {
+    "server_ready": true,
+    "metadata_routes_ok": true,
+    "recommendations_ok": true,
+    "job_created": true,
+    "job_visible_in_list": true,
+    "job_completed": true,
+    "report_available": true,
+    "artifacts_available": true,
+    "artifact_preview_available": true,
+    "artifact_raw_available": true,
+    "audit_log_captured": true
+  },
+  "shutdown": {
+    "returncode": 1
+  }
+}

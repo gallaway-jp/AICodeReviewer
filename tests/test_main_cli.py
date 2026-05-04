@@ -7,9 +7,11 @@ create_backend() factory instead of BedrockClient().
 import io
 import json
 import logging
+import runpy
 import sys
 import configparser
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -192,6 +194,51 @@ def test_setup_logging_writes_local_api_audit_events_to_dedicated_file(tmp_path:
     contents = audit_log_file.read_text(encoding="utf-8")
     assert "Local HTTP audit: action=job_submit" in contents
     assert "job_id=test-job" in contents
+
+
+def test_serve_api_command_accepts_backend_override_and_starts_server(monkeypatch: pytest.MonkeyPatch) -> None:
+    created: dict[str, Any] = {}
+
+    def _fake_create_local_http_app(*, max_concurrent_jobs: int = 1, **_kwargs: Any) -> object:
+        created["max_concurrent_jobs"] = max_concurrent_jobs
+        created["app"] = object()
+        return created["app"]
+
+    def _fake_run_local_http_server(app: Any, *, host: str = "127.0.0.1", port: int = 8765, **_kwargs: Any) -> None:
+        created["served_app"] = app
+        created["host"] = host
+        created["port"] = port
+
+    monkeypatch.setattr(cli, "create_local_http_app", _fake_create_local_http_app)
+    monkeypatch.setattr(cli, "run_local_http_server", _fake_run_local_http_server)
+
+    exit_code = run_main_with_args([
+        "serve-api",
+        "--backend",
+        "local",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8891",
+        "--max-concurrent-jobs",
+        "2",
+    ])
+
+    assert exit_code == 0
+    assert created["served_app"] is created["app"]
+    assert created["host"] == "127.0.0.1"
+    assert created["port"] == 8891
+    assert created["max_concurrent_jobs"] == 2
+    assert config.get("backend", "type") == "local"
+
+
+def test_module_entrypoint_preserves_main_exit_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cli, "main", lambda: 7)
+
+    with pytest.raises(SystemExit) as excinfo:
+        runpy.run_module("aicodereviewer", run_name="__main__")
+
+    assert excinfo.value.code == 7
 
 
 def test_recommend_types_does_not_require_review_metadata(monkeypatch):

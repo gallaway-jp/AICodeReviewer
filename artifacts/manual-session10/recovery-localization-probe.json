@@ -1,0 +1,110 @@
+{
+  "config_source": "D:\\Development\\Python\\AICodeReviewer-manual-audit\\config.ini",
+  "temp_config": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-recovery-localization-j0_hw10p\\config.ini",
+  "local_backend_recovery": {
+    "bad_config": {
+      "api_url": "http://127.0.0.1:9",
+      "model": "qwen/qwen3.5-9b",
+      "api_type": "lmstudio"
+    },
+    "good_config": {
+      "api_url": "http://localhost:1234",
+      "model": "qwen/qwen3.5-9b",
+      "api_type": "lmstudio"
+    },
+    "bad_health": {
+      "args": [
+        "D:\\Development\\Python\\AICodeReviewer\\.venv\\Scripts\\python.exe",
+        "-m",
+        "aicodereviewer",
+        "--check-connection",
+        "--backend",
+        "local",
+        "--lang",
+        "en"
+      ],
+      "returncode": 1,
+      "stdout": "Testing connection to 'local' backend…\n❌ Connection failed.\nFailure category: provider\nFailure stage: connection test\nDetail: Local LLM backend did not accept the validation request.\nSuggested fix: Check the local server, selected model, API type, and credentials.\n",
+      "stderr": "Local LLM backend: http://127.0.0.1:9 (type=lmstudio, model=qwen/qwen3.5-9b)\nFailed to list LM Studio models: HTTPConnectionPool(host='127.0.0.1', port=9): Max retries exceeded with url: /api/v1/models (Caused by NewConnectionError(\"HTTPConnection(host='127.0.0.1', port=9): Failed to establish a new connection: [WinError 10061] 対象のコンピューターによって拒否されたため、接続できませんでした。\"))\n"
+    },
+    "good_health": {
+      "args": [
+        "D:\\Development\\Python\\AICodeReviewer\\.venv\\Scripts\\python.exe",
+        "-m",
+        "aicodereviewer",
+        "--check-connection",
+        "--backend",
+        "local",
+        "--lang",
+        "en"
+      ],
+      "returncode": 0,
+      "stdout": "Testing connection to 'local' backend…\n✅ Connection successful!\nURL: http://localhost:1234\nModel: qwen/qwen3.5-9b\n",
+      "stderr": "Local LLM backend: http://localhost:1234 (type=lmstudio, model=qwen/qwen3.5-9b)\nAvailable LM Studio models: qwen3.6-27b-i1, qwen3.6-35b-a3b-i1, qwen_qwen3.5-0.8b, qwen3.6-27b, qwen3.6-35b-a3b\n"
+    }
+  },
+  "cli_localization": {
+    "english_presets": {
+      "args": [
+        "D:\\Development\\Python\\AICodeReviewer\\.venv\\Scripts\\python.exe",
+        "-m",
+        "aicodereviewer",
+        "--list-type-presets",
+        "--lang",
+        "en"
+      ],
+      "returncode": 0,
+      "stdout": "Review Type Presets:\n  runtime_safety        Runtime Safety  [Risk & Resilience]\n                        Security, failure handling, input validation, and dependency risk.\n                        Includes: security, error_handling, data_validation, dependency\n  code_health           Code Health  [Code Quality]\n                        Maintainability and cleanup coverage for code that is drifting or getting harder to change.\n                        Includes: best_practices, maintainability, dead_code, complexity, regression\n  interface_platform    Interface & Platform  [Surface Coverage]\n                        Public API quality, compatibility expectations, structural boundaries, and scaling pressure.\n                        Includes: api_design, compatibility, architecture, scalability\n  product_surface       Product Surface  [Surface Coverage]\n                        User-facing interaction quality across usability, accessibility, localization, and docs.\n                        Includes: ui_ux, accessibility, localization, documentation\n  release_safety        Release Safety  [Risk & Resilience]\n                        Regression-oriented checks for tests, compatibility, and failure paths before shipping.\n                        Includes: testing, regression, error_handling, compatibility\n",
+      "stderr": ""
+    },
+    "japanese_presets": {
+      "args": [
+        "D:\\Development\\Python\\AICodeReviewer\\.venv\\Scripts\\python.exe",
+        "-m",
+        "aicodereviewer",
+        "--list-type-presets",
+        "--lang",
+        "ja"
+      ],
+      "returncode": 0,
+      "stdout": "レビュータイププリセット:\n  runtime_safety        ランタイム安全性  [リスクと耐障害性]\n                        セキュリティ、障害時の挙動、入力検証、依存関係リスクをまとめて確認します。\n                        対象: security, error_handling, data_validation, dependency\n  code_health           コード健全性  [コード品質]\n                        保守性、不要コード、複雑さ、回帰リスクをまとめて確認します。\n                        対象: best_practices, maintainability, dead_code, complexity, regression\n  interface_platform    インターフェースとプラットフォーム  [表面領域カバレッジ]\n                        API品質、互換性、構造境界、スケーリング圧力をまとめて確認します。\n                        対象: api_design, compatibility, architecture, scalability\n  product_surface       プロダクト表面品質  [表面領域カバレッジ]\n                        使いやすさ、アクセシビリティ、ローカライズ、ドキュメント品質をまとめて確認します。\n                        対象: ui_ux, accessibility, localization, documentation\n  release_safety        リリース安全性  [リスクと耐障害性]\n                        テスト、回帰、エラー処理、互換性を出荷前に重点確認します。\n                        対象: testing, regression, error_handling, compatibility\n",
+      "stderr": ""
+    }
+  },
+  "gui_localization": {
+    "english": {
+      "language": "en",
+      "review": {
+        "run_button": "▶  Start Review",
+        "dry_run_button": "Dry Run",
+        "health_button": "🩺 Check Setup",
+        "status_text": "Ready"
+      },
+      "settings": {
+        "local_http_status": "CTkLabel",
+        "local_http_docs_excerpt": "Use http://127.0.0.1:8765 as the desktop-local API root.\n\nGET /api/backends\nGET /api/review-types\nGET /api/review-presets\nPOST /api/recommendations/review-types\nGET /api/jobs\nPOST /api/jobs\nGET /api/jobs/{job_id}\nPOST /api/jobs/{job_id}/cancel\nGET /api/jobs/{job_id}/report\nGET /api/jobs/{job_id}/artifacts\nGET /api/jobs/{job_id}/artifacts/{artifact_key}\nGET /api/jobs/{job_id}/artifacts/{artifact_key}/raw\nGET /api/events\nGET /api/jobs/{job_id}/events"
+      }
+    },
+    "japanese": {
+      "language": "ja",
+      "review": {
+        "run_button": "▶  レビュー開始",
+        "dry_run_button": "ドライラン",
+        "health_button": "🩺 セットアップ確認",
+        "status_text": "準備完了"
+      },
+      "settings": {
+        "local_http_status": "CTkLabel",
+        "local_http_docs_excerpt": "デスクトップ内ローカルAPIのルートとして http://127.0.0.1:8765 を使用します。\n\nGET /api/backends\nGET /api/review-types\nGET /api/review-presets\nPOST /api/recommendations/review-types\nGET /api/jobs\nPOST /api/jobs\nGET /api/jobs/{job_id}\nPOST /api/jobs/{job_id}/cancel\nGET /api/jobs/{job_id}/report\nGET /api/jobs/{job_id}/artifacts\nGET /api/jobs/{job_id}/artifacts/{artifact_key}\nGET /api/jobs/{job_id}/artifacts/{artifact_key}/raw\nGET /api/events\nGET /api/jobs/{job_id}/events"
+      }
+    }
+  },
+  "sanity_checks": {
+    "bad_health_failed": true,
+    "good_health_passed": true,
+    "english_cli_has_english_label": true,
+    "japanese_cli_has_japanese_label": true,
+    "gui_run_button_translated": true,
+    "gui_health_button_translated": true
+  }
+}
