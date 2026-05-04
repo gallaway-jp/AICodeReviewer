@@ -4150,6 +4150,7 @@ def test_gui_starts_and_stops_local_http_server_when_enabled(
         assert application.local_http_base_url_var.get() == "http://127.0.0.1:8899"
         assert "GET /api/review-presets" in application.local_http_docs_box.get("0.0", "end")
         assert "POST /api/recommendations/review-types" in application.local_http_docs_box.get("0.0", "end")
+        assert "GET /api/jobs/{job_id}/artifacts/{artifact_key}" in application.local_http_docs_box.get("0.0", "end")
 
         application._copy_local_http_base_url()
         assert clipboard["value"] == "http://127.0.0.1:8899"

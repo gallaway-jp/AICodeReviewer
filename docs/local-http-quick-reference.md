@@ -46,7 +46,7 @@ Stable route families in the current baseline:
 - metadata: `/api/backends`, `/api/review-types`, `/api/review-presets`
 - recommendations: `/api/recommendations/review-types`
 - job control: `/api/jobs`, `/api/jobs/{job_id}`, `/api/jobs/{job_id}/cancel`
-- reports and artifacts: `/api/jobs/{job_id}/report`, `/api/jobs/{job_id}/artifacts`, `/api/jobs/{job_id}/artifacts/{artifact_key}/raw`
+- reports and artifacts: `/api/jobs/{job_id}/report`, `/api/jobs/{job_id}/artifacts`, `/api/jobs/{job_id}/artifacts/{artifact_key}`, `/api/jobs/{job_id}/artifacts/{artifact_key}/raw`
 - event streams: `/api/events`, `/api/jobs/{job_id}/events`
 
 If you add, remove, or reshape a route:

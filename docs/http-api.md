@@ -40,6 +40,7 @@ http://127.0.0.1:8765
 - `POST /api/jobs/{job_id}/cancel`
 - `GET /api/jobs/{job_id}/report`
 - `GET /api/jobs/{job_id}/artifacts`
+- `GET /api/jobs/{job_id}/artifacts/{artifact_key}`
 - `GET /api/jobs/{job_id}/artifacts/{artifact_key}/raw`
 - `GET /api/events`
 - `GET /api/jobs/{job_id}/events`
