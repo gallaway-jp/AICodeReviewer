@@ -4,7 +4,7 @@ AICodeReviewer is an AI-assisted code review tool for teams that want repeatable
 
 It supports four backends:
 - AWS Bedrock
-- Amazon Kiro CLI via WSL
+- Amazon Kiro CLI on native Windows or via WSL fallback
 - GitHub Copilot CLI
 - Local LLM servers via LM Studio, Ollama, OpenAI-compatible, or Anthropic-compatible APIs
 
@@ -84,7 +84,7 @@ aicodereviewer --check-connection --backend local
 Start the local HTTP API:
 
 ```bash
-aicodereviewer serve-api --host 127.0.0.1 --port 8765
+aicodereviewer serve-api --backend local --host 127.0.0.1 --port 8765
 ```
 
 ## GUI Preview
@@ -132,7 +132,7 @@ The shared local HTTP API exposes the same review runtime used by the desktop GU
 Start it explicitly from the CLI:
 
 ```bash
-aicodereviewer serve-api --host 127.0.0.1 --port 8765
+aicodereviewer serve-api --backend local --host 127.0.0.1 --port 8765
 ```
 
 Or enable the embedded local API from the desktop Settings panel.
@@ -148,9 +148,12 @@ Common routes:
 - `POST /api/jobs/{job_id}/cancel`
 - `GET /api/jobs/{job_id}/report`
 - `GET /api/jobs/{job_id}/artifacts`
+- `GET /api/jobs/{job_id}/artifacts/{artifact_key}`
 - `GET /api/jobs/{job_id}/artifacts/{artifact_key}/raw`
 - `GET /api/events`
 - `GET /api/jobs/{job_id}/events`
+
+This surface also emits dedicated retained audit entries for job submission, report fetches, and artifact access rather than relying only on the general application log.
 
 Recommendation requests accept the same targeting inputs already used by the GUI and CLI, including project path, diff scope, `selected_files`, and diff-filter fields. Example:
 

@@ -1,0 +1,210 @@
+{
+  "config_source": "D:\\Development\\Python\\AICodeReviewer-manual-audit\\config.ini",
+  "temp_config": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-tool-aware-sensitive-o_3oarpw\\config.ini",
+  "project_root": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-tool-aware-sensitive-o_3oarpw\\tool-aware-project",
+  "connection": {
+    "ok": true,
+    "diagnostic": {
+      "ok": true,
+      "category": "none",
+      "detail": "",
+      "fix_hint": "",
+      "origin": "connection_test"
+    }
+  },
+  "policy_checks": {
+    "workspace_safe_file": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-tool-aware-sensitive-o_3oarpw\\tool-aware-project\\app\\api.py",
+    "sensitive_file": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-tool-aware-sensitive-o_3oarpw\\tool-aware-project\\.env",
+    "outside_file": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-tool-aware-sensitive-o_3oarpw\\outside.py",
+    "safe_decision": {
+      "permissionDecision": "allow",
+      "permissionDecisionReason": "Workspace file read allowed"
+    },
+    "sensitive_decision": {
+      "permissionDecision": "deny",
+      "permissionDecisionReason": "Sensitive file path denied by policy"
+    },
+    "outside_decision": {
+      "permissionDecision": "deny",
+      "permissionDecisionReason": "Requested file is outside the workspace root"
+    },
+    "audit": {
+      "backend": "copilot",
+      "model": "gpt-5-mini",
+      "enabled": true,
+      "used_tool_access": true,
+      "file_read_count": 1,
+      "denied_request_count": 2,
+      "fallback_reason": null,
+      "entries": [
+        {
+          "phase": "pre_tool_use",
+          "tool_name": "view",
+          "decision": "allow",
+          "decision_reason": "allowed workspace file read",
+          "requested_path": "C:/Users/Colin/AppData/Local/Temp/aicr-tool-aware-sensitive-o_3oarpw/tool-aware-project/app/api.py",
+          "relative_path": "app/api.py",
+          "sensitive": false,
+          "args_summary": "{'path': 'C:\\\\Users\\\\Colin\\\\AppData\\\\Local\\\\Temp\\\\aicr-tool-aware-sensitive-o_3oarpw\\\\tool-aware-project\\\\app\\\\api.py'}",
+          "result_summary": null
+        },
+        {
+          "phase": "pre_tool_use",
+          "tool_name": "session.workspace.readFile",
+          "decision": "deny",
+          "decision_reason": "denied sensitive file path by policy",
+          "requested_path": "C:/Users/Colin/AppData/Local/Temp/aicr-tool-aware-sensitive-o_3oarpw/tool-aware-project/.env",
+          "relative_path": ".env",
+          "sensitive": true,
+          "args_summary": "{'path': 'C:\\\\Users\\\\Colin\\\\AppData\\\\Local\\\\Temp\\\\aicr-tool-aware-sensitive-o_3oarpw\\\\tool-aware-project\\\\.env'}",
+          "result_summary": null
+        },
+        {
+          "phase": "pre_tool_use",
+          "tool_name": "session.workspace.readFile",
+          "decision": "deny",
+          "decision_reason": "denied file access outside the configured workspace root",
+          "requested_path": "C:/Users/Colin/AppData/Local/Temp/aicr-tool-aware-sensitive-o_3oarpw/outside.py",
+          "relative_path": null,
+          "sensitive": false,
+          "args_summary": "{'path': 'C:\\\\Users\\\\Colin\\\\AppData\\\\Local\\\\Temp\\\\aicr-tool-aware-sensitive-o_3oarpw\\\\outside.py'}",
+          "result_summary": null
+        }
+      ]
+    }
+  },
+  "live_review": {
+    "duration_seconds": 129.33,
+    "error": null,
+    "issue_count": 4,
+    "issues": [
+      {
+        "file_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-tool-aware-sensitive-o_3oarpw\\tool-aware-project\\app\\runner.py",
+        "issue_type": "Injection (OS command)",
+        "severity": "critical",
+        "description": "OS command injection via shell=True with unsanitized input: export_report builds a shell command by interpolating user_args into an f-string and executes it with subprocess.run(..., shell=True). An at",
+        "context_scope": "cross_file",
+        "related_files": [
+          "app/api.py"
+        ]
+      },
+      {
+        "file_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-tool-aware-sensitive-o_3oarpw\\tool-aware-project\\app\\runner.py",
+        "issue_type": "Availability / Error handling",
+        "severity": "medium",
+        "description": "Uncaught subprocess.CalledProcessError can crash or destabilize service: subprocess.run(..., check=True) will raise subprocess.CalledProcessError on non-zero exit. There is no exception handling in ex",
+        "context_scope": "cross_file",
+        "related_files": [
+          "app/api.py"
+        ]
+      },
+      {
+        "file_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-tool-aware-sensitive-o_3oarpw\\tool-aware-project\\app\\runner.py",
+        "issue_type": "Sensitive data exposure",
+        "severity": "low",
+        "description": "Returning raw command string may leak internal details: export_report returns the constructed command string (which includes user_args). Returning internal command lines may leak internal structure or",
+        "context_scope": "cross_file",
+        "related_files": [
+          "app/api.py"
+        ]
+      },
+      {
+        "file_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-tool-aware-sensitive-o_3oarpw\\tool-aware-project\\app\\api.py",
+        "issue_type": "Input validation / Authorization",
+        "severity": "high",
+        "description": "Unvalidated/unauthenticated input forwarded directly to OS command sink: export_endpoint forwards user_args directly to export_report without validation, authorization, or sanitization. That user-cont",
+        "context_scope": "cross_file",
+        "related_files": [
+          "app/runner.py",
+          "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-tool-aware-sensitive-o_3oarpw\\tool-aware-project\\app\\runner.py"
+        ]
+      }
+    ],
+    "tool_access_audit": {
+      "backend": "copilot",
+      "model": "gpt-5-mini",
+      "enabled": true,
+      "used_tool_access": true,
+      "file_read_count": 2,
+      "denied_request_count": 0,
+      "fallback_reason": null,
+      "entries": [
+        {
+          "phase": "pre_tool_use",
+          "tool_name": "report_intent",
+          "decision": "allow",
+          "decision_reason": "allowed harmless meta tool for tool-aware review",
+          "requested_path": null,
+          "relative_path": null,
+          "sensitive": false,
+          "args_summary": "{\"intent\":\"Reviewing files\"}",
+          "result_summary": null
+        },
+        {
+          "phase": "pre_tool_use",
+          "tool_name": "view",
+          "decision": "allow",
+          "decision_reason": "allowed workspace file read",
+          "requested_path": "C:/Users/Colin/AppData/Local/Temp/aicr-tool-aware-sensitive-o_3oarpw/tool-aware-project/app/runner.py",
+          "relative_path": "app/runner.py",
+          "sensitive": false,
+          "args_summary": "{\"path\":\"C:\\\\Users\\\\Colin\\\\AppData\\\\Local\\\\Temp\\\\aicr-tool-aware-sensitive-o_3oarpw\\\\tool-aware-project\\\\app\\\\runner.py\"}",
+          "result_summary": null
+        },
+        {
+          "phase": "pre_tool_use",
+          "tool_name": "view",
+          "decision": "allow",
+          "decision_reason": "allowed workspace file read",
+          "requested_path": "C:/Users/Colin/AppData/Local/Temp/aicr-tool-aware-sensitive-o_3oarpw/tool-aware-project/app/api.py",
+          "relative_path": "app/api.py",
+          "sensitive": false,
+          "args_summary": "{\"path\":\"C:\\\\Users\\\\Colin\\\\AppData\\\\Local\\\\Temp\\\\aicr-tool-aware-sensitive-o_3oarpw\\\\tool-aware-project\\\\app\\\\api.py\"}",
+          "result_summary": null
+        },
+        {
+          "phase": "post_tool_use",
+          "tool_name": "report_intent",
+          "decision": null,
+          "decision_reason": null,
+          "requested_path": null,
+          "relative_path": null,
+          "sensitive": false,
+          "args_summary": "{'intent': 'Reviewing files'}",
+          "result_summary": "{'textResultForLlm': 'Intent logged', 'resultType': 'success', 'sessionLog': 'Reviewing files', 'toolTelemetry': {}}"
+        },
+        {
+          "phase": "post_tool_use",
+          "tool_name": "view",
+          "decision": null,
+          "decision_reason": null,
+          "requested_path": "C:/Users/Colin/AppData/Local/Temp/aicr-tool-aware-sensitive-o_3oarpw/tool-aware-project/app/runner.py",
+          "relative_path": "app/runner.py",
+          "sensitive": false,
+          "args_summary": "{'path': 'C:\\\\Users\\\\Colin\\\\AppData\\\\Local\\\\Temp\\\\aicr-tool-aware-sensitive-o_3oarpw\\\\tool-aware-project\\\\app\\\\runner.py'}",
+          "result_summary": "{'resultType': 'success', 'textResultForLlm': '1. import subprocess\\r\\n2. \\r\\n3. def export_report(user_args: str) -> str:\\r\\n4.     command = f\"report-tool {user_args}\"\\r\\n5.     subprocess.run(co..."
+        },
+        {
+          "phase": "post_tool_use",
+          "tool_name": "view",
+          "decision": null,
+          "decision_reason": null,
+          "requested_path": "C:/Users/Colin/AppData/Local/Temp/aicr-tool-aware-sensitive-o_3oarpw/tool-aware-project/app/api.py",
+          "relative_path": "app/api.py",
+          "sensitive": false,
+          "args_summary": "{'path': 'C:\\\\Users\\\\Colin\\\\AppData\\\\Local\\\\Temp\\\\aicr-tool-aware-sensitive-o_3oarpw\\\\tool-aware-project\\\\app\\\\api.py'}",
+          "result_summary": "{'resultType': 'success', 'textResultForLlm': '1. from runner import export_report\\r\\n2. \\r\\n3. def export_endpoint(user_args: str) -> str:\\r\\n4.     return export_report(user_args)\\r\\n5. ', 'toolT..."
+        }
+      ]
+    }
+  },
+  "sanity_checks": {
+    "connection_ok": true,
+    "safe_path_allowed": true,
+    "sensitive_path_denied": true,
+    "outside_path_denied": true,
+    "policy_audit_recorded_denial": true,
+    "live_review_completed": true,
+    "live_tool_access_or_fallback_recorded": true
+  }
+}

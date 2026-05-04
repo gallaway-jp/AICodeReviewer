@@ -71,6 +71,7 @@ The Milestone 9 review is not limited to the local HTTP API. The current pass ex
 High-confidence conclusions from the broader code review so far:
 - credential handling is materially improved by keyring-backed Local LLM secret references and explicit rotate/revoke flows
 - subprocess-backed integrations are generally using argument lists or controlled command construction rather than shell interpolation
+- Copilot tool-aware file access is constrained to workspace-relative reads, denies configured sensitive paths such as `.env`, and records per-review audit metadata rather than exposing an unrestricted file-read channel
 - JSON deserialization uses standard `json` parsing rather than unsafe loaders
 - the current confirmed issues continue to cluster around boundary validation, trusted-addon assumptions, and audit visibility rather than an obvious built-in remote-code-execution flaw in the current shipped feature set
 

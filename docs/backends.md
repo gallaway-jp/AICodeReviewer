@@ -94,6 +94,8 @@ model = gpt-5-mini
 Operational note:
 - `gpt-5-mini` is the explicit low-cost Copilot model used for testing in this audit branch so premium requests are not consumed by accident.
 - The backend uses a temp-file path for large prompts to avoid Windows command-line length and prompt-size issues.
+- When `tool_file_access.enabled = true` and `copilot` is allowlisted, tool-aware reviews stay limited to workspace-relative reads, deny configured sensitive-path globs such as `.env`, and record per-review audit metadata.
+- If a Copilot review does not use the workspace file tools, the reviewer falls back to the static prompt path instead of failing the run.
 - Very wide multi-type sessions still produce substantially larger prompts than focused review bundles. Prefer targeted bundles of related review types over `--type all`, especially when you include `specification`, `license`, `architecture`, or other large guidance blocks.
 
 ## Local LLM
