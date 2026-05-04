@@ -19,12 +19,32 @@ Milestone 14 intentionally resets the maintained release line to `v0.2.0` to ref
 
 ## Unreleased
 
+---
+
+## v0.4.0
+
+Manual-audit release focused on stabilizing the shipped review workflows, tightening local HTTP and tool-aware behavior, and expanding the maintained user and contributor documentation around the current product surface.
+
+### Added
+- The desktop Benchmarks tab can now start a benchmark run directly, persist the resulting saved-run artifacts, and auto-load the generated summary for immediate inspection.
+- Tool-aware review outputs now carry `tool_access_audit` metadata through execution and tool-mode review envelopes so Copilot workspace-file usage and denials are visible in saved results.
+- The maintained documentation set now includes broader task-oriented manual coverage for benchmark workflows, addon review, local HTTP usage, recovery paths, and Windows mixed-DPI guidance.
+
 ### Changed
-- On Windows, the GUI now defaults to the more stable DPI mode for mixed-DPI multi-monitor setups. This reduces resize and monitor-hop instability at the cost of less aggressive per-monitor sharpness adjustments.
-- The GUI now finishes its initial startup presentation before showing the main window, which reduces visible layout reshuffling during load.
+- The Windows GUI continues to favor the safer mixed-DPI path by default: `gui.automatic_dpi_awareness` stays off unless a user explicitly opts back in on a machine they have verified as stable.
+- Backend health, settings persistence, and remediation messaging are more consistent across Bedrock, Kiro, Copilot, and Local LLM flows.
+- The maintained manual and reference guides were refreshed against a full manual audit so documented CLI, GUI, local HTTP, and Copilot tool-aware workflows align with the verified product behavior.
 
 ### Fixed
-- The shared status bar now exposes the current detachable page action directly, making detachable surfaces easier to discover without hunting for per-tab buttons.
+- `python -m aicodereviewer` now preserves the real CLI exit code instead of reporting success on failed connection checks.
+- The CLI `serve-api` path now accepts `--backend` correctly and matches the embedded local HTTP runtime for recommendations, queue state, reports, artifacts, and audit logging.
+- The GUI review queue now refreshes for jobs submitted outside the GUI-owned start path, including jobs created through the embedded local HTTP API.
+- Diff-scoped documentation, dependency, and license reviews now stay constrained to the selected diff instead of widening to unrelated files.
+- Local reasoning-only backend responses now fail cleanly instead of producing false-clean or partially incomplete review results when deterministic supplements cannot cover the gap.
+- Specification-plus-mixed review prompts, AI-fix prompt generation, detached-window lazy restore, and benchmark saved-summary reload paths were all corrected during the manual audit pass.
+- The Windows multi-monitor GUI probe now enumerates displays correctly on 64-bit Python, which restores reliable mixed-DPI validation for future regression checks.
+
+---
 
 
 ## v0.3.0
