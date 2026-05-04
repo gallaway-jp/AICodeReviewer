@@ -42,7 +42,7 @@ Backend-specific execution rule for this milestone:
 | S3 | Core CLI review flows | run with local backend first | completed | dry run, preset expansion, patch diff, commit diff, specification-only, mixed specification, interactive actions, and AI-fix preview paths are now all exercised live; the false-clean, file-mapping, diff-scope widening, mixed-spec prompt, and fix-prompt defects were fixed during the audit |
 | S4 | Tool mode and report artifacts | run with local backend first | completed | local tool-mode review, health, resume, fix-plan, apply-fixes, and cancellation envelopes are exercised end to end on an isolated fixture; LM Studio model advertisement parsing and specification dry-run spec loading were fixed during the pass |
 | S5 | GUI core review workflow | run with local backend first | completed | scheduler-backed queue visibility, queued-cancel behavior, and recent-completed queue entries now have live desktop evidence alongside the earlier Output Log and health-dialog probe |
-| S6 | GUI detach, restore, desktop ergonomics | backend-agnostic after startup | partial | shared status-bar detach behavior, lazy-surface restore, and startup presentation with reopened detached windows now have live desktop evidence; the only remaining gap is mixed-DPI cross-monitor validation, which is blocked on this single-display machine |
+| S6 | GUI detach, restore, desktop ergonomics | backend-agnostic after startup | completed | shared status-bar detach behavior, lazy-surface restore, startup presentation, and the mixed-DPI cross-monitor check now all have live desktop evidence; the default Windows stability path stayed responsive, while opting back into automatic DPI awareness reproduced the documented cross-monitor stall on this machine |
 | S7 | Addons and generated addon review | mostly backend-agnostic; use local only if generation path is exercised | completed | live desktop Addon Review probing now covers preview load, diff inspection, approve/reject decisions, and visible English wording on the real GUI surface |
 | S8 | Benchmarks and quality tooling | local preferred; others blocked unless setup changes | completed | live evidence now confirms the Benchmarks tab can start a local run, persist timestamped saved runs, auto-load and compare real summary artifacts, compare real per-fixture reports, and follow the documented fixture-authoring evaluator path; the runner-import, summary-metadata, and zero-count rendering defects were fixed during the audit |
 | S9 | Local HTTP and shared scheduler | local backend path is the primary runnable slice | completed | embedded and CLI-started local HTTP startup now both have live evidence on `local`; route discovery, recommendations, job submission, SSE/event reads, report/artifact fetch, shared GUI queue visibility, and dedicated audit-log emission are all exercised end to end |
@@ -518,7 +518,7 @@ Follow-up notes:
 
 ## Session 6 Working Log
 
-Current status: partial for the planned detached-window slice on this machine; shared status-bar detach behavior, lazy-surface restore, and startup presentation are now verified, and the only remaining gap is mixed-DPI cross-monitor validation on a multi-display setup
+Current status: completed for the planned detached-window slice on this machine; shared status-bar detach behavior, lazy-surface restore, startup presentation, and the mixed-DPI cross-monitor check now all have live desktop evidence
 
 Observed so far on 2026-05-04:
 
@@ -530,11 +530,16 @@ Observed so far on 2026-05-04:
 - A second isolated desktop probe at `artifacts/manual-session6/gui-queue-detach-probe.json` now covers the shared status-bar detach action directly. On the live widgets, Review and Results render the shared button disabled with the localized unavailable label, while Log, Settings, Benchmarks, and Addon Review all render the localized `Open In Window` action.
 - That same probe also verified the status-bar detach action end to end on the lazy Benchmarks surface: invoking the shared button opened the detached window, changed the shared button label to the localized `Focus Window` action, and after redocking returned the label to `Open In Window`.
 - Startup presentation with reopened detached windows now has explicit live evidence too. A non-testing app instance launched against a temp config with all four detachable pages pre-populated in `gui.detached_pages` restored Log, Settings, Benchmarks, and Addon Review, brought the main window back to `state=normal`, and left `_startup_window_hidden` cleared after the restore/finalize sequence.
-- Mixed-DPI cross-monitor validation could not be completed on this machine during this pass. Running `tools/gui_perf_probe.py --move-across-monitors ...` detected only one display and skipped the monitor-move loop with the explicit message that a multi-monitor setup is required, so the remaining DPI-specific check is currently environment-limited rather than a reproduced product defect.
+- The Session 6 mixed-DPI check is now completed on a real dual-display Windows setup. The original probe seam turned out to have its own 64-bit monitor-handle bug, so `tools/gui_perf_probe.py` was first repaired to declare the Win32 monitor API types correctly and save the resulting monitor-move logs under `artifacts/manual-session6/gui-perf-multi-monitor-default.txt` and `artifacts/manual-session6/gui-perf-multi-monitor-dpi-off.txt`.
+- The corrected default probe (`tools/gui_perf_probe.py --move-across-monitors --tabs review,settings,benchmarks,results ...`) now detects both `\\.\DISPLAY1` and `\\.\DISPLAY2` and completes the full cross-screen sweep instead of bailing out early with a false single-display result.
+- On the shipped Windows default path, where the GUI disables CustomTkinter automatic DPI awareness unless the user opts back in, the same cross-screen sweep stayed responsive across Review, Settings, Benchmarks, and Results. The worst move in that stable path was `0.634s`, and the full 32-move run completed with `avg=0.096s`.
+- Opting back into automatic DPI awareness on the same machine reproduced the previously suspected stall on the Results tab. The default-awareness probe hit a `159.249s` pause on the sixth Results-tab move to `\\.\DISPLAY2`, which drove the full run to `avg=5.047s` even though the other tabs remained in the sub-second range.
+- That result matches the current Windows display guidance rather than contradicting it: the product default still favors the safer cross-monitor path, and `gui.automatic_dpi_awareness = true` remains an opt-in override for users who prefer sharper scaling and have verified their setup is stable.
 
 Follow-up notes:
 
-- Session 6 still needs one final pass on a real multi-monitor Windows setup to compare cross-screen behavior with and without `gui.automatic_dpi_awareness`. The status-bar detach and startup-presentation slices are now covered.
+- Session 6 no longer has an open audit gap on this machine.
+- Keep the Windows GUI guidance explicit that `gui.automatic_dpi_awareness = true` is an opt-in override, not the recommended default, because the current dual-display probe still reproduces a severe Results-tab stall when it is enabled.
 
 ## Session 7 Working Log
 

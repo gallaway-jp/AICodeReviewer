@@ -817,9 +817,12 @@ Common problem areas:
 - Kiro WSL path or CLI invocation problems on Windows
 - Copilot CLI auth or large-prompt behavior
 - Local LLM URL, API mode, model, or timeout mismatch
+- Windows multi-monitor GUI stalls when `gui.automatic_dpi_awareness` is enabled
 - large review scope causing slow or expensive runs
 
 Use [Troubleshooting](troubleshooting.md) for the detailed recovery guide.
+
+If the Windows GUI becomes sluggish or appears to hang while you drag it across displays, leave `gui.automatic_dpi_awareness = false`. That is the shipped stability-oriented default, and the audit probe on a dual-display setup still reproduced a severe Results-tab stall when that override was enabled.
 
 ## Backend Recovery Guide
 
