@@ -10,9 +10,9 @@ Start here based on what you want to do:
 
 - Install or remove the packaged Windows app: go to [Windows Installer Workflow](#windows-installer-workflow)
 - Run your first review from the terminal: go to [First CLI Review](guides/getting-started/first-cli-review.md)
-- Review only a diff or change range: go to [Diff Review Workflow](#diff-review-workflow)
+- Review only a diff or change range: go to [Diff Review Workflow](guides/reviews/diff-review-workflow.md)
 - Review only part of a project with selected files or diff filters: go to [Partial Project Workflow](#partial-project-workflow)
-- Review code against an external requirements document: go to [Specification Review Workflow](#specification-review-workflow)
+- Review code against an external requirements document: go to [Specification Review Workflow](guides/reviews/specification-review-workflow.md)
 - Use the desktop app: go to [First GUI Session](guides/getting-started/first-gui-session.md)
 - Review a generated addon preview in the desktop app: go to [Addon Review Workflow](#addon-review-workflow)
 - Generate benchmark summaries for later comparison: go to [Benchmark Runner Workflow](#benchmark-runner-workflow)
@@ -30,6 +30,8 @@ Start here based on what you want to do:
 If you prefer step-by-step walkthroughs, see [Guided Workflows](guides/workflows.md) for concise, task-oriented guides:
 
 - First CLI Review
+- Diff Review Workflow
+- Specification Review Workflow
 - First GUI Session
 - Local HTTP Workflow (API-driven reviews)
 - Build A Basic Addon
@@ -129,44 +131,16 @@ Use [CLI Guide](cli.md) for the full flag and tool-mode reference.
 
 ## Diff Review Workflow
 
-Use this path when you want to review only changed files or a specific patch instead of the whole project.
+Use [Diff Review Workflow](guides/reviews/diff-review-workflow.md) for the step-by-step walkthrough.
 
-If you repeat the same review bundles often, you can also use a built-in preset key in `--type`.
+That guide covers:
 
-Example:
+- choosing between a commit range and a patch file
+- starting with a dry run before spending backend time
+- running the real review on a narrow diff target
+- keeping review bundles focused when the patch is small
 
-```bash
-aicodereviewer . --scope diff --commits HEAD~3..HEAD --type release_safety --dry-run
-```
-
-### Review a commit range
-
-1. Start with a dry run so you can confirm the diff target.
-
-```bash
-aicodereviewer . --scope diff --commits HEAD~3..HEAD --type security --dry-run
-```
-
-2. Run the real review once the selected changes look right.
-
-```bash
-aicodereviewer . --scope diff --commits HEAD~3..HEAD --type security,testing --programmers Alice --reviewers Bob --backend local
-```
-
-### Review a patch file
-
-```bash
-aicodereviewer . --scope diff --diff-file changes.diff --type security --programmers Alice --reviewers Bob --backend local
-```
-
-Important rules:
-
-- use either `--commits` or `--diff-file`, not both
-- keep the review bundle focused when the diff is small and specific
-- the real diff review stays constrained to the selected patch or commit range, even for documentation, dependency, or license review types
-- use a dry run first if you are unsure whether the diff input covers the files you expect
-
-This is usually the best starting point for pull-request review, pre-merge validation, or targeted regression checking.
+Use [CLI Guide](cli.md) for the full diff flags and tool-mode reference.
 
 ## Partial Project Workflow
 
@@ -263,38 +237,16 @@ Why this pattern works:
 
 ## Specification Review Workflow
 
-Use this path when you want AICodeReviewer to compare code against an external requirements or design document.
+Use [Specification Review Workflow](guides/reviews/specification-review-workflow.md) for the step-by-step walkthrough.
 
-1. Point the run at the project or diff you want to inspect.
-2. Pass `specification` as the review type.
-3. Provide the requirements document with `--spec-file`.
+That guide covers:
 
-Example:
+- starting with a spec-only dry run
+- using `--spec-file` correctly
+- combining `specification` with one additional review type when needed
+- combining specification review with diff scope for recent changes
 
-```bash
-aicodereviewer . --type specification --spec-file requirements.md --programmers Alice --reviewers Bob --backend local
-```
-
-Combined example:
-
-```bash
-aicodereviewer . --type specification,maintainability --spec-file requirements.md --programmers Alice --reviewers Bob --backend local
-```
-
-You can combine `specification` with other review types, but a focused specification-only run is often easier to validate first.
-
-Common uses:
-
-- checking implementation drift against product requirements
-- validating behavior against an interface or migration spec
-- reviewing whether a diff preserves an agreed workflow or data contract
-
-Important rules:
-
-- `--spec-file` is required for specification reviews
-- use a readable project or diff target so the review has both the code and the spec context
-- when `specification` is combined with other review types, the same `--spec-file` content is still applied to the mixed review prompt
-- if you are reviewing a recent change only, combine `--type specification` with `--scope diff`
+Use [CLI Guide](cli.md) for the full flag reference and [Review Types Reference](review-types.md) for review-type semantics.
 
 ## GUI First Session
 

@@ -63,21 +63,15 @@ Why start narrow:
 - backend time and token use stay lower
 - it is easier to tell whether the first run matches expectations
 
-## Step 4: Narrow Scope If The Run Is Too Broad
+## Step 4: Move To Diff Review If The Run Is Too Broad
 
-If the first real review is larger or slower than you want, narrow the next run before retrying.
+If the first real review is larger or slower than you want, move to [Diff Review Workflow](../reviews/diff-review-workflow.md) instead of repeating the full CLI reference here.
 
 Common next moves:
 
 - use `--scope diff` with `--commits` or `--diff-file`
 - choose a smaller review bundle instead of `--type all`
 - pass `--backend` explicitly in scripts and repeatable runs
-
-Example diff review from recent commits:
-
-```bash
-aicodereviewer . --scope diff --commits HEAD~3..HEAD --type security --programmers Alice --reviewers Bob --backend local
-```
 
 ## If Something Looks Wrong
 
@@ -91,5 +85,5 @@ aicodereviewer . --scope diff --commits HEAD~3..HEAD --type security --programme
 - [User Manual](../../user-manual.md)
 - [CLI Guide](../../cli.md)
 - [Backend Guide](../../backends.md)
-- [Diff Review Workflow](../../user-manual.md#diff-review-workflow)
+- [Diff Review Workflow](../reviews/diff-review-workflow.md)
 - [Troubleshooting](../../troubleshooting.md)

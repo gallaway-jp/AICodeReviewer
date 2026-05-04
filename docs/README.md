@@ -12,6 +12,8 @@ The goal of this docs set is simple:
 - [User Manual](user-manual.md)
 - [Getting Started](getting-started.md)
 - [First CLI Review](guides/getting-started/first-cli-review.md)
+- [Diff Review Workflow](guides/reviews/diff-review-workflow.md)
+- [Specification Review Workflow](guides/reviews/specification-review-workflow.md)
 - [First GUI Session](guides/getting-started/first-gui-session.md)
 - [Addons Guide](addons.md)
 - [Addon Manifest Reference](addon-manifest-reference.md)
@@ -55,6 +57,8 @@ Use these guides if you are:
 
 - Starting from the shortest task-oriented path: read [User Manual](user-manual.md)
 - Following the first terminal walkthrough: read [First CLI Review](guides/getting-started/first-cli-review.md)
+- Reviewing a commit range or patch only: read [Diff Review Workflow](guides/reviews/diff-review-workflow.md)
+- Reviewing code against a requirements document: read [Specification Review Workflow](guides/reviews/specification-review-workflow.md)
 - Following the first desktop walkthrough: read [First GUI Session](guides/getting-started/first-gui-session.md)
 - A first-time user: start with [Getting Started](getting-started.md)
 - Building or debugging addons: read [Addons Guide](addons.md)

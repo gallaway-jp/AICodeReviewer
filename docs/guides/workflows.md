@@ -7,6 +7,11 @@ Quick, step-by-step walkthroughs for the most common tasks. Each guide is intent
 - [First CLI Review](getting-started/first-cli-review.md) — run your first end-to-end review from the terminal.
 - [First GUI Session](getting-started/first-gui-session.md) — set up and run a review in the desktop app.
 
+## Review Targeted Changes
+
+- [Diff Review Workflow](reviews/diff-review-workflow.md) — review a commit range or patch file without scanning the whole project.
+- [Specification Review Workflow](reviews/specification-review-workflow.md) — compare code against a requirements or design document.
+
 ## Automate & Integrate
 
 - [Local HTTP Workflow](automation/local-http-review-workflow.md) — drive reviews from scripts, CI, or other tools via the local API.
@@ -26,6 +31,7 @@ Quick, step-by-step walkthroughs for the most common tasks. Each guide is intent
 After completing a workflow, consult the corresponding reference pages for deeper details:
 
 - [CLI Guide](../cli.md) — full flag and tool-mode reference.
+- [Review Types Reference](../review-types.md) — review-type semantics and coverage.
 - [GUI Guide](../gui.md) — complete tab-by-tab UI reference.
 - [HTTP API Guide](../http-api.md) — route and payload contracts.
 - [Addons Guide](../addons.md) — runtime contract and discovery details.

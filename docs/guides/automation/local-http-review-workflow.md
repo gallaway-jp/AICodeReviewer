@@ -110,11 +110,7 @@ Download a specific artifact:
 curl http://127.0.0.1:8765/api/jobs/<job_id>/artifacts/<artifact_key>/raw
 ```
 
-## Common Patterns
-
-- **Automation**: use `dry_run` to validate, then submit the real job; poll or stream to detect completion.
-- **CI integration**: run the review as a job step, fail the build on critical findings, and upload the report as an artifact.
-- **Tooling**: wrap the API calls in your preferred language; the JSON envelope is stable and includes `job_id`, `status`, and `report` when ready.
+For more request envelopes, route variants, and response details, continue with [HTTP API Recipes](../../http-api-recipes.md) and [HTTP API Guide](../../http-api.md) after you complete this first end-to-end workflow.
 
 ## Troubleshooting
 
