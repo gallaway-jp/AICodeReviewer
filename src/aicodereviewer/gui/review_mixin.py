@@ -84,6 +84,7 @@ class ReviewTabMixin:
     _REVIEW_TYPES_THREE_COLUMN_MIN_WIDTH = 860
     _REVIEW_TYPE_ACTIONS_INLINE_MIN_WIDTH = 1180
     _REVIEW_TYPE_ACTIONS_TWO_ROW_MIN_WIDTH = 760
+    _REVIEW_QUEUE_POLL_MS = 250
 
     def _review_logical_width(self, *candidates: Any) -> float:
         available_width = 0
@@ -312,6 +313,33 @@ class ReviewTabMixin:
         if hasattr(self, "recommend_btn"):
             self.recommend_btn.configure(state=submit_state)
         self._sync_review_pinning_controls()
+
+    def _start_review_submission_queue_poll(self) -> None:
+        if getattr(self, "_app_destroying", False):
+            return
+        existing_after_id = getattr(self, "_review_queue_poll_after_id", None)
+        if existing_after_id is not None:
+            return
+        schedule_after = getattr(self, "_schedule_widget_after", None)
+        if not callable(schedule_after):
+            return
+        self._review_queue_poll_after_id = schedule_after(
+            self,
+            self._REVIEW_QUEUE_POLL_MS,
+            self._poll_review_submission_queue,
+        )
+
+    def _poll_review_submission_queue(self) -> None:
+        self._review_queue_poll_after_id = None
+        if getattr(self, "_app_destroying", False):
+            return
+        queue_coordinator = getattr(self, "_review_submission_queue", None)
+        if queue_coordinator is not None:
+            try:
+                queue_coordinator.on_submission_sync_requested()
+            except Exception:
+                logger.exception("Failed to refresh review submission queue from shared runtime")
+        self._start_review_submission_queue_poll()
 
     def _has_pinned_review_selection(self) -> bool:
         """Return True when a pinned default review-type set is configured."""

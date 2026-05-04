@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from aicodereviewer.addons import AddonEditorDiagnostic
 from aicodereviewer.addon_generator import generate_addon_preview
 import aicodereviewer.auth as auth
+from aicodereviewer.execution import ReviewExecutionRuntime, ReviewExecutionService, ReviewRequest
 from aicodereviewer.i18n import t
 from aicodereviewer.models import ReviewIssue
 from aicodereviewer.config import config
@@ -4158,6 +4159,96 @@ def test_gui_starts_and_stops_local_http_server_when_enabled(
             application.destroy()
             if handle is not None:
                 assert handle.closed is True
+
+
+def test_review_queue_panel_auto_refreshes_for_runtime_jobs_submitted_outside_gui(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from aicodereviewer.gui.app import App
+
+    config_path = tmp_path / "gui-runtime-queue.ini"
+    _save_default_config_to_path(config_path)
+    monkeypatch.setattr(config, "config_path", config_path)
+    _reset_config_to_path(config_path)
+
+    release_event = threading.Event()
+    started_event = threading.Event()
+
+    def _slow_collect(*_args: Any, cancel_check: Any = None, **_kwargs: Any) -> list[Any]:
+        started_event.set()
+        while not release_event.is_set():
+            if cancel_check is not None and cancel_check():
+                return []
+            time.sleep(0.01)
+        return []
+
+    runtime = ReviewExecutionRuntime(
+        execution_service=ReviewExecutionService(
+            scan_fn=lambda *_args: [{"path": "src/example.py"}],
+            collect_issues_fn=_slow_collect,
+        ),
+        backend_factory=lambda _backend_name: object(),
+        max_concurrent_jobs=1,
+    )
+
+    application = None
+    try:
+        application = App(testing_mode=True, review_runtime=runtime)
+        harness = GuiTestHarness(application)
+        harness.app._build_tab_if_needed(t("gui.tab.review"))
+        harness.app.tabs.set(t("gui.tab.review"))
+        harness.pump(2)
+
+        request = ReviewRequest(
+            path=str(tmp_path),
+            scope="project",
+            diff_file=None,
+            commits=None,
+            review_types=["security"],
+            spec_content=None,
+            target_lang="en",
+            backend_name="local",
+            programmers=[],
+            reviewers=[],
+            dry_run=False,
+        )
+        queued_request = ReviewRequest(
+            path=str(tmp_path),
+            scope="project",
+            diff_file=None,
+            commits=None,
+            review_types=["security"],
+            spec_content=None,
+            target_lang="en",
+            backend_name="local",
+            programmers=[],
+            reviewers=[],
+            dry_run=True,
+        )
+
+        first_job = runtime.submit_job(request)
+        second_job = runtime.submit_job(queued_request)
+
+        assert started_event.wait(timeout=1.0)
+
+        harness.wait_until(
+            lambda: set(harness.queue_panel.display_ids()) == {first_job.job_id, second_job.job_id},
+            timeout=3.0,
+            message="queue panel never refreshed to show runtime-submitted API jobs",
+        )
+
+        visible_ids = set(harness.queue_panel.display_ids())
+        assert visible_ids == {first_job.job_id, second_job.job_id}
+        assert harness.queue_panel.summary_text() != t("gui.review.queue_empty")
+        assert first_job.job_id in harness.queue_panel.detail_text()
+    finally:
+        release_event.set()
+        if application is not None:
+            try:
+                application.destroy()
+            except Exception:
+                pass
 
 
 def test_runtime_tuning_settings_persist_across_app_restart(
