@@ -157,6 +157,7 @@ class TestAppCreation:
         assert benchmark_tab.current_tab() == t("gui.tab.benchmarks")
         assert hasattr(app, "benchmark_fixtures_root_entry")
         assert hasattr(app, "benchmark_load_catalog_btn")
+        assert hasattr(app, "benchmark_run_btn")
         assert hasattr(app, "benchmark_load_summary_btn")
         assert hasattr(app, "benchmark_compare_summary_btn")
         assert hasattr(app, "benchmark_advanced_toggle_btn")

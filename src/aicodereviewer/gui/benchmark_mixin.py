@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
+import contextlib
 from copy import deepcopy
+import importlib.util
+import io
 import json
 import logging
 import os
 from pathlib import Path
+import sys
+import threading
+import time
 from tkinter import filedialog
 import difflib
-from typing import Any
+from types import ModuleType
+from typing import Any, Sequence
 import webbrowser
 
 import customtkinter as ctk  # type: ignore[import-untyped]
@@ -22,6 +29,41 @@ from .benchmark_layout import BenchmarkLayoutHelper
 from .shared_ui import MUTED_TEXT, SECTION_BORDER, SECTION_SURFACE
 
 logger = logging.getLogger(__name__)
+
+_HOLISTIC_BENCHMARK_RUNNER_MODULE = "aicodereviewer._holistic_benchmark_runner"
+
+
+def _load_holistic_benchmark_runner() -> ModuleType:
+    cached_module = sys.modules.get(_HOLISTIC_BENCHMARK_RUNNER_MODULE)
+    if isinstance(cached_module, ModuleType):
+        return cached_module
+
+    module_path = Path(__file__).resolve().parents[3] / "tools" / "run_holistic_benchmarks.py"
+    spec = importlib.util.spec_from_file_location(_HOLISTIC_BENCHMARK_RUNNER_MODULE, module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Unable to load holistic benchmark runner from {module_path}")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[_HOLISTIC_BENCHMARK_RUNNER_MODULE] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _invoke_holistic_benchmark_runner(argv: Sequence[str]) -> tuple[int, dict[str, Any]]:
+    benchmark_runner = _load_holistic_benchmark_runner()
+
+    stdout = io.StringIO()
+    with contextlib.redirect_stdout(stdout):
+        try:
+            exit_code = benchmark_runner.main(argv)
+        except SystemExit as exc:
+            exit_code = int(exc.code) if isinstance(exc.code, int) else 1
+
+    raw_output = stdout.getvalue().strip()
+    if not raw_output:
+        return exit_code, {}
+    payload = json.loads(raw_output)
+    return exit_code, payload if isinstance(payload, dict) else {}
 
 
 class BenchmarkTabMixin:
@@ -469,6 +511,140 @@ class BenchmarkTabMixin:
             self._load_benchmark_summary_artifact(source_path)
             return
         self._load_benchmark_fixture_catalog()
+
+    def _benchmark_active_backend(self) -> str:
+        backend_var = getattr(self, "backend_var", None)
+        raw_backend = backend_var.get() if backend_var is not None and hasattr(backend_var, "get") else config.get("backend", "type", "bedrock")
+        backend_name = str(raw_backend or "bedrock").strip().lower()
+        if backend_name in {"bedrock", "kiro", "copilot", "local"}:
+            return backend_name
+        return "bedrock"
+
+    def _benchmark_run_paths(self) -> tuple[Path, Path, Path, Path]:
+        artifacts_root = self._current_benchmark_artifacts_root() or self._default_benchmark_artifacts_root().resolve()
+        run_id = f"{time.strftime('%Y%m%d-%H%M%S')}-{self._benchmark_active_backend()}"
+        run_root = artifacts_root / "holistic-benchmark-runs" / run_id
+        output_dir = run_root / "reports"
+        summary_path = run_root / "summary.json"
+        json_out_path = run_root / "run.json"
+        return artifacts_root, output_dir, summary_path, json_out_path
+
+    def _benchmark_run_argv(
+        self,
+        fixtures_root: Path,
+        output_dir: Path,
+        summary_path: Path,
+        json_out_path: Path,
+    ) -> list[str]:
+        return [
+            "--fixtures-root",
+            str(fixtures_root),
+            "--output-dir",
+            str(output_dir),
+            "--summary-out",
+            str(summary_path),
+            "--json-out",
+            str(json_out_path),
+            "--backend",
+            self._benchmark_active_backend(),
+        ]
+
+    def _set_benchmark_run_state(self, running: bool) -> None:
+        self._benchmark_run_active = running
+        run_button = getattr(self, "benchmark_run_btn", None)
+        if run_button is not None:
+            run_button.configure(state="disabled" if running else "normal")
+
+    def _dispatch_benchmark_ui(self, callback: Any, *args: Any) -> None:
+        if getattr(self, "_testing_mode", False):
+            callback(*args)
+            return
+        self._run_on_ui_thread(callback, *args)
+
+    def _select_benchmark_summary_candidate(self, summary_path: Path) -> None:
+        for label, candidate in getattr(self, "_benchmark_summary_candidates", {}).items():
+            if candidate == summary_path:
+                self.benchmark_summary_selector_var.set(label)
+                return
+
+    def _start_benchmark_run(self) -> None:
+        if getattr(self, "_benchmark_run_active", False) or (hasattr(self, "_is_busy") and self._is_busy()):
+            message = t("gui.benchmark.run_busy")
+            self._show_toast(message, error=True)
+            self.status_var.set(message)
+            return
+
+        fixtures_root = self._current_benchmark_fixtures_root()
+        if fixtures_root is None or not fixtures_root.exists() or not fixtures_root.is_dir():
+            message = t("gui.benchmark.invalid_fixtures_root")
+            self._show_toast(message, error=True)
+            self.status_var.set(message)
+            return
+
+        artifacts_root, output_dir, summary_path, json_out_path = self._benchmark_run_paths()
+        if artifacts_root.exists() and not artifacts_root.is_dir():
+            message = t("gui.benchmark.run_failed", error="Saved runs folder must be a directory")
+            self._show_toast(message, error=True)
+            self.status_var.set(message)
+            return
+
+        artifacts_root.mkdir(parents=True, exist_ok=True)
+        self.benchmark_artifacts_root_entry.delete(0, "end")
+        self.benchmark_artifacts_root_entry.insert(0, str(artifacts_root))
+        self._set_benchmark_run_state(True)
+        self.status_var.set(t("gui.benchmark.run_running", backend=self._benchmark_active_backend()))
+
+        if getattr(self, "_testing_mode", False):
+            self._run_benchmark_worker(fixtures_root, artifacts_root, output_dir, summary_path, json_out_path)
+            return
+
+        threading.Thread(
+            target=self._run_benchmark_worker,
+            args=(fixtures_root, artifacts_root, output_dir, summary_path, json_out_path),
+            daemon=True,
+            name="benchmark-runner",
+        ).start()
+
+    def _run_benchmark_worker(
+        self,
+        fixtures_root: Path,
+        artifacts_root: Path,
+        output_dir: Path,
+        summary_path: Path,
+        json_out_path: Path,
+    ) -> None:
+        try:
+            output_dir.mkdir(parents=True, exist_ok=True)
+            _invoke_holistic_benchmark_runner(
+                self._benchmark_run_argv(fixtures_root, output_dir, summary_path, json_out_path)
+            )
+            if summary_path.exists():
+                self._dispatch_benchmark_ui(self._complete_benchmark_run, artifacts_root, summary_path)
+                return
+            self._dispatch_benchmark_ui(self._fail_benchmark_run, "Runner finished without producing a summary")
+        except Exception as exc:
+            logger.exception("Failed to run holistic benchmarks from the GUI")
+            self._dispatch_benchmark_ui(self._fail_benchmark_run, str(exc))
+
+    def _complete_benchmark_run(self, artifacts_root: Path, summary_path: Path) -> None:
+        try:
+            self._refresh_benchmark_summary_selector(artifacts_root)
+            self._select_benchmark_summary_candidate(summary_path)
+            self._load_benchmark_summary_artifact(summary_path)
+            message = t("gui.benchmark.run_loaded", path=summary_path.name)
+            self._show_toast(message, error=False)
+            self.status_var.set(message)
+        except Exception as exc:
+            logger.exception("Failed to load the generated benchmark summary")
+            self._fail_benchmark_run(str(exc))
+            return
+        self._set_benchmark_run_state(False)
+
+    def _fail_benchmark_run(self, error: str) -> None:
+        message = t("gui.benchmark.run_failed", error=error)
+        self._show_toast(message, error=True)
+        self.status_var.set(message)
+        self._set_benchmark_run_state(False)
 
     def _load_benchmark_fixture_catalog(self, fixtures_root: str | Path | None = None) -> None:
         if fixtures_root is None:
@@ -1050,9 +1226,20 @@ class BenchmarkTabMixin:
 
         summary = payload.get("score_summary") if isinstance(payload.get("score_summary"), dict) else {}
         representative_ids = self._representative_fixture_ids(payload)
-        fixtures_evaluated = payload.get("fixtures_evaluated") or summary.get("fixtures_evaluated") or len(representative_ids)
-        fixtures_passed = payload.get("fixtures_passed") or summary.get("fixtures_passed")
-        fixtures_failed = payload.get("fixtures_failed") or summary.get("fixtures_failed")
+        fixtures_evaluated = payload.get("fixtures_evaluated")
+        if fixtures_evaluated is None:
+            fixtures_evaluated = summary.get("fixtures_evaluated")
+        if fixtures_evaluated is None:
+            fixtures_evaluated = len(representative_ids)
+
+        fixtures_passed = payload.get("fixtures_passed")
+        if fixtures_passed is None:
+            fixtures_passed = summary.get("fixtures_passed")
+
+        fixtures_failed = payload.get("fixtures_failed")
+        if fixtures_failed is None:
+            fixtures_failed = summary.get("fixtures_failed")
+
         overall_score = payload.get("overall_score")
         if overall_score is None:
             overall_score = summary.get("overall_score")
@@ -1413,6 +1600,11 @@ class BenchmarkTabMixin:
                 )
 
         result_groups = []
+        result_groups = []
+        raw_results = payload.get("results")
+        if isinstance(raw_results, list):
+            result_groups.append(raw_results)
+
         score_summary = payload.get("score_summary")
         if isinstance(score_summary, dict) and isinstance(score_summary.get("results"), list):
             result_groups.append(score_summary["results"])

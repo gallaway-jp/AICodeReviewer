@@ -41,10 +41,10 @@ Backend-specific execution rule for this milestone:
 | S2 | Backend configuration and health | all four configured backends are now runnable on this machine | in progress | local, copilot, kiro, and bedrock health checks all pass with explicit low-cost test models; health surfaces are normalized and the Local LLM Settings save/rotate/revoke path is now covered through the real GUI widgets |
 | S3 | Core CLI review flows | run with local backend first | in progress | dry run, preset expansion, patch diff, commit diff, specification-only, and mixed specification review surfaces are now all exercised live; diff-scope widening and mixed-spec prompt loss were both fixed during the audit |
 | S4 | Tool mode and report artifacts | run with local backend first | completed | local tool-mode review, health, resume, fix-plan, apply-fixes, and cancellation envelopes are exercised end to end on an isolated fixture; LM Studio model advertisement parsing and specification dry-run spec loading were fixed during the pass |
-| S5 | GUI core review workflow | run with local backend first | in progress | Output Log save/clear/filter and GUI health-dialog wording now have live desktop evidence on an isolated app instance; queue-panel visibility under scheduler-backed execution remains the main uncovered GUI-core surface |
-| S6 | GUI detach, restore, desktop ergonomics | backend-agnostic after startup | in progress | detach/redock and restart-restore regressions are now green, and lazy detached-window restore for Benchmarks and Addon Review was fixed during the pass |
-| S7 | Addons and generated addon review | mostly backend-agnostic; use local only if generation path is exercised | not started | pending |
-| S8 | Benchmarks and quality tooling | local preferred; others blocked unless setup changes | not started | pending |
+| S5 | GUI core review workflow | run with local backend first | completed | scheduler-backed queue visibility, queued-cancel behavior, and recent-completed queue entries now have live desktop evidence alongside the earlier Output Log and health-dialog probe |
+| S6 | GUI detach, restore, desktop ergonomics | backend-agnostic after startup | in progress | shared status-bar detach behavior and startup presentation with reopened detached windows now have live desktop evidence; mixed-DPI cross-monitor validation is blocked on this machine because only one display is currently available to the probe |
+| S7 | Addons and generated addon review | mostly backend-agnostic; use local only if generation path is exercised | completed | live desktop Addon Review probing now covers preview load, diff inspection, approve/reject decisions, and visible English wording on the real GUI surface |
+| S8 | Benchmarks and quality tooling | local preferred; others blocked unless setup changes | in progress | live desktop evidence now confirms the Benchmarks tab can start a local run, persist timestamped saved runs, auto-load the generated summary, and compare two real saved summary artifacts; the probes also flushed out and fixed runner-import, summary-metadata, and zero-count summary rendering defects |
 | S9 | Local HTTP and shared scheduler | local backend path is the primary runnable slice | not started | pending |
 | S10 | Recovery, security, localization, polish | local fully runnable; other backends doc-only unless setup changes | not started | pending |
 
@@ -294,7 +294,7 @@ Manual scope:
 
 - benchmark harness tests
 - benchmark runner on at least the `local` backend
-- compare-run workflow in the GUI Benchmarks tab
+- fresh-run and compare-run workflow in the GUI Benchmarks tab
 - fixture authoring workflow sanity check
 - `tools/compare_review_reports.py`
 - generated-addon judged-quality or validation helper paths when environment allows
@@ -495,7 +495,7 @@ Follow-up notes:
 
 ## Session 5 Working Log
 
-Current status: underway with both harness-backed and live desktop evidence for the main GUI review/results/session/fix flow; the remaining GUI-core gap is scheduler-backed queue visibility on the real desktop surface
+Current status: completed for the planned GUI-core slice on this machine, with both harness-backed and live desktop evidence for the main review/results/session/fix flow including scheduler-backed queue visibility
 
 Observed so far on 2026-05-04:
 
@@ -509,14 +509,16 @@ Observed so far on 2026-05-04:
 - The same isolated runtime probe also captured GUI health-dialog wording for the configured backends on this machine. The local dialog rendered a passing summary; Copilot surfaced a blocked CLI diagnostic against the stale Winget-installed stub path with the expected remediation hint row; Kiro and Bedrock both rendered passing prerequisite dialogs. This closes the earlier Session 5 gap around GUI health wording with actual desktop dialog content rather than CLI output alone.
 - Supporting desktop screenshots were captured into `artifacts/manual-session5/live-log-tab.png` and `artifacts/manual-session5/live-benchmark-detached.png`. The log screenshot matches the documented Output Log layout, and the detached benchmark screenshot shows the expected main-window placeholder plus `Focus Window` and `Redock` actions.
 - The repository includes a real interactive GUI harness at `tools/manual_test_gui.py`, but on this machine it is still a manual launcher only (`--lang`, `--theme`) rather than a scripted desktop driver, so the remaining GUI-only checks still need explicit human interaction or a dedicated automation shim.
+- A new isolated desktop probe at `artifacts/manual-session6/gui-queue-detach-probe.json` now covers the remaining scheduler-backed queue surface on the real GUI widgets. It records one running review plus one queued dry run, confirms the queue summary renders `active=1 / queued=1 / recent=0`, verifies that selecting and cancelling the queued submission updates the summary to `active=1 / queued=0 / recent=1`, and then confirms the finished review remains visible as a recent-completed entry.
+- The same probe confirms that the queue panel's visible labels, detail text, and cancel-button enablement all track the scheduler state on the desktop surface rather than only inside the pytest harness.
 
 Follow-up notes:
 
-- Session 5 is no longer blocked on Output Log or health-dialog coverage. The next pass should focus on scheduler-backed queue visibility in the real desktop app and any wording drift that appears only during a fully manual end-to-end review run.
+- Session 5 is complete for the planned local-backend GUI-core audit slice on this machine. Any further Session 5 work would be adjacent wording polish rather than a missing feature-validation path.
 
 ## Session 6 Working Log
 
-Current status: underway with focused regression coverage plus live detached-window evidence; the remaining desktop ergonomics work is status-bar detach behavior, startup presentation polish, and mixed-DPI validation on this machine
+Current status: underway with focused regression coverage plus live detached-window evidence; shared status-bar detach behavior and startup presentation are now verified, and the only remaining Session 6 gap is mixed-DPI cross-monitor validation on a multi-display setup
 
 Observed so far on 2026-05-04:
 
@@ -525,7 +527,57 @@ Observed so far on 2026-05-04:
 - That restart-restore defect is now patched in the milestone worktree. The Benchmarks and Addon Review detached-window open paths now build their lazy tabs on demand before restoring the detached surface, and the originally failing `test_four_detached_pages_restore_after_restart` now passes on rerun.
 - Live desktop evidence for the detached-window experience now exists under `artifacts/manual-session5/`. The screenshot `live-benchmark-detached.png` shows the shipped placeholder state in the main window while Benchmarks is detached, including the `Focus Window` and `Redock` actions documented in `docs/gui.md`.
 - The isolated runtime probe at `artifacts/manual-session5/gui-live-probe.json` also now exercises detached-page persistence outside the pytest harness. It detached Log, Settings, Benchmarks, and Addon Review on a temp config, recreated the app, and recorded all four restored detached windows under `detach_restore.restored_windows`.
+- A second isolated desktop probe at `artifacts/manual-session6/gui-queue-detach-probe.json` now covers the shared status-bar detach action directly. On the live widgets, Review and Results render the shared button disabled with the localized unavailable label, while Log, Settings, Benchmarks, and Addon Review all render the localized `Open In Window` action.
+- That same probe also verified the status-bar detach action end to end on the lazy Benchmarks surface: invoking the shared button opened the detached window, changed the shared button label to the localized `Focus Window` action, and after redocking returned the label to `Open In Window`.
+- Startup presentation with reopened detached windows now has explicit live evidence too. A non-testing app instance launched against a temp config with all four detachable pages pre-populated in `gui.detached_pages` restored Log, Settings, Benchmarks, and Addon Review, brought the main window back to `state=normal`, and left `_startup_window_hidden` cleared after the restore/finalize sequence.
+- Mixed-DPI cross-monitor validation could not be completed on this machine during this pass. Running `tools/gui_perf_probe.py --move-across-monitors ...` detected only one display and skipped the monitor-move loop with the explicit message that a multi-monitor setup is required, so the remaining DPI-specific check is currently environment-limited rather than a reproduced product defect.
 
 Follow-up notes:
 
-- Session 6 is not complete yet. The next pass should still cover the shared status-bar detach action on a live desktop surface, startup presentation behavior around reopened detached windows, and mixed-DPI monitor-move validation with and without `gui.automatic_dpi_awareness` where feasible.
+- Session 6 still needs one final pass on a real multi-monitor Windows setup to compare cross-screen behavior with and without `gui.automatic_dpi_awareness`. The status-bar detach and startup-presentation slices are now covered.
+
+## Session 7 Working Log
+
+Current status: completed for the intended Session 7 surface. The focused addon baseline, manual CLI artifact slice, and live desktop Addon Review probe are all now recorded.
+
+Observed so far on 2026-05-04:
+
+- Focused addon validation is now green on the milestone worktree. The current targeted slice completed with `10 passed` across CLI addon discovery, generated-preview rendering, approval/install, and the GUI Addon Review approval plus detach/redock coverage.
+- That focused slice covered `tests/test_main_cli.py::test_list_addons_prints_runtime_summary`, `tests/test_main_cli.py::test_list_addons_reads_checked_in_example_addon_from_configured_paths`, `tests/test_addon_review_surface.py`, `tests/test_addon_approval.py`, the generated-addon tool-mode nodes in `tests/test_cli_tool_mode.py`, and the Addon Review GUI workflow nodes in `tests/test_gui_workflows.py`.
+- A first manual CLI artifact slice now exists under `artifacts/manual-session7/`. `analyze-repo` generated a preview for a minimal FastAPI demo repository and wrote `analyze-repo-output.json`, `generated-preview/capability-profile.json`, `generated-preview/approval-request.json`, `generated-preview/review-checklist.md`, plus the generated addon scaffold.
+- The same manual slice exercised `review-addon-preview --diff-only` and captured the rendered bundle diff in `artifacts/manual-session7/review-addon-preview.txt`, including the generated `api_design`, `data_validation`, and `error_handling` additions against the default bundle.
+- `approve-addon-preview --decision approve --reviewer Colin --install-dir artifacts/manual-session7/installed-addons` completed successfully on that preview and wrote both the approval decision artifact and the installed addon payload under `artifacts/manual-session7/installed-addons/manual-session7-fastapi`.
+- Addon discovery also now has live CLI evidence for the installed preview. Running `--list-addons` against a temp config that pointed `addons.paths` at the installed preview path reported `demo-repo Adaptive Review Addon [manual-session7-fastapi] v0.1.0` with one discovered review pack; the captured output is stored in `artifacts/manual-session7/list-addons.txt`.
+- Live desktop Addon Review evidence now exists under `artifacts/manual-session7/gui-addon-review-probe.json`. The isolated GUI probe loaded two generated previews, captured the visible English labels on the Addon Review tab, selected the shipped `Generated Bundle vs Default Bundle` diff, approved one preview, rejected the other, and recorded the corresponding toast messages.
+- That live probe confirmed the approve path writes an `approved` decision and installs the reviewed addon payload, while the reject path writes a `rejected` decision without creating an installed addon directory.
+- The visible English Addon Review labels captured from the live desktop surface matched the current docs closely enough that no obvious wording drift was observed in this pass.
+
+Follow-up notes:
+
+- Session 7's planned load/diff/approve/reject wording pass is now closed for the current machine and English desktop surface.
+
+## Session 8 Working Log
+
+Current status: live benchmark evidence captured for both the start-and-load path and the summary-vs-summary comparison path. The Benchmarks tab no longer requires a user to understand saved summary files before starting a basic benchmark run, and real saved summaries now round-trip back into both the main-run and comparison views correctly.
+
+Observed so far on 2026-05-04:
+
+- The original Session 8 gap was confirmed in the live code path: the Benchmarks tab could browse fixture catalogs and saved summary artifacts, but it exposed no GUI entry point for starting a benchmark run.
+- The milestone worktree now adds a direct `Run Benchmarks` action to the Benchmarks tab. The new flow reuses `tools/run_holistic_benchmarks.py`, writes a timestamped run folder under the configured saved-runs root, refreshes the discovered summary selector, and auto-loads the generated summary as the new main run.
+- The first live probe exposed a real import-path defect in that new flow: `aicodereviewer.gui.benchmark_mixin` tried to load the runner via `from tools import run_holistic_benchmarks`, which fails when the repo root is not on `sys.path`. The GUI now loads `tools/run_holistic_benchmarks.py` from its known filesystem path instead, and the new regression slice `tests/test_gui_workflows.py::test_benchmark_runner_loader_does_not_require_tools_package_on_sys_path` locks that seam down.
+- The same live probe exposed a second contract mismatch: the runner's generated `summary.json` lacked the `representative_fixtures` metadata the Benchmarks tab expects when it reloads a saved run. `tools/run_holistic_benchmarks.py` now carries `representative_fixture_ids` and `representative_fixtures` into both `summary.json` and `run.json`, and `tests/test_run_holistic_benchmarks.py::test_runner_writes_summary_artifacts_with_representative_fixture_metadata` covers that artifact contract.
+- A follow-up comparison probe exposed one more real UI defect in the saved-summary path: `_format_summary_overview(...)` treated zero pass/fail counts as falsey and rendered them as `-`, and `_collect_fixture_snapshots(...)` did not read top-level `results` from the real `summary.json` artifacts. The Benchmarks tab now preserves zero counts correctly and mines fixture snapshots from top-level summary results as well as the richer runner envelope shape.
+- Focused validation is green for the full Session 8 fix set. `tests/test_gui_smoke.py::TestAppCreation::test_benchmark_tab_widgets`, `tests/test_gui_workflows.py::test_benchmark_tab_can_run_benchmarks_without_manual_summary_selection`, `tests/test_gui_workflows.py::test_benchmark_runner_loader_does_not_require_tools_package_on_sys_path`, `tests/test_gui_workflows.py::test_benchmark_tab_compares_summary_artifacts_with_top_level_results_and_zero_counts`, and `tests/test_run_holistic_benchmarks.py::test_runner_writes_summary_artifacts_with_representative_fixture_metadata` all passed.
+- User-facing docs now describe the simplified desktop benchmark path in `docs/gui.md`, `docs/benchmarks.md`, and `docs/user-manual.md`.
+- Live desktop evidence now exists under `artifacts/manual-session8/gui-benchmark-run-probe.json`. That probe launched the real Benchmarks tab in `testing_mode=True`, pointed it at a temp fixture root containing only `auth-guard-regression`, invoked `Run Benchmarks`, and recorded the visible English labels, toast/status text, generated summary paths, and loaded benchmark state.
+- The successful local evidence run is `artifacts/manual-session8/holistic-benchmark-runs/20260504-104113-local/summary.json` with companion envelope `artifacts/manual-session8/holistic-benchmark-runs/20260504-104113-local/run.json` and fixture report `artifacts/manual-session8/holistic-benchmark-runs/20260504-104113-local/reports/auth-guard-regression.json`.
+- That live run completed in about 29.9 seconds against the local LM Studio backend, reported backend health ready for `qwen/qwen3.5-9b`, auto-selected the new `summary.json` entry in the saved-run selector, updated the source text to `Main run: summary.json`, showed `count=1`, selected `auth-guard-regression - Authorization Guard Regression`, and rendered the generated benchmark summary directly on the desktop surface.
+- The captured desktop copy aligned with the current English docs for this flow: the probe recorded the expected `Run Benchmarks` call to action and the success toast `Benchmark run finished and loaded summary.json.` without further wording drift on this screen.
+- Live desktop comparison evidence now also exists under `artifacts/manual-session8/gui-benchmark-compare-probe.json`. That probe ran two real local benchmark sessions from the GUI against isolated one-fixture roots (`auth-guard-regression` and `cache-invalidation-gap`), then loaded `artifacts/manual-session8/holistic-benchmark-runs/20260504-104854-local/summary.json` as the main run and `artifacts/manual-session8/holistic-benchmark-runs/20260504-104925-local/summary.json` as the comparison run.
+- The corresponding runner envelopes and per-fixture reports were written to `artifacts/manual-session8/holistic-benchmark-runs/20260504-104854-local/run.json`, `artifacts/manual-session8/holistic-benchmark-runs/20260504-104854-local/reports/auth-guard-regression.json`, `artifacts/manual-session8/holistic-benchmark-runs/20260504-104925-local/run.json`, and `artifacts/manual-session8/holistic-benchmark-runs/20260504-104925-local/reports/cache-invalidation-gap.json`.
+- That live compare pass confirmed the summary selector discovered both new saved runs, the Benchmarks tab loaded the primary summary with `Fixtures Passed: 0` / `Fixtures Failed: 1`, the comparison summary rendered `Fixtures Passed: 1` / `Fixtures Failed: 0`, and the compare view surfaced the expected primary-only vs compare-only fixture records for the two real saved runs.
+- The captured compare surface showed the expected summary-vs-summary behavior on the current English desktop copy: `Loaded benchmark summary artifact (1 fixture(s))` for the main run, `Loaded benchmark comparison artifact (1 representative fixture(s))` for the comparison run, and a compare overview that called out `Only In Primary: auth-guard-regression` plus `Only In Comparison: cache-invalidation-gap`.
+
+Follow-up notes:
+
+- Session 8's benchmark start-and-compare flow is now backed by focused automated coverage plus live local desktop evidence. Remaining Session 8 work, if any, should target broader benchmark and quality-tooling surfaces rather than the Benchmarks tab's core saved-run workflow.

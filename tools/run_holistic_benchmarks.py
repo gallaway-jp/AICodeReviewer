@@ -15,6 +15,7 @@ from typing import Any, Sequence
 from aicodereviewer import main as cli_main
 from aicodereviewer.backends.health import check_backend
 from aicodereviewer.benchmarking import (
+    describe_fixture_catalog_entry,
     describe_fixture_invocation,
     discover_fixtures,
     evaluate_fixture_directory,
@@ -161,6 +162,10 @@ def _run_output_dir(base_output_dir: Path, run_index: int, total_runs: int) -> P
     if total_runs == 1:
         return base_output_dir
     return base_output_dir / f"run-{run_index:03d}"
+
+
+def _representative_fixture_catalog(fixtures: Sequence[Any]) -> list[dict[str, Any]]:
+    return [describe_fixture_catalog_entry(fixture) for fixture in fixtures]
 
 
 def _stability_summary(run_results: Sequence[Sequence[Any]]) -> dict[str, Any]:
@@ -364,6 +369,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             parser.error(f"Unknown fixture ids: {', '.join(sorted(missing))}")
 
     backend_name = _effective_backend(args.backend)
+    representative_fixtures = _representative_fixture_catalog(fixtures)
+    representative_fixture_ids = [str(fixture["id"]) for fixture in representative_fixtures]
     health = None if args.skip_health_check else _health_payload(backend_name)
     if health is not None and not health["ready"]:
         payload = {
@@ -425,13 +432,25 @@ def main(argv: Sequence[str] | None = None) -> int:
             }
         )
 
-    score_summary = run_summaries[-1]["score_summary"]
+    score_summary = dict(run_summaries[-1]["score_summary"])
+    score_summary.setdefault("backend", backend_name)
+    score_summary.setdefault("status", "completed" if command_failures == 0 else "partial_failure")
+    score_summary.setdefault("representative_fixture_ids", representative_fixture_ids)
+    score_summary.setdefault("representative_fixtures", representative_fixtures)
+
     stability_summary = _stability_summary(per_run_results)
+    stability_summary["backend"] = backend_name
+    stability_summary["status"] = "completed" if command_failures == 0 else "partial_failure"
+    stability_summary["representative_fixture_ids"] = representative_fixture_ids
+    stability_summary["representative_fixtures"] = representative_fixtures
+
     summary_payload = {
         "backend": backend_name,
         "status": "completed" if command_failures == 0 else "partial_failure",
         "runs": args.runs,
         "health": health,
+        "representative_fixture_ids": representative_fixture_ids,
+        "representative_fixtures": representative_fixtures,
         "generated_reports": generated_reports,
         "score_summary": score_summary,
         "stability_summary": stability_summary,

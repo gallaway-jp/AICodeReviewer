@@ -342,7 +342,9 @@ After a review completes:
 
 Useful companion workflows:
 
+- while one review is already running, use the inline queue panel to inspect the active plus queued submissions, target a specific queued item, and cancel it without losing the visible queue state
 - detach Addon Review, Benchmarks, Settings, or Output Log into their own windows when you want a multi-window layout
+- use the shared status-bar window action when you want the current detachable page to open or refocus without hunting for the tab-local button
 - pin a preferred review-type bundle if you repeat the same startup selection often
 - use Benchmarks to compare saved benchmark runs if you are tuning prompts, models, or review bundles
 
@@ -369,9 +371,10 @@ aicodereviewer analyze-repo . --output-dir artifacts/generated-addon-preview --a
 Useful notes:
 
 - the page uses the same generated preview directory produced by `analyze-repo`
-- the Addon Review page can be detached into its own window when you want the diff surface visible beside the rest of the app
+- the Addon Review page can be detached into its own window when you want the diff surface visible beside the rest of the app, and the shared status-bar window action will switch between `Open In Window` and `Focus Window` for that page
 - approval writes the decision record and installs the addon into the default or chosen install directory
 - rejection records the decision without activating the addon
+- detached Addon Review windows participate in the same restart restore flow as Benchmarks, Settings, and Output Log
 
 Use [Addons Guide](addons.md) when you need the full manifest contract or the CLI approval commands.
 
@@ -380,6 +383,8 @@ Use [Addons Guide](addons.md) when you need the full manifest contract or the CL
 Use this path when you want to generate saved benchmark summaries before comparing them in the desktop browser.
 
 ![Annotated benchmark workflow](images/gui-benchmarks-workflow.png)
+
+The current desktop build also exposes a `Run Benchmarks` action beside the saved-run controls. The checked-in screenshot still emphasizes the compare surfaces, but you no longer need to create summary files manually before starting a basic benchmark run from the GUI.
 
 In this capture:
 
@@ -390,7 +395,8 @@ In this capture:
 
 1. Choose the backend you want to evaluate.
 2. Run a backend connection check unless you already know the environment is healthy.
-3. Run the benchmark runner and write results into a dedicated output folder.
+3. Open the Benchmarks tab and use `Run Benchmarks` if you want the simplest path. The app writes a timestamped run folder under the configured saved-runs root and loads the new summary automatically.
+4. Use the CLI runner instead when you need custom fixture selection, repeated runs, or a specific output layout.
 
 Example:
 
@@ -398,8 +404,8 @@ Example:
 python tools/run_holistic_benchmarks.py --backend local --lang en --output-dir artifacts/holistic-benchmarks/local-run-2026-04-07 --summary-out artifacts/holistic-benchmarks/local-run-2026-04-07/summary.json --skip-health-check
 ```
 
-4. Repeat with a different backend, prompt change, or review improvement you want to measure.
-5. Open the Benchmarks tab and load the saved summary JSON files as the primary and comparison runs.
+5. Repeat with a different backend, prompt change, or review improvement you want to measure.
+6. Open the Benchmarks tab and load the saved summary JSON files as the primary and comparison runs when you want a side-by-side comparison.
 
 Useful variants:
 
@@ -412,6 +418,7 @@ Practical advice:
 - keep `--lang en` stable when you want comparable saved runs
 - store each run in its own output folder so the summary JSON and generated artifacts stay grouped together
 - use the generated summary JSON as the thing you load in the Benchmarks tab later
+- the GUI run button is the fastest way to generate one new saved run; the CLI remains the better fit for fixture-specific or repeated-run benchmarking
 
 Use [Quality Benchmarks](benchmarks.md) if you need runner flags or fixture-catalog details.
 
@@ -509,7 +516,7 @@ Use this path when you want to compare two saved benchmark runs and triage the f
 ![Benchmarks tab screenshot](images/gui-benchmarks-tab.png)
 
 1. Open the Benchmarks tab.
-2. Point the tab at the fixture catalog and the folder containing saved benchmark summaries if needed.
+2. If you need a fresh baseline first, use `Run Benchmarks`; otherwise point the tab at the fixture catalog and the folder containing saved benchmark summaries if needed.
 3. Load one summary as the primary run.
 4. Load a second summary as the comparison run.
 5. Inspect the fixture table for shared, primary-only, or comparison-only scenarios.

@@ -8,6 +8,7 @@ import threading
 import time
 from pathlib import Path
 from types import SimpleNamespace
+from types import ModuleType
 from typing import Any, Generator
 
 import pytest
@@ -290,6 +291,53 @@ def _write_sample_benchmark_summaries(tmp_path: Path) -> tuple[Path, Path, Path]
     return artifacts_root, summary_path, compare_path
 
 
+def _sample_benchmark_run_summary(output_dir: Path) -> dict[str, Any]:
+    return {
+        "backend": "local",
+        "status": "completed",
+        "overall_score": 1.0,
+        "fixtures_evaluated": 1,
+        "fixtures_passed": 1,
+        "fixtures_failed": 0,
+        "representative_fixtures": [
+            {
+                "id": "auth-jwt-bypass",
+                "title": "JWT Auth Bypass",
+                "scope": "project",
+                "review_types": ["security"],
+                "benchmark_metadata": {
+                    "fixture_tags": ["auth", "jwt"],
+                    "expected_focus": ["token validation"],
+                },
+            }
+        ],
+        "generated_reports": [
+            {
+                "fixture_id": "auth-jwt-bypass",
+                "output_path": str(output_dir / "auth-jwt-bypass.json"),
+                "status": "completed",
+                "issue_count": 1,
+                "success": True,
+            }
+        ],
+        "score_summary": {
+            "overall_score": 1.0,
+            "fixtures_evaluated": 1,
+            "fixtures_passed": 1,
+            "fixtures_failed": 0,
+            "representative_fixture_ids": ["auth-jwt-bypass"],
+            "representative_fixtures": [
+                {
+                    "id": "auth-jwt-bypass",
+                    "title": "JWT Auth Bypass",
+                    "scope": "project",
+                    "review_types": ["security"],
+                }
+            ],
+        },
+    }
+
+
 def _runner_with_report_context(
     meta: dict[str, Any] | None = None,
     **kwargs: Any,
@@ -487,6 +535,176 @@ def test_benchmark_tab_loads_representative_fixture_summary_artifact(
     assert "+0.2500" in takeaways_text
     assert "copilot" in takeaways_text or "local" in takeaways_text
     assert set(harness.benchmark_tab.fixture_diff_ids()) == {"auth-jwt-bypass", "cache-gap", "validation-gap"}
+
+
+def test_benchmark_tab_can_run_benchmarks_without_manual_summary_selection(
+    monkeypatch: pytest.MonkeyPatch,
+    harness: GuiTestHarness,
+    tmp_path: Path,
+) -> None:
+    import aicodereviewer.gui.benchmark_mixin as benchmark_mixin
+
+    fixtures_root = tmp_path / "fixtures"
+    fixtures_root.mkdir()
+
+    harness.benchmark_tab.open()
+    harness.app.benchmark_fixtures_root_entry.delete(0, "end")
+    harness.app.benchmark_fixtures_root_entry.insert(0, str(fixtures_root))
+    harness.app.benchmark_artifacts_root_entry.delete(0, "end")
+    harness.app.benchmark_artifacts_root_entry.insert(0, str(tmp_path / "artifacts"))
+
+    def _fake_invoke(argv: list[str]) -> tuple[int, dict[str, Any]]:
+        output_dir = Path(argv[argv.index("--output-dir") + 1])
+        summary_path = Path(argv[argv.index("--summary-out") + 1])
+        json_out_path = Path(argv[argv.index("--json-out") + 1])
+        output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / "auth-jwt-bypass.json").write_text(
+            json.dumps({"status": "completed", "success": True, "issue_count": 1}, indent=2),
+            encoding="utf-8",
+        )
+        summary_payload = _sample_benchmark_run_summary(output_dir)
+        summary_path.parent.mkdir(parents=True, exist_ok=True)
+        summary_path.write_text(json.dumps(summary_payload, indent=2), encoding="utf-8")
+        json_out_path.write_text(
+            json.dumps({"status": "completed", "generated_reports": summary_payload["generated_reports"]}, indent=2),
+            encoding="utf-8",
+        )
+        return 0, {"status": "completed", "generated_reports": summary_payload["generated_reports"]}
+
+    monkeypatch.setattr(benchmark_mixin, "_invoke_holistic_benchmark_runner", _fake_invoke)
+
+    harness.benchmark_tab.run_benchmarks()
+    harness.pump(2)
+
+    assert any("summary.json" in value for value in harness.benchmark_tab.summary_selector_values())
+    assert "summary.json" in harness.benchmark_tab.source_text()
+    assert harness.benchmark_tab.count_text() == "1"
+    assert "auth-jwt-bypass" in harness.benchmark_tab.selected_fixture()
+    assert "JWT Auth Bypass" in harness.benchmark_tab.catalog_text()
+    assert "Overall Score:" in harness.benchmark_tab.primary_summary_text() or "総合スコア：" in harness.benchmark_tab.primary_summary_text()
+    assert any(message == t("gui.benchmark.run_loaded", path="summary.json") and not error for message, error in harness.toasts)
+
+
+def test_benchmark_tab_compares_summary_artifacts_with_top_level_results_and_zero_counts(
+    harness: GuiTestHarness,
+    tmp_path: Path,
+) -> None:
+    artifacts_root = tmp_path / "artifacts"
+    artifacts_root.mkdir()
+
+    primary_report = artifacts_root / "primary-auth-guard-regression.json"
+    compare_report = artifacts_root / "compare-auth-guard-regression.json"
+    primary_report.write_text(json.dumps({"status": "completed", "success": True}, indent=2), encoding="utf-8")
+    compare_report.write_text(json.dumps({"status": "completed", "success": True}, indent=2), encoding="utf-8")
+
+    primary_summary = artifacts_root / "primary-summary.json"
+    compare_summary = artifacts_root / "compare-summary.json"
+
+    primary_payload = {
+        "backend": "local",
+        "status": "completed",
+        "overall_score": 0.0,
+        "fixtures_evaluated": 1,
+        "fixtures_passed": 0,
+        "fixtures_failed": 1,
+        "representative_fixture_ids": ["auth-guard-regression"],
+        "representative_fixtures": [
+            {
+                "id": "auth-guard-regression",
+                "title": "Authorization Guard Regression",
+                "scope": "project",
+                "review_types": ["security"],
+            }
+        ],
+        "results": [
+            {
+                "fixture_id": "auth-guard-regression",
+                "title": "Authorization Guard Regression",
+                "status": "completed",
+                "score": 0.0,
+                "passed": False,
+                "report_path": str(primary_report),
+                "selected_review_types": ["security"],
+            }
+        ],
+    }
+    compare_payload = {
+        "backend": "local",
+        "status": "completed",
+        "overall_score": 1.0,
+        "fixtures_evaluated": 1,
+        "fixtures_passed": 1,
+        "fixtures_failed": 0,
+        "representative_fixture_ids": ["auth-guard-regression"],
+        "representative_fixtures": [
+            {
+                "id": "auth-guard-regression",
+                "title": "Authorization Guard Regression",
+                "scope": "project",
+                "review_types": ["security"],
+            }
+        ],
+        "results": [
+            {
+                "fixture_id": "auth-guard-regression",
+                "title": "Authorization Guard Regression",
+                "status": "completed",
+                "score": 1.0,
+                "passed": True,
+                "report_path": str(compare_report),
+                "selected_review_types": ["security"],
+            }
+        ],
+    }
+
+    primary_summary.write_text(json.dumps(primary_payload, indent=2), encoding="utf-8")
+    compare_summary.write_text(json.dumps(compare_payload, indent=2), encoding="utf-8")
+
+    harness.benchmark_tab.open()
+    harness.benchmark_tab.refresh_summary_selector(artifacts_root)
+    harness.benchmark_tab.select_summary_by_fragment("primary-summary.json")
+    harness.benchmark_tab.load_selected_summary()
+    harness.benchmark_tab.select_summary_by_fragment("compare-summary.json")
+    harness.benchmark_tab.compare_selected_summary()
+
+    primary_text = harness.benchmark_tab.primary_summary_text()
+    compare_text = harness.benchmark_tab.compare_summary_text()
+
+    assert "Fixtures Passed: 0" in primary_text or "通過フィクスチャ数： 0" in primary_text
+    assert "Fixtures Failed: 0" in compare_text or "失敗フィクスチャ数： 0" in compare_text
+    assert "+1.0000" in compare_text
+    assert harness.benchmark_tab.fixture_diff_ids() == ["auth-guard-regression"]
+
+
+def test_benchmark_runner_loader_does_not_require_tools_package_on_sys_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import aicodereviewer.gui.benchmark_mixin as benchmark_mixin
+
+    class _FakeLoader:
+        def exec_module(self, module: ModuleType) -> None:
+            def _main(argv: list[str]) -> int:
+                print(json.dumps({"status": "completed", "argv": list(argv)}))
+                return 0
+
+            module.main = _main  # type: ignore[attr-defined]
+
+    monkeypatch.delitem(sys.modules, benchmark_mixin._HOLISTIC_BENCHMARK_RUNNER_MODULE, raising=False)
+    monkeypatch.setattr(
+        benchmark_mixin.importlib.util,
+        "spec_from_file_location",
+        lambda name, path: SimpleNamespace(loader=_FakeLoader(), name=name, origin=str(path)),
+    )
+    monkeypatch.setattr(
+        benchmark_mixin.importlib.util,
+        "module_from_spec",
+        lambda spec: ModuleType(spec.name),
+    )
+
+    exit_code, payload = benchmark_mixin._invoke_holistic_benchmark_runner(["--backend", "local"])
+
+    assert exit_code == 0
+    assert payload == {"status": "completed", "argv": ["--backend", "local"]}
 
 
 def test_review_backend_dropdown_stays_in_sync_with_settings(

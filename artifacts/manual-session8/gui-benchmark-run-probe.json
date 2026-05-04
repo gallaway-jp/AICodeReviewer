@@ -1,0 +1,152 @@
+{
+  "fixture_id": "auth-guard-regression",
+  "config_source": "D:\\Development\\Python\\AICodeReviewer-manual-audit\\config.ini",
+  "fixtures_root": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-benchmark-run-1rx5s6cg\\fixtures",
+  "artifacts_root": "D:\\Development\\Python\\AICodeReviewer-manual-audit\\artifacts\\manual-session8",
+  "elapsed_seconds": 29.908,
+  "latest_run_dir": "D:\\Development\\Python\\AICodeReviewer-manual-audit\\artifacts\\manual-session8\\holistic-benchmark-runs\\20260504-104113-local",
+  "labels": {
+    "header_title": "Compare Review Runs",
+    "run_button": "Run Benchmarks",
+    "load_summary_button": "Choose Main Run",
+    "compare_summary_button": "Choose Comparison Run",
+    "visible_labels": [
+      "Compare Review Runs",
+      "Compare Review Runs",
+      "Start a fresh benchmark run or load saved benchmark runs to see which backend or review setup performed better across representative sample projects.",
+      "Start a fresh benchmark run or load saved benchmark runs to see which backend or review setup performed better across representative sample projects.",
+      "Use this page in three steps:\n1. Start a new benchmark with Run Benchmarks, or pick a saved run from the list below and load it as the main run.\n2. Optionally load a second saved run to compare against it.\n3. Read the takeaway summary first, then use the scenario table below to see where the difference came from.",
+      "Use this page in three steps:\n1. Start a new benchmark with Run Benchmarks, or pick a saved run from the list below and load it as the main run.\n2. Optionally load a second saved run to compare against it.\n3. Read the takeaway summary first, then use the scenario table below to see where the difference came from.",
+      "1. Start Or Pick Runs",
+      "1. Start Or Pick Runs",
+      "Most users start by running a fresh benchmark or loading a saved run from an earlier session. The built-in sample scenarios are there if you want to inspect what each benchmark is testing.",
+      "Most users start by running a fresh benchmark or loading a saved run from an earlier session. The built-in sample scenarios are there if you want to inspect what each benchmark is testing.",
+      "Most people only need Run Benchmarks, the saved-run selector, and the main compare buttons below. Expand the advanced section only if you want to change folders or open raw files.",
+      "Most people only need Run Benchmarks, the saved-run selector, and the main compare buttons below. Expand the advanced section only if you want to change folders or open raw files.",
+      "Discovered Saved Runs:",
+      "Discovered Saved Runs:",
+      "holistic-benchmark-runs\\20260504-103822-local\\run.json",
+      "Refresh",
+      "Refresh",
+      "Load Sample Scenarios",
+      "Load Sample Scenarios",
+      "Run Benchmarks",
+      "Run Benchmarks",
+      "Choose Main Run",
+      "Choose Main Run",
+      "Choose Comparison Run",
+      "Choose Comparison Run"
+    ]
+  },
+  "before_run": {
+    "summary_selector_values": [
+      "holistic-benchmark-runs\\20260504-103822-local\\run.json",
+      "holistic-benchmark-runs\\20260504-103822-local\\summary.json"
+    ],
+    "source_text": "Nothing loaded yet"
+  },
+  "after_run": {
+    "summary_selector_values": [
+      "holistic-benchmark-runs\\20260504-103822-local\\run.json",
+      "holistic-benchmark-runs\\20260504-103822-local\\summary.json",
+      "holistic-benchmark-runs\\20260504-104113-local\\run.json",
+      "holistic-benchmark-runs\\20260504-104113-local\\summary.json"
+    ],
+    "selected_summary_label": "holistic-benchmark-runs\\20260504-104113-local\\summary.json",
+    "selected_summary_path": "D:\\Development\\Python\\AICodeReviewer-manual-audit\\artifacts\\manual-session8\\holistic-benchmark-runs\\20260504-104113-local\\summary.json",
+    "source_text": "Main run: summary.json",
+    "count_text": "1",
+    "selected_fixture": "auth-guard-regression - Authorization Guard Regression",
+    "catalog_excerpt": "auth-guard-regression | Authorization Guard Regression\n  Scope: project\n  Review Types: security\n  Fixture Tags: -\n  Expected Focus: -",
+    "detail_excerpt": "Fixture ID: auth-guard-regression\nTitle: Authorization Guard Regression\nScope: project\nReview Types: security\nFixture Tags: -\nExpected Focus: -",
+    "primary_summary_excerpt": "Run File: summary.json\nBackend: local\nStatus: completed\nFixtures Evaluated: 1\nFixtures Passed: -\nFixtures Failed: 1\nOverall Score: 0.0000\nRepresentative Fixtures: 1\nFixture IDs: auth-guard-regression",
+    "takeaways": "Main takeaway: local scored 0.0000 across 1 scenarios, passing 0 and missing 1. Load another saved run if you want to compare alternatives.",
+    "status": "Benchmark run finished and loaded summary.json."
+  },
+  "summary_payload": {
+    "status": "completed",
+    "overall_score": 0.0,
+    "fixtures_evaluated": 1,
+    "fixtures_passed": 0,
+    "fixtures_failed": 1,
+    "representative_fixture_ids": [
+      "auth-guard-regression"
+    ]
+  },
+  "run_payload": {
+    "status": "completed",
+    "backend": "local",
+    "generated_report_count": 1,
+    "generated_reports": [
+      "D:\\Development\\Python\\AICodeReviewer-manual-audit\\artifacts\\manual-session8\\holistic-benchmark-runs\\20260504-104113-local\\reports\\auth-guard-regression.json"
+    ],
+    "error": null,
+    "health": {
+      "backend": "local",
+      "ready": true,
+      "summary": "✅ All checks passed – backend is ready.",
+      "checks": [
+        {
+          "name": "API URL",
+          "passed": true,
+          "detail": "API URL: http://localhost:1234",
+          "fix_hint": ""
+        },
+        {
+          "name": "API Type",
+          "passed": true,
+          "detail": "Using LM Studio detection.",
+          "fix_hint": ""
+        },
+        {
+          "name": "Reasoning Control",
+          "passed": true,
+          "detail": "LM Studio native mode can send the per-request reasoning on/off control. LM Studio's OpenAI-compatible chat-completions path does not expose that toggle.",
+          "fix_hint": ""
+        },
+        {
+          "name": "API Credential",
+          "passed": true,
+          "detail": "No API key configured.",
+          "fix_hint": ""
+        },
+        {
+          "name": "Server Reachable",
+          "passed": true,
+          "detail": "LM Studio endpoint responded with HTTP 200.",
+          "fix_hint": ""
+        },
+        {
+          "name": "Model Configuration",
+          "passed": true,
+          "detail": "Model: qwen/qwen3.5-9b",
+          "fix_hint": ""
+        },
+        {
+          "name": "Model Availability",
+          "passed": true,
+          "detail": "Configured model 'qwen/qwen3.5-9b' is available on the LM Studio server.",
+          "fix_hint": ""
+        },
+        {
+          "name": "Connection Test",
+          "passed": true,
+          "detail": "Backend responded successfully.",
+          "fix_hint": ""
+        }
+      ]
+    }
+  },
+  "generated_files_exist": {
+    "summary_json": true,
+    "run_json": true,
+    "all_reports": true
+  },
+  "toasts": [
+    {
+      "message": "Benchmark run finished and loaded summary.json.",
+      "error": false,
+      "duration": 6000
+    }
+  ]
+}

@@ -1,0 +1,142 @@
+{
+  "fixture_ids": [
+    "auth-guard-regression",
+    "cache-invalidation-gap"
+  ],
+  "config_source": "D:\\Development\\Python\\AICodeReviewer-manual-audit\\config.ini",
+  "artifacts_root": "D:\\Development\\Python\\AICodeReviewer-manual-audit\\artifacts\\manual-session8",
+  "labels": {
+    "header_title": "Compare Review Runs",
+    "run_button": "Run Benchmarks",
+    "load_summary_button": "Choose Main Run",
+    "compare_summary_button": "Choose Comparison Run",
+    "visible_labels": [
+      "Compare Review Runs",
+      "Compare Review Runs",
+      "Start a fresh benchmark run or load saved benchmark runs to see which backend or review setup performed better across representative sample projects.",
+      "Start a fresh benchmark run or load saved benchmark runs to see which backend or review setup performed better across representative sample projects.",
+      "Use this page in three steps:\n1. Start a new benchmark with Run Benchmarks, or pick a saved run from the list below and load it as the main run.\n2. Optionally load a second saved run to compare against it.\n3. Read the takeaway summary first, then use the scenario table below to see where the difference came from.",
+      "Use this page in three steps:\n1. Start a new benchmark with Run Benchmarks, or pick a saved run from the list below and load it as the main run.\n2. Optionally load a second saved run to compare against it.\n3. Read the takeaway summary first, then use the scenario table below to see where the difference came from.",
+      "1. Start Or Pick Runs",
+      "1. Start Or Pick Runs",
+      "Most users start by running a fresh benchmark or loading a saved run from an earlier session. The built-in sample scenarios are there if you want to inspect what each benchmark is testing.",
+      "Most users start by running a fresh benchmark or loading a saved run from an earlier session. The built-in sample scenarios are there if you want to inspect what each benchmark is testing.",
+      "Most people only need Run Benchmarks, the saved-run selector, and the main compare buttons below. Expand the advanced section only if you want to change folders or open raw files.",
+      "Most people only need Run Benchmarks, the saved-run selector, and the main compare buttons below. Expand the advanced section only if you want to change folders or open raw files.",
+      "Discovered Saved Runs:",
+      "Discovered Saved Runs:",
+      "holistic-benchmark-runs\\20260504-103822-local\\run.json",
+      "Refresh",
+      "Refresh",
+      "Load Sample Scenarios",
+      "Load Sample Scenarios",
+      "Run Benchmarks",
+      "Run Benchmarks",
+      "Choose Main Run",
+      "Choose Main Run",
+      "Choose Comparison Run",
+      "Choose Comparison Run"
+    ]
+  },
+  "before_compare": {
+    "summary_selector_values": [
+      "holistic-benchmark-runs\\20260504-103822-local\\run.json",
+      "holistic-benchmark-runs\\20260504-103822-local\\summary.json",
+      "holistic-benchmark-runs\\20260504-104113-local\\run.json",
+      "holistic-benchmark-runs\\20260504-104113-local\\summary.json",
+      "holistic-benchmark-runs\\20260504-104535-local\\run.json",
+      "holistic-benchmark-runs\\20260504-104535-local\\summary.json",
+      "holistic-benchmark-runs\\20260504-104606-local\\run.json",
+      "holistic-benchmark-runs\\20260504-104606-local\\summary.json"
+    ],
+    "source_text": "Nothing loaded yet"
+  },
+  "run_records": [
+    {
+      "fixture_id": "auth-guard-regression",
+      "elapsed_seconds": 30.6,
+      "run_dir": "D:\\Development\\Python\\AICodeReviewer-manual-audit\\artifacts\\manual-session8\\holistic-benchmark-runs\\20260504-104854-local",
+      "summary_path": "D:\\Development\\Python\\AICodeReviewer-manual-audit\\artifacts\\manual-session8\\holistic-benchmark-runs\\20260504-104854-local\\summary.json",
+      "run_json_path": "D:\\Development\\Python\\AICodeReviewer-manual-audit\\artifacts\\manual-session8\\holistic-benchmark-runs\\20260504-104854-local\\run.json",
+      "generated_reports": [
+        "D:\\Development\\Python\\AICodeReviewer-manual-audit\\artifacts\\manual-session8\\holistic-benchmark-runs\\20260504-104854-local\\reports\\auth-guard-regression.json"
+      ],
+      "summary_exists": true,
+      "run_json_exists": true
+    },
+    {
+      "fixture_id": "cache-invalidation-gap",
+      "elapsed_seconds": 35.636,
+      "run_dir": "D:\\Development\\Python\\AICodeReviewer-manual-audit\\artifacts\\manual-session8\\holistic-benchmark-runs\\20260504-104925-local",
+      "summary_path": "D:\\Development\\Python\\AICodeReviewer-manual-audit\\artifacts\\manual-session8\\holistic-benchmark-runs\\20260504-104925-local\\summary.json",
+      "run_json_path": "D:\\Development\\Python\\AICodeReviewer-manual-audit\\artifacts\\manual-session8\\holistic-benchmark-runs\\20260504-104925-local\\run.json",
+      "generated_reports": [
+        "D:\\Development\\Python\\AICodeReviewer-manual-audit\\artifacts\\manual-session8\\holistic-benchmark-runs\\20260504-104925-local\\reports\\cache-invalidation-gap.json"
+      ],
+      "summary_exists": true,
+      "run_json_exists": true
+    }
+  ],
+  "after_compare": {
+    "summary_selector_values": [
+      "holistic-benchmark-runs\\20260504-103822-local\\run.json",
+      "holistic-benchmark-runs\\20260504-103822-local\\summary.json",
+      "holistic-benchmark-runs\\20260504-104113-local\\run.json",
+      "holistic-benchmark-runs\\20260504-104113-local\\summary.json",
+      "holistic-benchmark-runs\\20260504-104535-local\\run.json",
+      "holistic-benchmark-runs\\20260504-104535-local\\summary.json",
+      "holistic-benchmark-runs\\20260504-104606-local\\run.json",
+      "holistic-benchmark-runs\\20260504-104606-local\\summary.json",
+      "holistic-benchmark-runs\\20260504-104854-local\\run.json",
+      "holistic-benchmark-runs\\20260504-104854-local\\summary.json",
+      "holistic-benchmark-runs\\20260504-104925-local\\run.json",
+      "holistic-benchmark-runs\\20260504-104925-local\\summary.json"
+    ],
+    "primary_label": "holistic-benchmark-runs\\20260504-104854-local\\summary.json",
+    "compare_label": "holistic-benchmark-runs\\20260504-104925-local\\summary.json",
+    "primary_path": "D:\\Development\\Python\\AICodeReviewer-manual-audit\\artifacts\\manual-session8\\holistic-benchmark-runs\\20260504-104854-local\\summary.json",
+    "compare_path": "D:\\Development\\Python\\AICodeReviewer-manual-audit\\artifacts\\manual-session8\\holistic-benchmark-runs\\20260504-104925-local\\summary.json",
+    "primary_load_status": "Loaded benchmark summary artifact (1 fixture(s))",
+    "status": "Loaded benchmark comparison artifact (1 representative fixture(s))",
+    "source_text": "Main run: summary.json",
+    "count_text": "1",
+    "selected_fixture": "auth-guard-regression - Authorization Guard Regression",
+    "catalog_excerpt": "auth-guard-regression | Authorization Guard Regression\n  Scope: project\n  Review Types: security\n  Fixture Tags: -\n  Expected Focus: -",
+    "detail_excerpt": "Fixture ID: auth-guard-regression\nTitle: Authorization Guard Regression\nScope: project\nReview Types: security\nFixture Tags: -\nExpected Focus: -",
+    "primary_summary_excerpt": "Run File: summary.json\nBackend: local\nStatus: completed\nFixtures Evaluated: 1\nFixtures Passed: 0\nFixtures Failed: 1\nOverall Score: 0.0000\nRepresentative Fixtures: 1\nFixture IDs: auth-guard-regression",
+    "compare_summary_excerpt": "Run File: summary.json\nBackend: local\nStatus: completed\nFixtures Evaluated: 1\nFixtures Passed: 1\nFixtures Failed: 0\nOverall Score: 1.0000\nRepresentative Fixtures: 1\nFixture IDs: cache-invalidation-gap\n\nWhat Changed vs Main Run:\nScore Delta: +1.0000\nShared Fixture IDs: -\nOnly In Primary: auth-guard-regression\nOnly In Comparison: cache-invalidation-gap\n\nScenario-by-Scenario Changes:\n- auth-guard-regression: Present only in primary summary.\n- cache-invalidation-gap: Present only in comparison summary.",
+    "takeaways": "Main takeaway: local is ahead. Compared with local, local changed the overall score by +1.0000 and the pass count by +1. Use the table below to see which scenarios caused the difference."
+  },
+  "diff_records": [
+    {
+      "fixture_id": "auth-guard-regression",
+      "presence": "Primary only",
+      "summary": "Present only in primary summary.",
+      "primary_score": "0.0000",
+      "compare_score": "-",
+      "primary_status": "-",
+      "compare_status": "-"
+    },
+    {
+      "fixture_id": "cache-invalidation-gap",
+      "presence": "Compare only",
+      "summary": "Present only in comparison summary.",
+      "primary_score": "-",
+      "compare_score": "1.0000",
+      "primary_status": "-",
+      "compare_status": "-"
+    }
+  ],
+  "toasts": [
+    {
+      "message": "Benchmark run finished and loaded summary.json.",
+      "error": false,
+      "duration": 6000
+    },
+    {
+      "message": "Benchmark run finished and loaded summary.json.",
+      "error": false,
+      "duration": 6000
+    }
+  ]
+}

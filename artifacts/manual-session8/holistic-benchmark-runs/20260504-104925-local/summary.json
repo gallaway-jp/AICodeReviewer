@@ -1,0 +1,47 @@
+{
+  "fixtures_evaluated": 1,
+  "fixtures_passed": 1,
+  "fixtures_failed": 0,
+  "overall_score": 1.0,
+  "results": [
+    {
+      "fixture_id": "cache-invalidation-gap",
+      "title": "Cache Invalidation Gap",
+      "report_path": "D:\\Development\\Python\\AICodeReviewer-manual-audit\\artifacts\\manual-session8\\holistic-benchmark-runs\\20260504-104925-local\\reports\\cache-invalidation-gap.json",
+      "passed": true,
+      "score": 1.0,
+      "minimum_score": 1.0,
+      "matched_expectations": 1,
+      "total_expectations": 1,
+      "missing_report": false,
+      "expectation_results": [
+        {
+          "expectation_id": "missing-cache-invalidation",
+          "matched": true,
+          "matched_issue_id": "issue-0002",
+          "matched_file_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-benchmark-compare-5vp5rjzb\\cache-invalidation-gap\\fixtures\\cache-invalidation-gap\\project\\src\\profile_service.py",
+          "reason": null,
+          "failed_checks": [],
+          "best_candidate_issue_id": null,
+          "best_candidate_file_path": null
+        }
+      ],
+      "benchmark_metadata": {}
+    }
+  ],
+  "backend": "local",
+  "status": "completed",
+  "representative_fixture_ids": [
+    "cache-invalidation-gap"
+  ],
+  "representative_fixtures": [
+    {
+      "id": "cache-invalidation-gap",
+      "title": "Cache Invalidation Gap",
+      "scope": "project",
+      "review_types": [
+        "performance"
+      ]
+    }
+  ]
+}

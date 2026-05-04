@@ -1,0 +1,189 @@
+{
+  "backend": "local",
+  "status": "completed",
+  "runs": 1,
+  "health": {
+    "backend": "local",
+    "ready": true,
+    "summary": "\u2705 All checks passed \u2013 backend is ready.",
+    "checks": [
+      {
+        "name": "API URL",
+        "passed": true,
+        "detail": "API URL: http://localhost:1234",
+        "fix_hint": ""
+      },
+      {
+        "name": "API Type",
+        "passed": true,
+        "detail": "Using LM Studio detection.",
+        "fix_hint": ""
+      },
+      {
+        "name": "Reasoning Control",
+        "passed": true,
+        "detail": "LM Studio native mode can send the per-request reasoning on/off control. LM Studio's OpenAI-compatible chat-completions path does not expose that toggle.",
+        "fix_hint": ""
+      },
+      {
+        "name": "API Credential",
+        "passed": true,
+        "detail": "No API key configured.",
+        "fix_hint": ""
+      },
+      {
+        "name": "Server Reachable",
+        "passed": true,
+        "detail": "LM Studio endpoint responded with HTTP 200.",
+        "fix_hint": ""
+      },
+      {
+        "name": "Model Configuration",
+        "passed": true,
+        "detail": "Model: qwen/qwen3.5-9b",
+        "fix_hint": ""
+      },
+      {
+        "name": "Model Availability",
+        "passed": true,
+        "detail": "Configured model 'qwen/qwen3.5-9b' is available on the LM Studio server.",
+        "fix_hint": ""
+      },
+      {
+        "name": "Connection Test",
+        "passed": true,
+        "detail": "Backend responded successfully.",
+        "fix_hint": ""
+      }
+    ]
+  },
+  "representative_fixture_ids": [
+    "auth-guard-regression"
+  ],
+  "representative_fixtures": [
+    {
+      "id": "auth-guard-regression",
+      "title": "Authorization Guard Regression",
+      "scope": "project",
+      "review_types": [
+        "security"
+      ]
+    }
+  ],
+  "generated_reports": [
+    {
+      "run_index": 1,
+      "fixture_id": "auth-guard-regression",
+      "exit_code": 0,
+      "output_path": "D:\\Development\\Python\\AICodeReviewer-manual-audit\\artifacts\\manual-session8\\holistic-benchmark-runs\\20260504-104113-local\\reports\\auth-guard-regression.json",
+      "status": "completed",
+      "issue_count": 3,
+      "success": true,
+      "scope": "project",
+      "review_types": [
+        "security"
+      ],
+      "benchmark_metadata": {}
+    }
+  ],
+  "score_summary": {
+    "fixtures_evaluated": 1,
+    "fixtures_passed": 0,
+    "fixtures_failed": 1,
+    "overall_score": 0.0,
+    "results": [
+      {
+        "fixture_id": "auth-guard-regression",
+        "title": "Authorization Guard Regression",
+        "report_path": "D:\\Development\\Python\\AICodeReviewer-manual-audit\\artifacts\\manual-session8\\holistic-benchmark-runs\\20260504-104113-local\\reports\\auth-guard-regression.json",
+        "passed": false,
+        "score": 0.0,
+        "minimum_score": 1.0,
+        "matched_expectations": 0,
+        "total_expectations": 1,
+        "missing_report": false,
+        "expectation_results": [
+          {
+            "expectation_id": "missing-admin-guard",
+            "matched": false,
+            "matched_issue_id": null,
+            "matched_file_path": null,
+            "reason": "No issue matched the expected holistic finding",
+            "failed_checks": [
+              "context_scope",
+              "description_keywords"
+            ],
+            "best_candidate_issue_id": "issue-0002",
+            "best_candidate_file_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-benchmark-run-1rx5s6cg\\fixtures\\auth-guard-regression\\project\\src\\auth.py"
+          }
+        ],
+        "benchmark_metadata": {}
+      }
+    ],
+    "backend": "local",
+    "status": "completed",
+    "representative_fixture_ids": [
+      "auth-guard-regression"
+    ],
+    "representative_fixtures": [
+      {
+        "id": "auth-guard-regression",
+        "title": "Authorization Guard Regression",
+        "scope": "project",
+        "review_types": [
+          "security"
+        ]
+      }
+    ]
+  },
+  "stability_summary": {
+    "runs": 1,
+    "fixtures_evaluated": 1,
+    "fixtures_all_runs_passed": 0,
+    "fixtures_any_run_passed": 0,
+    "mean_pass_rate": 0.0,
+    "mean_score": 0.0,
+    "fixtures": [
+      {
+        "fixture_id": "auth-guard-regression",
+        "title": "Authorization Guard Regression",
+        "pass_count": 0,
+        "fail_count": 1,
+        "pass_rate": 0.0,
+        "average_score": 0.0,
+        "all_runs_passed": false,
+        "any_run_passed": false,
+        "runs": [
+          {
+            "run_index": 1,
+            "passed": false,
+            "score": 0.0,
+            "report_path": "D:\\Development\\Python\\AICodeReviewer-manual-audit\\artifacts\\manual-session8\\holistic-benchmark-runs\\20260504-104113-local\\reports\\auth-guard-regression.json",
+            "missing_report": false,
+            "failed_checks": [
+              [
+                "context_scope",
+                "description_keywords"
+              ]
+            ]
+          }
+        ]
+      }
+    ],
+    "backend": "local",
+    "status": "completed",
+    "representative_fixture_ids": [
+      "auth-guard-regression"
+    ],
+    "representative_fixtures": [
+      {
+        "id": "auth-guard-regression",
+        "title": "Authorization Guard Regression",
+        "scope": "project",
+        "review_types": [
+          "security"
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,181 @@
+{
+  "backend": "local",
+  "status": "completed",
+  "runs": 1,
+  "health": {
+    "backend": "local",
+    "ready": true,
+    "summary": "\u2705 All checks passed \u2013 backend is ready.",
+    "checks": [
+      {
+        "name": "API URL",
+        "passed": true,
+        "detail": "API URL: http://localhost:1234",
+        "fix_hint": ""
+      },
+      {
+        "name": "API Type",
+        "passed": true,
+        "detail": "Using LM Studio detection.",
+        "fix_hint": ""
+      },
+      {
+        "name": "Reasoning Control",
+        "passed": true,
+        "detail": "LM Studio native mode can send the per-request reasoning on/off control. LM Studio's OpenAI-compatible chat-completions path does not expose that toggle.",
+        "fix_hint": ""
+      },
+      {
+        "name": "API Credential",
+        "passed": true,
+        "detail": "No API key configured.",
+        "fix_hint": ""
+      },
+      {
+        "name": "Server Reachable",
+        "passed": true,
+        "detail": "LM Studio endpoint responded with HTTP 200.",
+        "fix_hint": ""
+      },
+      {
+        "name": "Model Configuration",
+        "passed": true,
+        "detail": "Model: qwen/qwen3.5-9b",
+        "fix_hint": ""
+      },
+      {
+        "name": "Model Availability",
+        "passed": true,
+        "detail": "Configured model 'qwen/qwen3.5-9b' is available on the LM Studio server.",
+        "fix_hint": ""
+      },
+      {
+        "name": "Connection Test",
+        "passed": true,
+        "detail": "Backend responded successfully.",
+        "fix_hint": ""
+      }
+    ]
+  },
+  "representative_fixture_ids": [
+    "cache-invalidation-gap"
+  ],
+  "representative_fixtures": [
+    {
+      "id": "cache-invalidation-gap",
+      "title": "Cache Invalidation Gap",
+      "scope": "project",
+      "review_types": [
+        "performance"
+      ]
+    }
+  ],
+  "generated_reports": [
+    {
+      "run_index": 1,
+      "fixture_id": "cache-invalidation-gap",
+      "exit_code": 0,
+      "output_path": "D:\\Development\\Python\\AICodeReviewer-manual-audit\\artifacts\\manual-session8\\holistic-benchmark-runs\\20260504-104925-local\\reports\\cache-invalidation-gap.json",
+      "status": "completed",
+      "issue_count": 3,
+      "success": true,
+      "scope": "project",
+      "review_types": [
+        "performance"
+      ],
+      "benchmark_metadata": {}
+    }
+  ],
+  "score_summary": {
+    "fixtures_evaluated": 1,
+    "fixtures_passed": 1,
+    "fixtures_failed": 0,
+    "overall_score": 1.0,
+    "results": [
+      {
+        "fixture_id": "cache-invalidation-gap",
+        "title": "Cache Invalidation Gap",
+        "report_path": "D:\\Development\\Python\\AICodeReviewer-manual-audit\\artifacts\\manual-session8\\holistic-benchmark-runs\\20260504-104925-local\\reports\\cache-invalidation-gap.json",
+        "passed": true,
+        "score": 1.0,
+        "minimum_score": 1.0,
+        "matched_expectations": 1,
+        "total_expectations": 1,
+        "missing_report": false,
+        "expectation_results": [
+          {
+            "expectation_id": "missing-cache-invalidation",
+            "matched": true,
+            "matched_issue_id": "issue-0002",
+            "matched_file_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-benchmark-compare-5vp5rjzb\\cache-invalidation-gap\\fixtures\\cache-invalidation-gap\\project\\src\\profile_service.py",
+            "reason": null,
+            "failed_checks": [],
+            "best_candidate_issue_id": null,
+            "best_candidate_file_path": null
+          }
+        ],
+        "benchmark_metadata": {}
+      }
+    ],
+    "backend": "local",
+    "status": "completed",
+    "representative_fixture_ids": [
+      "cache-invalidation-gap"
+    ],
+    "representative_fixtures": [
+      {
+        "id": "cache-invalidation-gap",
+        "title": "Cache Invalidation Gap",
+        "scope": "project",
+        "review_types": [
+          "performance"
+        ]
+      }
+    ]
+  },
+  "stability_summary": {
+    "runs": 1,
+    "fixtures_evaluated": 1,
+    "fixtures_all_runs_passed": 1,
+    "fixtures_any_run_passed": 1,
+    "mean_pass_rate": 1.0,
+    "mean_score": 1.0,
+    "fixtures": [
+      {
+        "fixture_id": "cache-invalidation-gap",
+        "title": "Cache Invalidation Gap",
+        "pass_count": 1,
+        "fail_count": 0,
+        "pass_rate": 1.0,
+        "average_score": 1.0,
+        "all_runs_passed": true,
+        "any_run_passed": true,
+        "runs": [
+          {
+            "run_index": 1,
+            "passed": true,
+            "score": 1.0,
+            "report_path": "D:\\Development\\Python\\AICodeReviewer-manual-audit\\artifacts\\manual-session8\\holistic-benchmark-runs\\20260504-104925-local\\reports\\cache-invalidation-gap.json",
+            "missing_report": false,
+            "failed_checks": []
+          }
+        ]
+      }
+    ],
+    "backend": "local",
+    "status": "completed",
+    "representative_fixture_ids": [
+      "cache-invalidation-gap"
+    ],
+    "representative_fixtures": [
+      {
+        "id": "cache-invalidation-gap",
+        "title": "Cache Invalidation Gap",
+        "scope": "project",
+        "review_types": [
+          "performance"
+        ]
+      }
+    ]
+  }
+}
