@@ -9,11 +9,11 @@ Use it when you want the shortest path to a working review flow without reading 
 Start here based on what you want to do:
 
 - Install or remove the packaged Windows app: go to [Windows Installer Workflow](#windows-installer-workflow)
-- Run your first review from the terminal: go to [CLI First Review](#cli-first-review)
+- Run your first review from the terminal: go to [First CLI Review](guides/getting-started/first-cli-review.md)
 - Review only a diff or change range: go to [Diff Review Workflow](#diff-review-workflow)
 - Review only part of a project with selected files or diff filters: go to [Partial Project Workflow](#partial-project-workflow)
 - Review code against an external requirements document: go to [Specification Review Workflow](#specification-review-workflow)
-- Use the desktop app: go to [GUI First Session](#gui-first-session)
+- Use the desktop app: go to [First GUI Session](guides/getting-started/first-gui-session.md)
 - Review a generated addon preview in the desktop app: go to [Addon Review Workflow](#addon-review-workflow)
 - Generate benchmark summaries for later comparison: go to [Benchmark Runner Workflow](#benchmark-runner-workflow)
 - Create or update a benchmark fixture: go to [Benchmark Authoring Workflow](#benchmark-authoring-workflow)
@@ -21,9 +21,18 @@ Start here based on what you want to do:
 - Save a session, come back later, and finalize reports: go to [Restore A Session And Finalize](#restore-a-session-and-finalize)
 - Compare benchmark runs and triage differences: go to [Benchmark Compare Workflow](#benchmark-compare-workflow)
 - Automate reviews or AI-fix workflows: go to [Tool Automation](#tool-automation)
-- Build a simple addon: go to [Build A Basic Addon](#build-a-basic-addon)
-- Drive reviews from another local tool over HTTP: go to [Local HTTP Workflow](#local-http-workflow)
+- Build a simple addon: go to [Build A Basic Addon](guides/addons/build-basic-addon.md)
+- Drive reviews from another local tool over HTTP: go to [Local HTTP Workflow](guides/automation/local-http-review-workflow.md)
 - Recover from setup or runtime problems: go to [Common Recovery Paths](#common-recovery-paths)
+
+## Guided Workflows
+
+If you prefer step-by-step walkthroughs, see [Guided Workflows](guides/workflows.md) for concise, task-oriented guides:
+
+- First CLI Review
+- First GUI Session
+- Local HTTP Workflow (API-driven reviews)
+- Build A Basic Addon
 
 ## Before You Start
 
@@ -69,7 +78,7 @@ What the installer sets up:
 2. If Windows shows a SmartScreen or unknown publisher warning, verify the source and version before continuing. Unsigned preview builds can still trigger that warning until signed release packaging is in place.
 3. Run the installer, review the license, keep the default install directory unless you have a specific reason to change it, and choose the desktop shortcut task only if you want a desktop icon.
 4. Leave the post-install launch option enabled if you want the GUI to open immediately; otherwise start it later from the Start Menu `AICodeReviewer` shortcut.
-5. Open Settings in the GUI or edit `config.ini` in the install directory to choose your backend, then continue with [GUI First Session](#gui-first-session) or [CLI First Review](#cli-first-review).
+5. Open Settings in the GUI or edit `config.ini` in the install directory to choose your backend, then continue with [First GUI Session](guides/getting-started/first-gui-session.md) or [First CLI Review](guides/getting-started/first-cli-review.md).
 
 ### Verify the install
 
@@ -107,34 +116,14 @@ Use [Windows Installer Guide](windows-installer.md) when you need maintainer-fac
 
 ## CLI First Review
 
-Use this path when you want the fastest end-to-end review with minimal setup in the UI.
+Use [First CLI Review](guides/getting-started/first-cli-review.md) for the step-by-step terminal walkthrough.
 
-1. Check that your backend works.
+That guide covers:
 
-```bash
-aicodereviewer --check-connection --backend local
-```
-
-2. Run a dry run to confirm target selection without spending backend time.
-
-```bash
-aicodereviewer . --type all --dry-run
-```
-
-3. Run a focused real review.
-
-```bash
-aicodereviewer . --type security --programmers Alice --reviewers Bob --backend local
-```
-
-4. If the run is too broad or slow, narrow scope before trying again.
-
-Common next moves:
-
-- use `--scope diff` with `--commits` or `--diff-file`
-- choose a smaller review bundle instead of `--type all`
-- inspect preset bundles with `aicodereviewer --list-type-presets` and reuse a preset key such as `runtime_safety`
-- pass `--backend` explicitly in scripts and repeatable runs
+- checking backend connectivity
+- using a dry run before spending backend time
+- running the first focused real review
+- deciding when to narrow scope to diff review or a smaller review bundle
 
 Use [CLI Guide](cli.md) for the full flag and tool-mode reference.
 
@@ -309,25 +298,11 @@ Important rules:
 
 ## GUI First Session
 
-Use this path when you want review setup, triage, AI-fix preview, session save/load, and final report generation in one desktop workflow.
+Use [First GUI Session](guides/getting-started/first-gui-session.md) for the step-by-step desktop walkthrough.
 
-Launch the app:
+That guide covers:
 
-```bash
-aicodereviewer --gui
-```
-
-### Review setup
-
-![Review tab screenshot](images/gui-review-tab.png)
-
-1. Open the Review tab.
-2. Choose project or diff scope.
-3. Pick review types.
-4. Choose a backend.
-5. Enter programmer and reviewer names.
-6. Run a dry run or start the review.
-
+<<<<<<< HEAD
 ### Results workflow
 
 ![Results tab screenshot](images/gui-results-tab.png)
@@ -347,6 +322,12 @@ Useful companion workflows:
 - use the shared status-bar window action when you want the current detachable page to open or refocus without hunting for the tab-local button
 - pin a preferred review-type bundle if you repeat the same startup selection often
 - use Benchmarks to compare saved benchmark runs if you are tuning prompts, models, or review bundles
+=======
+- launching the desktop app
+- setting up a first review from the Review tab
+- triaging findings in the Results tab
+- using AI Fix, session save/load, and report finalization in the same workflow
+>>>>>>> feature/gui-perf-followup
 
 Use [GUI Guide](gui.md) for the full tab-by-tab flow.
 
@@ -664,62 +645,21 @@ Use [CLI Guide](cli.md) and [Reports and Outputs](reports.md) for the full tool-
 
 ## Build A Basic Addon
 
-Use this path when you want to add a review pack, backend provider, Settings contribution, or popup-editor hooks without editing core files.
+Use [Build A Basic Addon](guides/addons/build-basic-addon.md) for the step-by-step walkthrough.
 
-Fastest starter path:
+That guide covers:
 
-1. Either generate a preview scaffold or copy one of the checked-in examples under `examples/`.
+- creating a minimal addon directory and manifest
+- contributing a simple review pack
+- registering the addon for discovery
+- verifying discovery with the CLI and desktop app
+- next steps for backend providers, UI contributors, and editor hooks
 
-```bash
-aicodereviewer analyze-repo . --output-dir artifacts/generated-addon-preview --addon-id my-repo-adaptive-review
-```
-
-2. Point `addons.paths` at the addon directory or manifest.
-3. Run addon discovery.
-
-```ini
-[addons]
-paths = examples/addon-echo-backend
-```
-
-```bash
-aicodereviewer --list-addons
-```
-
-4. Confirm that the addon appears and that any backend key or Settings contribution is visible.
-
-Use these examples as starting points:
-
-- `examples/addon-secure-defaults/` for manifest-only review-pack contributions
-- `examples/addon-echo-backend/` for backend provider plus Settings-surface contribution
-- `examples/addon-editor-hooks/` for popup-editor and staged-preview hooks
-
-The generated `analyze-repo` scaffold is also a valid starting point when you want a repository-specific review-pack preview instead of a generic example.
-
-The generated profile is intentionally biased toward the primary repository. Nested example, fixture, benchmark, sample, demo, and artifact trees are ignored so preview bundles stay focused on the codebase you actually maintain.
-
-If you want to inspect how the generator behaves on the curated external sample set used for Milestone 16 validation, run:
-
-```bash
-d:/Development/Python/AICodeReviewer/.venv/Scripts/python.exe tools/validate_generated_addons.py --json-out artifacts/generated-addon-validation/summary.json
-```
-
-That report summarizes heuristic signal detection on the curated external sample set, and the repository reruns it periodically through `.github/workflows/generated-addon-validation.yml`.
-
-For judged review-output quality on representative repositories, run:
-
-```bash
-d:/Development/Python/AICodeReviewer/.venv/Scripts/python.exe tools/evaluate_generated_addon_review_quality.py --backend <backend> --json-out artifacts/generated-addon-review-quality/summary.json
-```
-
-That runner compares default-bundle and generated-bundle review reports against judged expectations on representative FastAPI and React repositories. Use it as the primary relevance baseline when evaluating whether generated addons actually improve review output quality.
-
-The repository also ships `.github/workflows/generated-addon-judged-quality.yml` for this judged path. That workflow restores the most recent backend history artifact, reruns the judged fixture set, appends the backend's history entry, and publishes a markdown trend summary. It expects a runner where the chosen backend is already installed and authenticated.
-
-Use [Addons Guide](addons.md) for the maintained manifest contract and discovery rules.
+Use [Addons Guide](addons.md) for the full system contract and [Addon Manifest Reference](addon-manifest-reference.md) for exact field details.
 
 ## Local HTTP Workflow
 
+<<<<<<< HEAD
 Use this path when another local tool should submit reviews or read queue state over HTTP.
 
 Start the API explicitly:
@@ -797,10 +737,19 @@ Important rules:
 - for a quick event backlog instead of an open stream, use `timeout=0`
 - the embedded GUI-started API and CLI-started API expose the same route surface
 - job submission, report fetches, and artifact access emit entries on the dedicated local API audit logger
+=======
+Use [Local HTTP Workflow](guides/automation/local-http-review-workflow.md) for the step-by-step walkthrough.
 
-Use [HTTP API Guide](http-api.md) for route and payload details.
+That guide covers:
+>>>>>>> feature/gui-perf-followup
 
-If you are changing the local API implementation rather than just using it, use [Local HTTP Quick Reference](local-http-quick-reference.md).
+- starting the local API server
+- submitting a review via HTTP
+- polling job state and streaming events
+- fetching reports and artifacts
+- common patterns for automation and tool integration
+
+Use [HTTP API Recipes](http-api-recipes.md) for concrete request examples and [HTTP API Guide](http-api.md) for the full contract.
 
 ## Common Recovery Paths
 

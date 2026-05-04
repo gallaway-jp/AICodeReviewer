@@ -4,6 +4,8 @@ The local HTTP API exposes the shared review runtime used by the desktop GUI and
 
 If you are changing implementation seams, embedded startup behavior, or route tests, start with [Local HTTP Quick Reference](local-http-quick-reference.md) and use this page as the route-and-payload reference.
 
+If you want task-oriented examples for common client flows, start with [HTTP API Recipes](http-api-recipes.md) and return here for the full contract details.
+
 Use it when you want to:
 - drive review jobs from another tool or script
 - query supported backends, review types, and presets
@@ -171,6 +173,7 @@ When `timeout=0`, the API returns the current event backlog immediately and clos
 
 ## Related Guides
 
+- [HTTP API Recipes](http-api-recipes.md)
 - [Local HTTP Quick Reference](local-http-quick-reference.md)
 - [Configuration Reference](configuration.md)
 - [GUI Guide](gui.md)

@@ -4,6 +4,8 @@ AICodeReviewer supports a small, explicit addon model for extending review packs
 
 This guide documents the currently shipped addon contract.
 
+For field-by-field manifest details and entry-point shape reference, use [Addon Manifest Reference](addon-manifest-reference.md).
+
 ## What Addons Can Contribute Today
 
 Supported manifest entry points in the current repository baseline:
@@ -121,6 +123,8 @@ The scheduled external validation workflow now publishes a markdown summary and 
 ## Manifest Shape
 
 Each addon is rooted by an `addon.json` manifest.
+
+Use [Addon Manifest Reference](addon-manifest-reference.md) when you need the exact field contract and the supported entry-point payload shapes in one place.
 
 Required fields:
 
@@ -310,6 +314,7 @@ Prefer an addon when you need:
 
 ## Related Guides
 
+- [Addon Manifest Reference](addon-manifest-reference.md)
 - [Configuration Reference](configuration.md)
 - [Backend Guide](backends.md)
 - [Review Types Reference](review-types.md)

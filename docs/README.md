@@ -11,10 +11,14 @@ The goal of this docs set is simple:
 
 - [User Manual](user-manual.md)
 - [Getting Started](getting-started.md)
+- [First CLI Review](guides/getting-started/first-cli-review.md)
+- [First GUI Session](guides/getting-started/first-gui-session.md)
 - [Addons Guide](addons.md)
+- [Addon Manifest Reference](addon-manifest-reference.md)
 - [Backend Guide](backends.md)
 - [CLI Guide](cli.md)
 - [HTTP API Guide](http-api.md)
+- [HTTP API Recipes](http-api-recipes.md)
 - [Local HTTP Quick Reference](local-http-quick-reference.md)
 - [Security Review](security.md)
 - [GUI Guide](gui.md)
@@ -31,6 +35,9 @@ The goal of this docs set is simple:
 - [Repository Maintenance Plan](repository-maintenance.md)
 - [Release Process](release-process.md)
 - [Windows Installer Guide](windows-installer.md)
+- [Local HTTP Workflow](guides/automation/local-http-review-workflow.md)
+- [Build A Basic Addon](guides/addons/build-basic-addon.md)
+- [Guided Workflows](guides/workflows.md)
 
 ## Documentation Principles
 
@@ -47,12 +54,16 @@ The goal of this docs set is simple:
 Use these guides if you are:
 
 - Starting from the shortest task-oriented path: read [User Manual](user-manual.md)
+- Following the first terminal walkthrough: read [First CLI Review](guides/getting-started/first-cli-review.md)
+- Following the first desktop walkthrough: read [First GUI Session](guides/getting-started/first-gui-session.md)
 - A first-time user: start with [Getting Started](getting-started.md)
 - Building or debugging addons: read [Addons Guide](addons.md)
+- Looking up addon manifest fields and entry-point contracts: read [Addon Manifest Reference](addon-manifest-reference.md)
 - Reviewing generated addon previews in the desktop app: read [Addons Guide](addons.md) and [GUI Guide](gui.md)
 - Choosing a backend: read [Backend Guide](backends.md)
 - Running reviews from the terminal: read [CLI Guide](cli.md)
 - Integrating with the local HTTP surface: read [HTTP API Guide](http-api.md)
+- Following concrete local API request sequences: read [HTTP API Recipes](http-api-recipes.md)
 - Changing local API routes, embedding, or tests: read [Local HTTP Quick Reference](local-http-quick-reference.md)
 - Reviewing trust boundaries and hardening status: read [Security Review](security.md)
 - Using the desktop app: read [GUI Guide](gui.md)
