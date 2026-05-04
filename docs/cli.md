@@ -43,6 +43,18 @@ All review types:
 aicodereviewer . --type all --programmers Alice --reviewers Bob
 ```
 
+Preset-driven review bundle:
+
+```bash
+aicodereviewer . --type runtime_safety --dry-run
+```
+
+List built-in review bundles:
+
+```bash
+aicodereviewer --list-type-presets
+```
+
 Diff review from commits:
 
 ```bash
@@ -53,6 +65,12 @@ Specification review:
 
 ```bash
 aicodereviewer . --type specification --spec-file requirements.md --programmers Alice --reviewers Bob
+```
+
+Mixed specification review:
+
+```bash
+aicodereviewer . --type specification,maintainability --spec-file requirements.md --programmers Alice --reviewers Bob
 ```
 
 Dry run:
@@ -78,6 +96,7 @@ aicodereviewer --gui
 - `path` is required for `project` scope.
 - `--diff-file` or `--commits` is required for `diff` scope.
 - You cannot use `--diff-file` and `--commits` together.
+- `--type` accepts one or more explicit review types, `all`, or a built-in preset key such as `runtime_safety`.
 - `--programmers` and `--reviewers` are required unless `--dry-run` is set.
 - `--spec-file` is required when `specification` is selected.
 
@@ -95,6 +114,10 @@ Actions include:
 - force-resolve when verification fails and the user chooses to override
 
 When interactive `AI FIX` generation fails, the terminal flow now prints the classified failure category, detail, remediation hint, and retry guidance when that diagnostic metadata is available.
+
+When diff scope is active, the real review stays narrowed to the selected patch or commit range; documentation, dependency, and license reviews no longer widen that diff scope to unrelated repository files.
+
+When `specification` is combined with other review types, the supplied `--spec-file` content is still attached to the mixed prompt so the live review can compare the code against the same requirements document.
 
 ## Tool Mode
 

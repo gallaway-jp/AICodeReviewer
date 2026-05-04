@@ -199,7 +199,7 @@ class SettingsTabBuilder:
                 hover_color="gray30",
             )
             btn.grid(row=self.row, column=3, padx=(0, 6), pady=3)
-            _Tooltip(btn, refresh_button_tooltip or "Refresh list")
+            _Tooltip(btn, refresh_button_tooltip or t("gui.tip.refresh_list"))
             if refresh_button_store_name:
                 setattr(self.host, refresh_button_store_name, btn)
         self.host._setting_entries[(section, key)] = combo
@@ -289,7 +289,7 @@ class SettingsTabBuilder:
             tooltip_key="gui.tip.model_id",
             widget_store_name="_bedrock_model_combo",
             refresh_command=_refresh_bedrock_with_spinner,
-            refresh_button_tooltip="Refresh Bedrock models",
+            refresh_button_tooltip=t("gui.tip.refresh_bedrock_models"),
             refresh_button_store_name="_bedrock_refresh_btn",
         )
         self._add_entry(
@@ -349,7 +349,7 @@ class SettingsTabBuilder:
             tooltip_key="gui.tip.kiro_distro",
             widget_store_name="_kiro_distro_combo",
             refresh_command=_refresh_wsl_distros_with_spinner,
-            refresh_button_tooltip="Re-scan installed WSL distributions",
+            refresh_button_tooltip=t("gui.tip.refresh_wsl_distros"),
             refresh_button_store_name="_wsl_refresh_btn",
         )
         self._add_entry(
@@ -384,7 +384,7 @@ class SettingsTabBuilder:
             tooltip_key="gui.tip.kiro_model",
             widget_store_name="_kiro_model_combo",
             refresh_command=_refresh_kiro_with_spinner,
-            refresh_button_tooltip="Refresh Kiro models",
+            refresh_button_tooltip=t("gui.tip.refresh_kiro_models"),
             refresh_button_store_name="_kiro_refresh_btn",
         )
 
@@ -422,7 +422,7 @@ class SettingsTabBuilder:
             tooltip_key="gui.tip.copilot_model",
             widget_store_name="_copilot_model_combo",
             refresh_command=_refresh_copilot_with_spinner,
-            refresh_button_tooltip="Refresh Copilot models",
+            refresh_button_tooltip=t("gui.tip.refresh_copilot_models"),
             refresh_button_store_name="_copilot_refresh_btn",
         )
         self._add_checkbox(
@@ -495,6 +495,14 @@ class SettingsTabBuilder:
             "max_tokens",
             config.get("local_llm", "max_tokens", "4096"),
             tooltip_key="gui.tip.local_max_tokens",
+        )
+        self._add_dropdown(
+            t("gui.settings.local_reasoning"),
+            "local_llm",
+            "reasoning",
+            config.get("local_llm", "reasoning", "default"),
+            ["default", "off", "low", "medium", "high", "on"],
+            tooltip_key="gui.tip.local_reasoning",
         )
         self._add_checkbox(
             t("gui.settings.local_enable_web_search"),
@@ -704,18 +712,18 @@ class SettingsTabBuilder:
         self.row += 1
 
     def _build_output_formats_section(self) -> None:
-        self._section_header("Review Report Output Formats")
+        self._section_header(t("gui.settings.section_output_formats"))
 
         saved_formats = config.get("output", "formats", "json,txt").strip()
         enabled_formats = set(saved_formats.split(",")) if saved_formats else {"json", "txt"}
 
         InfoTooltip.add(
             self.scroll,
-            "Select which file formats to generate for review reports. At least one format must be selected.",
+            t("gui.tip.output_formats"),
             row=self.row,
             column=0,
         )
-        ctk.CTkLabel(self.scroll, text="Output Formats:").grid(
+        ctk.CTkLabel(self.scroll, text=t("gui.settings.output_formats") + ":").grid(
             row=self.row,
             column=1,
             sticky="w",
@@ -772,7 +780,7 @@ class SettingsTabBuilder:
 
         reset_btn = ctk.CTkButton(
             button_frame,
-            text="Reset Defaults",
+            text=t("gui.settings.reset_defaults"),
             command=self.host._reset_defaults,
             fg_color="gray40",
             hover_color="gray30",

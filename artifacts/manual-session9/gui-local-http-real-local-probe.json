@@ -1,0 +1,324 @@
+{
+  "config_source": "D:\\Development\\Python\\AICodeReviewer-manual-audit\\config.ini",
+  "temp_config": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-real-local-j_vu9xqh\\config.ini",
+  "project_root": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-real-local-j_vu9xqh\\probe-project",
+  "embedded_local_http": {
+    "status_text": "Running in this desktop session on port 56765.",
+    "base_url": "http://127.0.0.1:56765",
+    "docs_excerpt": "Use http://127.0.0.1:56765 as the desktop-local API root.\n\nGET /api/backends\nGET /api/review-types\nGET /api/review-presets\nPOST /api/recommendations/review-types\nGET /api/jobs\nPOST /api/jobs\nGET /api/jobs/{job_id}\nPOST /api/jobs/{job_id}/cancel\nGET /api/jobs/{job_id}/report\nGET /api/jobs/{job_id}/artifacts\nGET /api/jobs/{job_id}/artifacts/{artifact_key}\nGET /api/jobs/{job_id}/artifacts/{artifact_key}/raw\nGET /api/events\nGET /api/jobs/{job_id}/events"
+  },
+  "requests": {
+    "backends": {
+      "status": 200,
+      "keys": [
+        "bedrock",
+        "kiro",
+        "copilot",
+        "local"
+      ]
+    },
+    "review_types": {
+      "status": 200,
+      "keys": [
+        "security",
+        "performance",
+        "best_practices",
+        "maintainability",
+        "dead_code",
+        "documentation",
+        "testing",
+        "accessibility"
+      ]
+    },
+    "review_presets": {
+      "status": 200,
+      "count": 5
+    },
+    "recommendations": {
+      "status": 200,
+      "payload": {
+        "review_types": [
+          "best_practices",
+          "maintainability"
+        ],
+        "recommended_review_types": [
+          "best_practices",
+          "maintainability"
+        ],
+        "recommended_preset": "code_health",
+        "project_signals": [
+          "Languages: Python",
+          "Approximate project size: 2 files",
+          "none detected (dependencies)",
+          "none detected (diffs)"
+        ],
+        "rationale": [
+          {
+            "review_type": "best_practices",
+            "reason": "The project consists of only 2 Python files with no detected dependencies, making adherence to language-specific best practices critical for establishing a solid foundation."
+          },
+          {
+            "review_type": "maintainability",
+            "reason": "With a minimal codebase, ensuring the code is easy to read and modify is the highest leverage activity to prevent technical debt early in the project lifecycle."
+          }
+        ],
+        "source": "ai"
+      }
+    },
+    "submit_review": {
+      "status": 201,
+      "payload": {
+        "job_id": "job-aff399d6fe114bb5805f2a5d6c40c733",
+        "state": "scanning",
+        "lifecycle_state": "scanning",
+        "queue_position": null,
+        "cancel_requested": false,
+        "created_at": "2026-05-04T11:45:03.281690",
+        "started_at": "2026-05-04T11:45:03.282225",
+        "completed_at": null,
+        "error_message": null,
+        "error_diagnostic": null,
+        "request": {
+          "path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-real-local-j_vu9xqh\\probe-project",
+          "scope": "project",
+          "diff_file": null,
+          "commits": null,
+          "diff_source": null,
+          "review_types": [
+            "security"
+          ],
+          "spec_content_present": false,
+          "target_lang": "en",
+          "backend_name": "local",
+          "programmers": [],
+          "reviewers": [],
+          "dry_run": false
+        },
+        "result": null
+      }
+    },
+    "global_events": {
+      "status": 200,
+      "excerpt": "id: 1\nevent: job.state_changed\ndata: {\"sequence\": 1, \"job_id\": \"job-aff399d6fe114bb5805f2a5d6c40c733\", \"kind\": \"job.state_changed\", \"timestamp\": \"2026-05-04T11:45:03.281726\", \"previous_state\": null, \"new_state\": \"created\", \"message\": \"submitted\"}\n\nid: 2\nevent: job.state_changed\ndata: {\"sequence\": 2, \"job_id\": \"job-aff399d6fe114bb5805f2a5d6c40c733\", \"kind\": \"job.state_changed\", \"timestamp\": \"2026-05-04T11:45:03.282211\", \"previous_state\": \"created\", \"new_state\": \"validating\", \"message\": null}\n\nid: 3\nevent: job.state_changed\ndata: {\"sequence\": 3, \"job_id\": \"job-aff399d6fe114bb5805f2a5d6c40c733\", \"kind\": \"job.state_changed\", \"timestamp\": \"2026-05-04T11:45:03.282228\", \"previous_state\": \"validating\", \"new_state\": \"scanning\", \"message\": null}\n\nid: 4\nevent: job.state_changed\ndata: {\"sequence\": 4, \"job_id\": \"job-aff399d6fe114bb5805f2a5d6c40c733\", \"kind\": \"job.state_changed\", \"timestamp\": \"2026-05-04T11:45:03.282636\", \"previous_state\": \"scanning\", \"new_state\": \"reviewing\", \"message\": null}\n\n"
+    },
+    "job_events": {
+      "status": 200,
+      "excerpt": "id: 1\nevent: job.state_changed\ndata: {\"sequence\": 1, \"job_id\": \"job-aff399d6fe114bb5805f2a5d6c40c733\", \"kind\": \"job.state_changed\", \"timestamp\": \"2026-05-04T11:45:03.281726\", \"previous_state\": null, \"new_state\": \"created\", \"message\": \"submitted\"}\n\nid: 2\nevent: job.state_changed\ndata: {\"sequence\": 2, \"job_id\": \"job-aff399d6fe114bb5805f2a5d6c40c733\", \"kind\": \"job.state_changed\", \"timestamp\": \"2026-05-04T11:45:03.282211\", \"previous_state\": \"created\", \"new_state\": \"validating\", \"message\": null}\n\nid: 3\nevent: job.state_changed\ndata: {\"sequence\": 3, \"job_id\": \"job-aff399d6fe114bb5805f2a5d6c40c733\", \"kind\": \"job.state_changed\", \"timestamp\": \"2026-05-04T11:45:03.282228\", \"previous_state\": \"validating\", \"new_state\": \"scanning\", \"message\": null}\n\nid: 4\nevent: job.state_changed\ndata: {\"sequence\": 4, \"job_id\": \"job-aff399d6fe114bb5805f2a5d6c40c733\", \"kind\": \"job.state_changed\", \"timestamp\": \"2026-05-04T11:45:03.282636\", \"previous_state\": \"scanning\", \"new_state\": \"reviewing\", \"message\": null}\n\n"
+    }
+  },
+  "queue_visibility": {
+    "job_visible_in_gui_queue": true,
+    "job_visible_via_api": true,
+    "queue_snapshot": {
+      "summary": "1 active, 0 queued, 0 recent",
+      "detail": "Selected active #job-aff399d6fe114bb5805f2a5d6c40c733: review, gui.review.queue_status_reviewing, cancel available.",
+      "labels": [
+        "[REVIEW] #job-aff399d6fe114bb5805f2a5d6c40c733 | gui.review.queue_status_reviewing | active"
+      ],
+      "label_to_submission_id": {
+        "[REVIEW] #job-aff399d6fe114bb5805f2a5d6c40c733 | gui.review.queue_status_reviewing | active": "job-aff399d6fe114bb5805f2a5d6c40c733"
+      },
+      "selected_submission_id": "job-aff399d6fe114bb5805f2a5d6c40c733"
+    },
+    "empty_text": "No queued submissions"
+  },
+  "completion": {
+    "job_reached_terminal_state": true,
+    "job": {
+      "status": 200,
+      "payload": {
+        "job_id": "job-aff399d6fe114bb5805f2a5d6c40c733",
+        "state": "completed",
+        "lifecycle_state": "completed",
+        "queue_position": null,
+        "cancel_requested": false,
+        "created_at": "2026-05-04T11:45:03.281690",
+        "started_at": "2026-05-04T11:45:03.282225",
+        "completed_at": "2026-05-04T11:45:20.053380",
+        "error_message": null,
+        "error_diagnostic": null,
+        "request": {
+          "path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-real-local-j_vu9xqh\\probe-project",
+          "scope": "project",
+          "diff_file": null,
+          "commits": null,
+          "diff_source": null,
+          "review_types": [
+            "security"
+          ],
+          "spec_content_present": false,
+          "target_lang": "en",
+          "backend_name": "local",
+          "programmers": [],
+          "reviewers": [],
+          "dry_run": false
+        },
+        "result": {
+          "status": "report_written",
+          "project_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-real-local-j_vu9xqh\\probe-project",
+          "scope": "project",
+          "diff_source": null,
+          "files_scanned": 2,
+          "target_paths": [
+            "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-real-local-j_vu9xqh\\probe-project\\admin.py",
+            "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-real-local-j_vu9xqh\\probe-project\\auth.py"
+          ],
+          "issue_count": 1,
+          "review_types": [
+            "security"
+          ],
+          "language": "en",
+          "backend": "local",
+          "dry_run": false,
+          "report_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-real-local-j_vu9xqh\\probe-project\\api-report.json",
+          "has_report": true
+        }
+      }
+    },
+    "report": {
+      "status": 200,
+      "payload": {
+        "job_id": "job-aff399d6fe114bb5805f2a5d6c40c733",
+        "status": "report_written",
+        "report_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-real-local-j_vu9xqh\\probe-project\\api-report.json",
+        "report": {
+          "project_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-real-local-j_vu9xqh\\probe-project",
+          "review_type": "security",
+          "scope": "project",
+          "total_files_scanned": 2,
+          "issues_found": [
+            {
+              "file_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-real-local-j_vu9xqh\\probe-project\\admin.py",
+              "line_number": 4,
+              "issue_type": "authorization",
+              "severity": "critical",
+              "description": "Missing Role-Based Access Control (RBAC) for Admin Operations: The function get_audit_log is intended to retrieve sensitive audit records. However, it only checks if the user is logged in via require_",
+              "code_snippet": "def get_audit_log(user_id):\n    user = require_login(user_id)\n    return {'viewer': user['id'], 'records': ['sensitive']}",
+              "ai_feedback": "**Missing Role-Based Access Control (RBAC) for Admin Operations**\n\nThe function get_audit_log is intended to retrieve sensitive audit records. However, it only checks if the user is logged in via require_login, which returns a generic 'user' role. It does not verify if the user has the specific 'admin' or 'auditor' role required to access sensitive logs. This allows any authenticated user to access sensitive data.\n\nCode: def get_audit_log(user_id):\n    user = require_login(user_id)\n    return {'viewer': user['id'], 'records': ['sensitive']}\n\nSuggestion: Modify require_login or add a new check in get_audit_log to verify the user's role. For example, ensure require_login returns a 'role' field and check if role == 'admin' or role == 'auditor' before returning sensitive records.\n\nContext Scope: cross_file\n\nRelated Files: C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-real-local-j_vu9xqh\\probe-project\\auth.py\n\nSystemic Impact: Any authenticated user can access sensitive audit logs because the auth helper does not enforce role restrictions, and the admin handler does not validate the specific role required for this privileged operation.\n\nConfidence: high\n\nEvidence Basis: admin.py calls require_login which returns role='user' (from auth.py), but admin.py does not check for a higher privilege role before exposing sensitive records.",
+              "status": "pending",
+              "resolution_reason": null,
+              "resolved_at": null,
+              "resolution_provenance": null,
+              "ai_fix_suggested": null,
+              "ai_fix_applied": null,
+              "context_scope": "cross_file",
+              "related_files": [
+                "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-real-local-j_vu9xqh\\probe-project\\auth.py"
+              ],
+              "systemic_impact": "Any authenticated user can access sensitive audit logs because the auth helper does not enforce role restrictions, and the admin handler does not validate the specific role required for this privileged operation.",
+              "confidence": "high",
+              "evidence_basis": "admin.py calls require_login which returns role='user' (from auth.py), but admin.py does not check for a higher privilege role before exposing sensitive records.",
+              "issue_id": null,
+              "related_issues": [],
+              "interaction_summary": null
+            }
+          ],
+          "generated_at": "2026-05-04T11:45:20.051285",
+          "language": "en",
+          "review_types": [
+            "security"
+          ],
+          "diff_source": null,
+          "quality_score": 80,
+          "programmers": [],
+          "reviewers": [],
+          "backend": "local",
+          "interaction_analysis": null,
+          "architecture_summary": null
+        }
+      }
+    },
+    "artifacts": {
+      "status": 200,
+      "payload": {
+        "job_id": "job-aff399d6fe114bb5805f2a5d6c40c733",
+        "items": [
+          {
+            "key": "report_primary",
+            "path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-real-local-j_vu9xqh\\probe-project\\api-report.json",
+            "content_type": "application/json",
+            "size_bytes": 3425,
+            "download_url": "/api/jobs/job-aff399d6fe114bb5805f2a5d6c40c733/artifacts/report_primary/raw"
+          },
+          {
+            "key": "report_summary_txt",
+            "path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-real-local-j_vu9xqh\\probe-project\\api-report_summary.txt",
+            "content_type": "text/plain",
+            "size_bytes": 1594,
+            "download_url": "/api/jobs/job-aff399d6fe114bb5805f2a5d6c40c733/artifacts/report_summary_txt/raw"
+          },
+          {
+            "key": "report_md",
+            "path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-real-local-j_vu9xqh\\probe-project\\api-report.md",
+            "content_type": "text/markdown",
+            "size_bytes": 2645,
+            "download_url": "/api/jobs/job-aff399d6fe114bb5805f2a5d6c40c733/artifacts/report_md/raw"
+          }
+        ]
+      }
+    },
+    "artifact_preview": {
+      "status": 200,
+      "payload": {
+        "job_id": "job-aff399d6fe114bb5805f2a5d6c40c733",
+        "key": "report_primary",
+        "path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-real-local-j_vu9xqh\\probe-project\\api-report.json",
+        "content_type": "application/json",
+        "size_bytes": 3425,
+        "download_url": "/api/jobs/job-aff399d6fe114bb5805f2a5d6c40c733/artifacts/report_primary/raw",
+        "content": "{\n  \"project_path\": \"C:\\\\Users\\\\Colin\\\\AppData\\\\Local\\\\Temp\\\\aicr-gui-real-local-j_vu9xqh\\\\probe-project\",\n  \"review_type\": \"security\",\n  \"scope\": \"project\",\n  \"total_files_scanned\": 2,\n  \"issues_found\": [\n    {\n      \"file_path\": \"C:\\\\Users\\\\Colin\\\\AppData\\\\Local\\\\Temp\\\\aicr-gui-real-local-j_vu9xqh\\\\probe-project\\\\admin.py\",\n      \"line_number\": 4,\n      \"issue_type\": \"authorization\",\n      \"severity\": \"critical\",\n      \"description\": \"Missing Role-Based Access Control (RBAC) for Admin Operations: The function get_audit_log is intended to retrieve sensitive audit records. However, it only checks if the user is logged in via require_\",\n      \"code_snippet\": \"def get_audit_log(user_id):\\n    user = require_login(user_id)\\n    return {'viewer': user['id'], 'records': ['sensitive']}\",\n      \"ai_feedback\": \"**Missing Role-Based Access Control (RBAC) for Admin Operations**\\n\\nThe function get_audit_log is intended to retrieve sensitive audit records. However, it only checks if the user is logged in via require_login, which returns a generic 'user' role. It does not verify if the user has the specific 'admin' or 'auditor' role required to access sensitive logs. This allows any authenticated user to access sensitive data.\\n\\nCode: def get_audit_log(user_id):\\n    user = require_login(user_id)\\n    return {'viewer': user['id'], 'records': ['sensitive']}\\n\\nSuggestion: Modify require_login or add a new check in get_audit_log to verify the user's role. For example, ensure require_login returns a 'role' field and check if role == 'admin' or role == 'auditor' before returning sensitive records.\\n\\nContext Scope: cross_file\\n\\nRelated Files: C:\\\\Users\\\\Colin\\\\AppData\\\\Local\\\\Temp\\\\aicr-gui-real-local-j_vu9xqh\\\\probe-project\\\\auth.py\\n\\nSystemic Impact: Any authenticated user can access sensitive audit logs because the auth helper does not enforce role restrictions, and the admin handler does not validate the specific role required for this privileged operation.\\n\\nConfidence: high\\n\\nEvidence Basis: admin.py calls require_login which returns role='user' (from auth.py), but admin.py does not check for a higher privilege role before exposing sensitive records.\",\n      \"status\": \"pending\",\n      \"resolution_reason\": null,\n      \"resolved_at\": null,\n      \"resolution_provenance\": null,\n      \"ai_fix_suggested\": null,\n      \"ai_fix_applied\": null,\n      \"context_scope\": \"cross_file\",\n      \"related_files\": [\n        \"C:\\\\Users\\\\Colin\\\\AppData\\\\Local\\\\Temp\\\\aicr-gui-real-local-j_vu9xqh\\\\probe-project\\\\auth.py\"\n      ],\n      \"systemic_impact\": \"Any authenticated user can access sensitive audit logs because the auth helper does not enforce role restrictions, and the admin handler does not validate the specific role required for this privileged operation.\",\n      \"confidence\": \"high\",\n      \"evidence_basis\": \"admin.py calls require_login which returns role='user' (from auth.py), but admin.py does not check for a higher privilege role before exposing sensitive records.\",\n      \"issue_id\": null,\n      \"related_issues\": [],\n      \"interaction_summary\": null\n    }\n  ],\n  \"generated_at\": \"2026-05-04T11:45:20.051285\",\n  \"language\": \"en\",\n  \"review_types\": [\n    \"security\"\n  ],\n  \"diff_source\": null,\n  \"quality_score\": 80,\n  \"programmers\": [],\n  \"reviewers\": [],\n  \"backend\": \"local\",\n  \"interaction_analysis\": null,\n  \"architecture_summary\": null\n}",
+        "json": {
+          "project_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-real-local-j_vu9xqh\\probe-project",
+          "review_type": "security",
+          "scope": "project",
+          "total_files_scanned": 2,
+          "issues_found": [
+            {
+              "file_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-real-local-j_vu9xqh\\probe-project\\admin.py",
+              "line_number": 4,
+              "issue_type": "authorization",
+              "severity": "critical",
+              "description": "Missing Role-Based Access Control (RBAC) for Admin Operations: The function get_audit_log is intended to retrieve sensitive audit records. However, it only checks if the user is logged in via require_",
+              "code_snippet": "def get_audit_log(user_id):\n    user = require_login(user_id)\n    return {'viewer': user['id'], 'records': ['sensitive']}",
+              "ai_feedback": "**Missing Role-Based Access Control (RBAC) for Admin Operations**\n\nThe function get_audit_log is intended to retrieve sensitive audit records. However, it only checks if the user is logged in via require_login, which returns a generic 'user' role. It does not verify if the user has the specific 'admin' or 'auditor' role required to access sensitive logs. This allows any authenticated user to access sensitive data.\n\nCode: def get_audit_log(user_id):\n    user = require_login(user_id)\n    return {'viewer': user['id'], 'records': ['sensitive']}\n\nSuggestion: Modify require_login or add a new check in get_audit_log to verify the user's role. For example, ensure require_login returns a 'role' field and check if role == 'admin' or role == 'auditor' before returning sensitive records.\n\nContext Scope: cross_file\n\nRelated Files: C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-real-local-j_vu9xqh\\probe-project\\auth.py\n\nSystemic Impact: Any authenticated user can access sensitive audit logs because the auth helper does not enforce role restrictions, and the admin handler does not validate the specific role required for this privileged operation.\n\nConfidence: high\n\nEvidence Basis: admin.py calls require_login which returns role='user' (from auth.py), but admin.py does not check for a higher privilege role before exposing sensitive records.",
+              "status": "pending",
+              "resolution_reason": null,
+              "resolved_at": null,
+              "resolution_provenance": null,
+              "ai_fix_suggested": null,
+              "ai_fix_applied": null,
+              "context_scope": "cross_file",
+              "related_files": [
+                "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-real-local-j_vu9xqh\\probe-project\\auth.py"
+              ],
+              "systemic_impact": "Any authenticated user can access sensitive audit logs because the auth helper does not enforce role restrictions, and the admin handler does not validate the specific role required for this privileged operation.",
+              "confidence": "high",
+              "evidence_basis": "admin.py calls require_login which returns role='user' (from auth.py), but admin.py does not check for a higher privilege role before exposing sensitive records.",
+              "issue_id": null,
+              "related_issues": [],
+              "interaction_summary": null
+            }
+          ],
+          "generated_at": "2026-05-04T11:45:20.051285",
+          "language": "en",
+          "review_types": [
+            "security"
+          ],
+          "diff_source": null,
+          "quality_score": 80,
+          "programmers": [],
+          "reviewers": [],
+          "backend": "local",
+          "interaction_analysis": null,
+          "architecture_summary": null
+        }
+      }
+    },
+    "artifact_raw": {
+      "status": 200,
+      "excerpt": "{\r\n  \"project_path\": \"C:\\\\Users\\\\Colin\\\\AppData\\\\Local\\\\Temp\\\\aicr-gui-real-local-j_vu9xqh\\\\probe-project\",\r\n  \"review_type\": \"security\",\r\n  \"scope\": \"project\",\r\n  \"total_files_scanned\": 2,\r\n  \"issues_found\": [\r\n    {\r\n      \"file_path\": \"C:\\\\Users\\\\Colin\\\\AppData\\\\Local\\\\Temp\\\\aicr-gui-real-local-j_vu9xqh\\\\probe-project\\\\admin.py\",\r\n      \"line_number\": 4,\r\n      \"issue_type\": \"authorization\",\r\n      \"severity\": \"critical\",\r\n      \"description\": \"Missing Role-Based Access Control (RBAC) for Admin Operations: The function get_audit_log is intended to retrieve sensitive audit records. However, "
+    },
+    "output_file_exists": true,
+    "output_file": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-real-local-j_vu9xqh\\probe-project\\api-report.json"
+  }
+}

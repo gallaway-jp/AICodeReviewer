@@ -1,0 +1,206 @@
+{
+  "schema_version": 1,
+  "command": "review",
+  "backend": "local",
+  "dry_run": false,
+  "review_types": [
+    "performance"
+  ],
+  "scope": "project",
+  "path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-benchmark-compare-5vp5rjzb\\cache-invalidation-gap\\fixtures\\cache-invalidation-gap\\project",
+  "success": true,
+  "exit_code": 0,
+  "files_scanned": 2,
+  "target_paths": [
+    "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-benchmark-compare-5vp5rjzb\\cache-invalidation-gap\\fixtures\\cache-invalidation-gap\\project\\src\\cache.py",
+    "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-benchmark-compare-5vp5rjzb\\cache-invalidation-gap\\fixtures\\cache-invalidation-gap\\project\\src\\profile_service.py"
+  ],
+  "status": "completed",
+  "tool_access_audit": null,
+  "issue_count": 3,
+  "issues": [
+    {
+      "file_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-benchmark-compare-5vp5rjzb\\cache-invalidation-gap\\fixtures\\cache-invalidation-gap\\project\\src\\cache.py",
+      "line_number": 4,
+      "issue_type": "performance",
+      "severity": "high",
+      "description": "Blocking I/O in hot path: Synchronous cache lookup blocks execution: The get_user_profile function performs a synchronous dictionary lookup. While dict.get is O(1), if this function is called inside a",
+      "code_snippet": "def get_user_profile(user_id: int) -> dict | None:\n    return PROFILE_CACHE.get(user_id)",
+      "ai_feedback": "**Blocking I/O in hot path: Synchronous cache lookup blocks execution**\n\nThe get_user_profile function performs a synchronous dictionary lookup. While dict.get is O(1), if this function is called inside a loop or from a synchronous request handler without an async wrapper, it blocks the event loop. More critically, if PROFILE_CACHE is populated by external I/O (e.g., database fetch) and this function is the entry point, it creates a blocking hot path. The current implementation lacks any async capability, forcing callers to block or requiring a synchronous event loop which limits throughput.\n\nCode: def get_user_profile(user_id: int) -> dict | None:\n    return PROFILE_CACHE.get(user_id)\n\nSuggestion: Refactor get_user_profile to be an async function (e.g., async def get_user_profile) if the underlying data source is async, or ensure it is only called from a synchronous context where blocking is acceptable. If this is a hot path in an async application, wrap the I/O operation in an executor or use an async cache library (e.g., aioredis, cachetools with async backends) to prevent blocking the event loop.\n\nSystemic Impact: Latency grows linearly with request volume under high concurrency due to blocking I/O in the hot path, preventing the application from scaling horizontally.\n\nConfidence: high\n\nEvidence Basis: get_user_profile is a synchronous function returning PROFILE_CACHE.get(user_id), implying a blocking call in the hot path if used in an async framework.",
+      "status": "pending",
+      "resolution_reason": null,
+      "resolved_at": null,
+      "resolution_provenance": null,
+      "ai_fix_suggested": null,
+      "ai_fix_applied": null,
+      "context_scope": "local",
+      "related_files": [],
+      "systemic_impact": "Latency grows linearly with request volume under high concurrency due to blocking I/O in the hot path, preventing the application from scaling horizontally.",
+      "confidence": "high",
+      "evidence_basis": "get_user_profile is a synchronous function returning PROFILE_CACHE.get(user_id), implying a blocking call in the hot path if used in an async framework.",
+      "issue_id": "issue-0001",
+      "related_issues": [],
+      "interaction_summary": null
+    },
+    {
+      "file_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-benchmark-compare-5vp5rjzb\\cache-invalidation-gap\\fixtures\\cache-invalidation-gap\\project\\src\\profile_service.py",
+      "line_number": 1,
+      "issue_type": "performance",
+      "severity": "medium",
+      "description": "Missing caching opportunity: update_user_profile bypasses cache consistency: The update_user_profile function updates a local 'store' dictionary but does not interact with the global PROFILE_CACHE def",
+      "code_snippet": "def update_user_profile(store: dict[int, dict], user_id: int, profile: dict) -> None:\n    store[user_id] = profile",
+      "ai_feedback": "**Missing caching opportunity: update_user_profile bypasses cache consistency**\n\nThe update_user_profile function updates a local 'store' dictionary but does not interact with the global PROFILE_CACHE defined in cache.py. This creates a state split where the cache remains stale after an update. Any subsequent call to get_user_profile will return the old data, forcing redundant work (e.g., re-fetching from DB) or serving incorrect data. This pattern implies a missing batching or invalidation step that forces redundant I/O or logic.\n\nCode: def update_user_profile(store: dict[int, dict], user_id: int, profile: dict) -> None:\n    store[user_id] = profile\n\nSuggestion: Integrate update_user_profile with the global PROFILE_CACHE. Either pass the global cache instance to this function and update it directly, or have this function trigger an invalidation/update in the global cache. Ensure that the 'store' parameter is either the global cache or that the update propagates to the global cache to maintain consistency.\n\nContext Scope: cross_file\n\nRelated Files: src/cache.py, C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-benchmark-compare-5vp5rjzb\\cache-invalidation-gap\\fixtures\\cache-invalidation-gap\\project\\src\\cache.py\n\nSystemic Impact: Stale reads force redundant work (e.g., repeated database queries) and degrade throughput as data volume grows, because the cache is not updated when the profile changes.\n\nConfidence: high\n\nEvidence Basis: update_user_profile modifies a local 'store' argument while get_user_profile reads from the global PROFILE_CACHE, creating a state split that forces redundant work or stale reads.",
+      "status": "pending",
+      "resolution_reason": null,
+      "resolved_at": null,
+      "resolution_provenance": null,
+      "ai_fix_suggested": null,
+      "ai_fix_applied": null,
+      "context_scope": "cross_file",
+      "related_files": [
+        "src/cache.py",
+        "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-benchmark-compare-5vp5rjzb\\cache-invalidation-gap\\fixtures\\cache-invalidation-gap\\project\\src\\cache.py"
+      ],
+      "systemic_impact": "Stale reads force redundant work (e.g., repeated database queries) and degrade throughput as data volume grows, because the cache is not updated when the profile changes.",
+      "confidence": "high",
+      "evidence_basis": "update_user_profile modifies a local 'store' argument while get_user_profile reads from the global PROFILE_CACHE, creating a state split that forces redundant work or stale reads.",
+      "issue_id": "issue-0002",
+      "related_issues": [
+        2
+      ],
+      "interaction_summary": "[duplicate] Issue [1] describes the specific mechanism (update bypassing cache) that causes the general problem described in Issue [2] (missing invalidation), making them overlapping findings."
+    },
+    {
+      "file_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-benchmark-compare-5vp5rjzb\\cache-invalidation-gap\\fixtures\\cache-invalidation-gap\\project\\src\\profile_service.py",
+      "line_number": 1,
+      "issue_type": "missing_cache_invalidation",
+      "severity": "medium",
+      "description": "Missing cache invalidation across write and read paths",
+      "code_snippet": "def update_user_profile(store: dict[int, dict], user_id: int, profile: dict) -> None:\n    store[user_id] = profile",
+      "ai_feedback": "**Missing cache invalidation across write and read paths**\n\nprofile_service.py updates user_profile state, but cache.py exposes cache accessors for the same entity without any invalidation path.\n\nCode: update_user_profile(...) / get_user_profile, set_user_profile(...)\n\nSuggestion: Invalidate or refresh the cached entity on the write path, or route writes through the same cache management layer.\n\nContext Scope: cross_file\n\nRelated Files: C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-benchmark-compare-5vp5rjzb\\cache-invalidation-gap\\fixtures\\cache-invalidation-gap\\project\\src\\cache.py\n\nSystemic Impact: Stale user_profile reads may reach callers because profile_service.py updates the backing store without invalidating cached user_profile entries in cache.py.\n\nConfidence: medium\n\nEvidence Basis: update_user_profile updates user_profile state while get_user_profile, set_user_profile in cache.py continue serving cached user_profile data without invalidation.",
+      "status": "pending",
+      "resolution_reason": null,
+      "resolved_at": null,
+      "resolution_provenance": null,
+      "ai_fix_suggested": null,
+      "ai_fix_applied": null,
+      "context_scope": "cross_file",
+      "related_files": [
+        "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-benchmark-compare-5vp5rjzb\\cache-invalidation-gap\\fixtures\\cache-invalidation-gap\\project\\src\\cache.py",
+        "src/cache.py"
+      ],
+      "systemic_impact": "Stale user_profile reads may reach callers because profile_service.py updates the backing store without invalidating cached user_profile entries in cache.py.",
+      "confidence": "medium",
+      "evidence_basis": "update_user_profile updates user_profile state while get_user_profile, set_user_profile in cache.py continue serving cached user_profile data without invalidation.",
+      "issue_id": "issue-0003",
+      "related_issues": [
+        1
+      ],
+      "interaction_summary": "[duplicate] Issue [1] describes the specific mechanism (update bypassing cache) that causes the general problem described in Issue [2] (missing invalidation), making them overlapping findings."
+    }
+  ],
+  "report": {
+    "project_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-benchmark-compare-5vp5rjzb\\cache-invalidation-gap\\fixtures\\cache-invalidation-gap\\project",
+    "review_type": "performance",
+    "scope": "project",
+    "total_files_scanned": 2,
+    "issues_found": [
+      {
+        "file_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-benchmark-compare-5vp5rjzb\\cache-invalidation-gap\\fixtures\\cache-invalidation-gap\\project\\src\\cache.py",
+        "line_number": 4,
+        "issue_type": "performance",
+        "severity": "high",
+        "description": "Blocking I/O in hot path: Synchronous cache lookup blocks execution: The get_user_profile function performs a synchronous dictionary lookup. While dict.get is O(1), if this function is called inside a",
+        "code_snippet": "def get_user_profile(user_id: int) -> dict | None:\n    return PROFILE_CACHE.get(user_id)",
+        "ai_feedback": "**Blocking I/O in hot path: Synchronous cache lookup blocks execution**\n\nThe get_user_profile function performs a synchronous dictionary lookup. While dict.get is O(1), if this function is called inside a loop or from a synchronous request handler without an async wrapper, it blocks the event loop. More critically, if PROFILE_CACHE is populated by external I/O (e.g., database fetch) and this function is the entry point, it creates a blocking hot path. The current implementation lacks any async capability, forcing callers to block or requiring a synchronous event loop which limits throughput.\n\nCode: def get_user_profile(user_id: int) -> dict | None:\n    return PROFILE_CACHE.get(user_id)\n\nSuggestion: Refactor get_user_profile to be an async function (e.g., async def get_user_profile) if the underlying data source is async, or ensure it is only called from a synchronous context where blocking is acceptable. If this is a hot path in an async application, wrap the I/O operation in an executor or use an async cache library (e.g., aioredis, cachetools with async backends) to prevent blocking the event loop.\n\nSystemic Impact: Latency grows linearly with request volume under high concurrency due to blocking I/O in the hot path, preventing the application from scaling horizontally.\n\nConfidence: high\n\nEvidence Basis: get_user_profile is a synchronous function returning PROFILE_CACHE.get(user_id), implying a blocking call in the hot path if used in an async framework.",
+        "status": "pending",
+        "resolution_reason": null,
+        "resolved_at": null,
+        "resolution_provenance": null,
+        "ai_fix_suggested": null,
+        "ai_fix_applied": null,
+        "context_scope": "local",
+        "related_files": [],
+        "systemic_impact": "Latency grows linearly with request volume under high concurrency due to blocking I/O in the hot path, preventing the application from scaling horizontally.",
+        "confidence": "high",
+        "evidence_basis": "get_user_profile is a synchronous function returning PROFILE_CACHE.get(user_id), implying a blocking call in the hot path if used in an async framework.",
+        "issue_id": "issue-0001",
+        "related_issues": [],
+        "interaction_summary": null
+      },
+      {
+        "file_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-benchmark-compare-5vp5rjzb\\cache-invalidation-gap\\fixtures\\cache-invalidation-gap\\project\\src\\profile_service.py",
+        "line_number": 1,
+        "issue_type": "performance",
+        "severity": "medium",
+        "description": "Missing caching opportunity: update_user_profile bypasses cache consistency: The update_user_profile function updates a local 'store' dictionary but does not interact with the global PROFILE_CACHE def",
+        "code_snippet": "def update_user_profile(store: dict[int, dict], user_id: int, profile: dict) -> None:\n    store[user_id] = profile",
+        "ai_feedback": "**Missing caching opportunity: update_user_profile bypasses cache consistency**\n\nThe update_user_profile function updates a local 'store' dictionary but does not interact with the global PROFILE_CACHE defined in cache.py. This creates a state split where the cache remains stale after an update. Any subsequent call to get_user_profile will return the old data, forcing redundant work (e.g., re-fetching from DB) or serving incorrect data. This pattern implies a missing batching or invalidation step that forces redundant I/O or logic.\n\nCode: def update_user_profile(store: dict[int, dict], user_id: int, profile: dict) -> None:\n    store[user_id] = profile\n\nSuggestion: Integrate update_user_profile with the global PROFILE_CACHE. Either pass the global cache instance to this function and update it directly, or have this function trigger an invalidation/update in the global cache. Ensure that the 'store' parameter is either the global cache or that the update propagates to the global cache to maintain consistency.\n\nContext Scope: cross_file\n\nRelated Files: src/cache.py, C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-benchmark-compare-5vp5rjzb\\cache-invalidation-gap\\fixtures\\cache-invalidation-gap\\project\\src\\cache.py\n\nSystemic Impact: Stale reads force redundant work (e.g., repeated database queries) and degrade throughput as data volume grows, because the cache is not updated when the profile changes.\n\nConfidence: high\n\nEvidence Basis: update_user_profile modifies a local 'store' argument while get_user_profile reads from the global PROFILE_CACHE, creating a state split that forces redundant work or stale reads.",
+        "status": "pending",
+        "resolution_reason": null,
+        "resolved_at": null,
+        "resolution_provenance": null,
+        "ai_fix_suggested": null,
+        "ai_fix_applied": null,
+        "context_scope": "cross_file",
+        "related_files": [
+          "src/cache.py",
+          "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-benchmark-compare-5vp5rjzb\\cache-invalidation-gap\\fixtures\\cache-invalidation-gap\\project\\src\\cache.py"
+        ],
+        "systemic_impact": "Stale reads force redundant work (e.g., repeated database queries) and degrade throughput as data volume grows, because the cache is not updated when the profile changes.",
+        "confidence": "high",
+        "evidence_basis": "update_user_profile modifies a local 'store' argument while get_user_profile reads from the global PROFILE_CACHE, creating a state split that forces redundant work or stale reads.",
+        "issue_id": "issue-0002",
+        "related_issues": [
+          2
+        ],
+        "interaction_summary": "[duplicate] Issue [1] describes the specific mechanism (update bypassing cache) that causes the general problem described in Issue [2] (missing invalidation), making them overlapping findings."
+      },
+      {
+        "file_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-benchmark-compare-5vp5rjzb\\cache-invalidation-gap\\fixtures\\cache-invalidation-gap\\project\\src\\profile_service.py",
+        "line_number": 1,
+        "issue_type": "missing_cache_invalidation",
+        "severity": "medium",
+        "description": "Missing cache invalidation across write and read paths",
+        "code_snippet": "def update_user_profile(store: dict[int, dict], user_id: int, profile: dict) -> None:\n    store[user_id] = profile",
+        "ai_feedback": "**Missing cache invalidation across write and read paths**\n\nprofile_service.py updates user_profile state, but cache.py exposes cache accessors for the same entity without any invalidation path.\n\nCode: update_user_profile(...) / get_user_profile, set_user_profile(...)\n\nSuggestion: Invalidate or refresh the cached entity on the write path, or route writes through the same cache management layer.\n\nContext Scope: cross_file\n\nRelated Files: C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-benchmark-compare-5vp5rjzb\\cache-invalidation-gap\\fixtures\\cache-invalidation-gap\\project\\src\\cache.py\n\nSystemic Impact: Stale user_profile reads may reach callers because profile_service.py updates the backing store without invalidating cached user_profile entries in cache.py.\n\nConfidence: medium\n\nEvidence Basis: update_user_profile updates user_profile state while get_user_profile, set_user_profile in cache.py continue serving cached user_profile data without invalidation.",
+        "status": "pending",
+        "resolution_reason": null,
+        "resolved_at": null,
+        "resolution_provenance": null,
+        "ai_fix_suggested": null,
+        "ai_fix_applied": null,
+        "context_scope": "cross_file",
+        "related_files": [
+          "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-benchmark-compare-5vp5rjzb\\cache-invalidation-gap\\fixtures\\cache-invalidation-gap\\project\\src\\cache.py",
+          "src/cache.py"
+        ],
+        "systemic_impact": "Stale user_profile reads may reach callers because profile_service.py updates the backing store without invalidating cached user_profile entries in cache.py.",
+        "confidence": "medium",
+        "evidence_basis": "update_user_profile updates user_profile state while get_user_profile, set_user_profile in cache.py continue serving cached user_profile data without invalidation.",
+        "issue_id": "issue-0003",
+        "related_issues": [
+          1
+        ],
+        "interaction_summary": "[duplicate] Issue [1] describes the specific mechanism (update bypassing cache) that causes the general problem described in Issue [2] (missing invalidation), making them overlapping findings."
+      }
+    ],
+    "generated_at": "2026-05-04T10:50:00.282638",
+    "language": "en",
+    "review_types": [
+      "performance"
+    ],
+    "diff_source": null,
+    "quality_score": 80,
+    "programmers": [
+      "benchmark-bot"
+    ],
+    "reviewers": [
+      "benchmark-bot"
+    ],
+    "backend": "local",
+    "interaction_analysis": null,
+    "architecture_summary": null
+  },
+  "report_path": null
+}

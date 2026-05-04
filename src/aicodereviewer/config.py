@@ -139,7 +139,7 @@ class Config:
         self._add("logging", "api_audit_log_backup_count", "5")
 
         # ── model (Bedrock) ────────────────────────────────────────────────
-        self._add("model", "model_id", "anthropic.claude-3-5-sonnet-20240620-v1:0")
+        self._add("model", "model_id", "amazon.nova-micro-v1:0")
 
         # ── aws ────────────────────────────────────────────────────────────
         self._add("aws", "access_key_id", "")
@@ -155,13 +155,14 @@ class Config:
 
         # ── kiro ───────────────────────────────────────────────────────────
         self._add("kiro", "wsl_distro", "")
-        self._add("kiro", "cli_command", "kiro")
+        self._add("kiro", "cli_command", "kiro-cli")
+        self._add("kiro", "model", "minimax-m2.1")
         self._add("kiro", "timeout", "300")
 
         # ── copilot ────────────────────────────────────────────────────────
         self._add("copilot", "copilot_path", "copilot")
         self._add("copilot", "timeout", "300")
-        self._add("copilot", "model", "auto")
+        self._add("copilot", "model", "gpt-5-mini")
 
         # ── tool-aware file access ───────────────────────────────────────
         self._add("tool_file_access", "enabled", "false")
@@ -176,7 +177,7 @@ class Config:
         # ── local_llm ─────────────────────────────────────────────────────
         self._add("local_llm", "api_url", "http://localhost:1234")
         self._add("local_llm", "api_type", "lmstudio")
-        self._add("local_llm", "model", "default")
+        self._add("local_llm", "model", "qwen/qwen3.5-9b")
         self._add("local_llm", "api_key", "")
         self._add("local_llm", "timeout", "300")
         self._add("local_llm", "max_tokens", "4096")

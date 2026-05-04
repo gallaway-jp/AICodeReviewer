@@ -600,6 +600,9 @@ class AIBackend(ABC):
             detected_frameworks:  Optional list of framework names from
                                   :func:`context_collector.detect_frameworks`.
         """
+        if review_type == "fix":
+            return AIBackend._build_fix_system_prompt(lang)
+
         review_registry = get_review_registry()
         if "+" in review_type:
             raw_parts = [part.strip() for part in review_type.split("+") if part.strip()]
@@ -815,6 +818,26 @@ class AIBackend(ABC):
         return f"{base} {lang_inst}{_JSON_SCHEMA_INSTRUCTION}"
 
     @staticmethod
+    def _build_fix_system_prompt(lang: str) -> str:
+        """Return a dedicated prompt for full-file fix generation."""
+        lang_inst = (
+            "If you need to introduce any new user-facing text or comments, write them in Japanese."
+            if lang == "ja"
+            else "If you need to introduce any new user-facing text or comments, write them in English."
+        )
+        return (
+            "You are an expert code fixer. Produce the complete corrected source code for the file described by the user message. "
+            "Resolve the specific issue while preserving unrelated behavior and file structure.\n\n"
+            "FIX OUTPUT RULES:\n"
+            "- Return ONLY the full corrected file contents.\n"
+            "- Do NOT return JSON.\n"
+            "- Do NOT return markdown code fences.\n"
+            "- Do NOT include explanations, summaries, or patch markers.\n"
+            "- Keep unchanged code intact unless a direct edit is required to fix the issue.\n"
+            f"- {lang_inst}"
+        )
+
+    @staticmethod
     def _build_user_message(
         code_content: str,
         review_type: str,
@@ -824,7 +847,7 @@ class AIBackend(ABC):
 
         The message now reminds the model to respond with JSON.
         """
-        has_spec = review_type == "specification" and spec_content
+        has_spec = "specification" in AIBackend._review_type_scope(review_type) and spec_content
         if has_spec:
             return (
                 f"SPECIFICATION DOCUMENT:\n{spec_content}\n\n---\n\n"

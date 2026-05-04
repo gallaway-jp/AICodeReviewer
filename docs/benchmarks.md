@@ -6,10 +6,11 @@ These benchmarks are not unit tests for one helper or parser branch. They model 
 
 ## Desktop Benchmark Browser
 
-The GUI includes a dedicated Benchmarks tab for browsing saved benchmark runs without leaving the desktop workflow.
+The GUI includes a dedicated Benchmarks tab for running or comparing benchmark runs without leaving the desktop workflow.
 
-The tab is designed for artifact-driven comparison rather than benchmark authoring. It lets you:
+The tab is designed for quick execution plus artifact-driven comparison rather than benchmark authoring. It lets you:
 
+- start a fresh benchmark run directly from the tab; the app writes a timestamped run folder under the configured saved-runs root and auto-loads the new summary
 - browse the fixture catalog rooted at `benchmarks/holistic_review/fixtures/`
 - discover benchmark-like JSON summaries under the configured saved-runs folder
 - load one summary as the main run and a second as the comparison run

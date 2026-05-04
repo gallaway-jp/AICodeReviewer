@@ -15,8 +15,10 @@ Use it when you want to:
 Start the API explicitly from the CLI:
 
 ```bash
-aicodereviewer serve-api --host 127.0.0.1 --port 8765
+aicodereviewer serve-api --backend local --host 127.0.0.1 --port 8765
 ```
+
+Omit `--backend` when you want the service to use the backend already configured in `config.ini`.
 
 You can also enable the embedded local API from the desktop Settings panel.
 
@@ -40,6 +42,7 @@ http://127.0.0.1:8765
 - `POST /api/jobs/{job_id}/cancel`
 - `GET /api/jobs/{job_id}/report`
 - `GET /api/jobs/{job_id}/artifacts`
+- `GET /api/jobs/{job_id}/artifacts/{artifact_key}`
 - `GET /api/jobs/{job_id}/artifacts/{artifact_key}/raw`
 - `GET /api/events`
 - `GET /api/jobs/{job_id}/events`
@@ -163,7 +166,7 @@ When `timeout=0`, the API returns the current event backlog immediately and clos
 - The embedded GUI-started API and the CLI-started `serve-api` command expose the same route surface.
 - When the API is started from the desktop app, submitted jobs participate in the same scheduler-backed runtime and queue state visible in the GUI.
 - The recommendation endpoint does not create a job; it only returns a suggested review bundle.
-- Security-sensitive local API actions such as job submission, report fetches, and artifact access now emit audit log entries through the normal application logger.
+- Security-sensitive local API actions such as job submission, report fetches, and artifact access emit audit entries on the dedicated `aicodereviewer.audit` logger, with optional retained file logging configured separately from general application logging.
 - The response contracts are verified by the HTTP API tests in [tests/test_http_api.py](../tests/test_http_api.py).
 
 ## Related Guides

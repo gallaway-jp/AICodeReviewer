@@ -45,6 +45,7 @@ class BenchmarkTabBuilder:
         self.host._benchmark_fixture_presence_filters = self.host._build_fixture_presence_filters()
         self.host._benchmark_fixture_sort_options = self.host._build_fixture_sort_options()
         self.host._benchmark_advanced_visible = False
+        self.host._benchmark_run_active = False
 
         intro = ctk.CTkFrame(
             tab,
@@ -139,13 +140,21 @@ class BenchmarkTabBuilder:
         )
         self.host.benchmark_load_catalog_btn.grid(row=0, column=0, padx=(0, 8), sticky="w")
 
+        self.host.benchmark_run_btn = ctk.CTkButton(
+            action_frame,
+            text=t("gui.benchmark.run_benchmarks"),
+            width=150,
+            command=self.host._start_benchmark_run,
+        )
+        self.host.benchmark_run_btn.grid(row=0, column=1, padx=(0, 8), sticky="w")
+
         self.host.benchmark_load_summary_btn = ctk.CTkButton(
             action_frame,
             text=t("gui.benchmark.load_summary"),
             width=170,
             command=self.host._browse_benchmark_summary_artifact,
         )
-        self.host.benchmark_load_summary_btn.grid(row=0, column=1, padx=(0, 8), sticky="w")
+        self.host.benchmark_load_summary_btn.grid(row=0, column=2, padx=(0, 8), sticky="w")
 
         self.host.benchmark_compare_summary_btn = ctk.CTkButton(
             action_frame,
@@ -153,7 +162,7 @@ class BenchmarkTabBuilder:
             width=170,
             command=self.host._browse_benchmark_compare_artifact,
         )
-        self.host.benchmark_compare_summary_btn.grid(row=0, column=2, padx=(0, 8), sticky="w")
+        self.host.benchmark_compare_summary_btn.grid(row=0, column=3, padx=(0, 8), sticky="w")
 
         self.host.benchmark_load_selected_summary_btn = ctk.CTkButton(
             action_frame,
@@ -161,7 +170,7 @@ class BenchmarkTabBuilder:
             width=170,
             command=self.host._load_selected_benchmark_summary,
         )
-        self.host.benchmark_load_selected_summary_btn.grid(row=0, column=3, padx=(0, 8), sticky="w")
+        self.host.benchmark_load_selected_summary_btn.grid(row=0, column=4, padx=(0, 8), sticky="w")
 
         self.host.benchmark_compare_selected_summary_btn = ctk.CTkButton(
             action_frame,
@@ -169,7 +178,7 @@ class BenchmarkTabBuilder:
             width=190,
             command=self.host._compare_selected_benchmark_summary,
         )
-        self.host.benchmark_compare_selected_summary_btn.grid(row=0, column=4, padx=(0, 8), sticky="w")
+        self.host.benchmark_compare_selected_summary_btn.grid(row=0, column=5, padx=(0, 8), sticky="w")
 
         self.host.benchmark_advanced_toggle_btn = ctk.CTkButton(
             source_frame,
@@ -315,6 +324,7 @@ class BenchmarkTabBuilder:
 
         self.host._benchmark_action_buttons = [
             self.host.benchmark_load_catalog_btn,
+            self.host.benchmark_run_btn,
             self.host.benchmark_load_summary_btn,
             self.host.benchmark_compare_summary_btn,
             self.host.benchmark_load_selected_summary_btn,

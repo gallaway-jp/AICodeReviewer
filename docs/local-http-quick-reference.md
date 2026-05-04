@@ -19,8 +19,10 @@ Keep these invariants intact:
 CLI:
 
 ```bash
-aicodereviewer serve-api --host 127.0.0.1 --port 8765
+aicodereviewer serve-api --backend local --host 127.0.0.1 --port 8765
 ```
+
+Omit `--backend` when you want the service to use the backend already configured in `config.ini`.
 
 GUI:
 
@@ -46,7 +48,7 @@ Stable route families in the current baseline:
 - metadata: `/api/backends`, `/api/review-types`, `/api/review-presets`
 - recommendations: `/api/recommendations/review-types`
 - job control: `/api/jobs`, `/api/jobs/{job_id}`, `/api/jobs/{job_id}/cancel`
-- reports and artifacts: `/api/jobs/{job_id}/report`, `/api/jobs/{job_id}/artifacts`, `/api/jobs/{job_id}/artifacts/{artifact_key}/raw`
+- reports and artifacts: `/api/jobs/{job_id}/report`, `/api/jobs/{job_id}/artifacts`, `/api/jobs/{job_id}/artifacts/{artifact_key}`, `/api/jobs/{job_id}/artifacts/{artifact_key}/raw`
 - event streams: `/api/events`, `/api/jobs/{job_id}/events`
 
 If you add, remove, or reshape a route:
@@ -59,7 +61,7 @@ If you add, remove, or reshape a route:
 
 - output-file requests are constrained to the requested review root or current workspace root
 - artifact fetches re-check resolved paths against the same boundary
-- sensitive local API actions emit audit log entries through the normal application logger
+- sensitive local API actions emit audit entries on the dedicated `aicodereviewer.audit` logger
 - SSE endpoints are backed by the runtime event stream rather than a separate polling cache
 
 These are part of the shipped local-API contract, not optional implementation details.

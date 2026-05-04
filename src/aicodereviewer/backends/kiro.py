@@ -1,22 +1,22 @@
 # src/aicodereviewer/backends/kiro.py
-"""
-Kiro CLI backend for code review via WSL.
+"""Kiro CLI backend for code review.
 
-Kiro is Amazon's AI-powered development tool.  On Windows the CLI runs
-inside WSL while accessing Windows-local files through ``/mnt/`` paths.
-
-This backend shells out to ``kiro`` inside WSL, converts Windows paths
-transparently, and parses the plain-text output.
+On Windows, the backend prefers the native ``kiro-cli.exe`` installation and
+falls back to WSL only when no native CLI is available.
 """
 import logging
 import os
 import shlex
+import shutil
 import subprocess
 import time
 from typing import Optional
 
 from .base import AIBackend
+from .models import _resolve_kiro_exe
 from aicodereviewer.config import config
+from aicodereviewer.diagnostics import backend_connection_detail, backend_connection_fix_hint
+from aicodereviewer.i18n import t
 from aicodereviewer.path_utils import (
     windows_to_wsl_path,
     is_wsl_available,
@@ -29,8 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 class KiroBackend(AIBackend):
-    """
-    AI backend that delegates to the Kiro CLI running in WSL.
+    """AI backend that delegates to the Kiro CLI.
 
     Configuration (``config.ini``):
 
@@ -41,8 +40,8 @@ class KiroBackend(AIBackend):
 
         [kiro]
         wsl_distro = Ubuntu
-        cli_command = kiro
-        model = claude-3-5-sonnet
+        cli_command = kiro-cli
+        model = claude-haiku-4.5
         timeout = 300
     """
 
@@ -50,16 +49,23 @@ class KiroBackend(AIBackend):
         self.distro: Optional[str] = (
             config.get("kiro", "wsl_distro", "").strip() or None
         )
-        self.cli_cmd: str = config.get("kiro", "cli_command", "kiro").strip()
+        self.cli_cmd: str = config.get("kiro", "cli_command", "kiro-cli").strip()
         self.model: str = config.get("kiro", "model", "").strip() or None
         self.timeout: int = int(float(config.get("kiro", "timeout", "300")))
         self._cancel_requested: bool = False
+        self.native_cmd: Optional[str] = None
+        self._use_native_windows = False
 
-        if os.name == "nt" and not is_wsl_available():
-            raise RuntimeError(
-                "WSL is not available. Kiro backend requires Windows Subsystem "
-                "for Linux. Install WSL with: wsl --install"
-            )
+        if os.name == "nt":
+            resolved = _resolve_kiro_exe(self.cli_cmd)
+            if resolved and os.path.isfile(resolved):
+                self.native_cmd = resolved
+                self._use_native_windows = True
+            elif not is_wsl_available():
+                raise RuntimeError(
+                    "Kiro CLI was not found natively on Windows and WSL is not available. "
+                    "Install kiro-cli for Windows or enable WSL."
+                )
 
     def cancel(self) -> None:
         """Request cancellation for the active Kiro subprocess."""
@@ -112,6 +118,9 @@ class KiroBackend(AIBackend):
 
     def validate_connection(self) -> bool:
         if os.name == "nt":
+            if self._use_native_windows and self.native_cmd:
+                rc, stdout, _stderr = self._run_native_command([self.native_cmd, "whoami"])
+                return rc == 0 and bool(stdout.strip())
             if not is_wsl_available():
                 logger.error("WSL is not available.")
                 return False
@@ -123,8 +132,6 @@ class KiroBackend(AIBackend):
                 )
                 return False
         else:
-            # Running natively on Linux/macOS – just check PATH
-            import shutil
             if not shutil.which(self.cli_cmd):
                 logger.error("Kiro CLI ('%s') not found in PATH.", self.cli_cmd)
                 return False
@@ -132,23 +139,42 @@ class KiroBackend(AIBackend):
 
     def validate_connection_diagnostic(self) -> dict[str, str | bool]:
         if os.name == "nt":
+            if self._use_native_windows and self.native_cmd:
+                rc, stdout, stderr = self._run_native_command([self.native_cmd, "whoami"])
+                if rc == 0 and bool(stdout.strip()):
+                    return {
+                        "ok": True,
+                        "category": "none",
+                        "detail": "",
+                        "fix_hint": "",
+                        "origin": "connection_test",
+                    }
+                return {
+                    "ok": False,
+                    "category": "auth",
+                    "detail": stderr.strip() or t("health.kiro_auth_fail"),
+                    "fix_hint": backend_connection_fix_hint("kiro", "auth"),
+                    "origin": "connection_test",
+                }
             if not is_wsl_available():
                 return {
                     "ok": False,
                     "category": "tool_compatibility",
-                    "detail": "WSL is not available.",
-                    "fix_hint": "Install and enable WSL before using the Kiro backend.",
+                    "detail": backend_connection_detail("kiro", "no_runtime"),
+                    "fix_hint": backend_connection_fix_hint("kiro", "tool_compatibility"),
                     "origin": "connection_test",
                 }
             if not ensure_wsl_tool(self.cli_cmd, self.distro):
                 return {
                     "ok": False,
                     "category": "tool_compatibility",
-                    "detail": (
-                        f"Kiro CLI ('{self.cli_cmd}') was not found in WSL"
-                        f" ({self.distro})." if self.distro else f"Kiro CLI ('{self.cli_cmd}') was not found in WSL."
+                    "detail": backend_connection_detail(
+                        "kiro",
+                        "wsl_cli_not_found",
+                        command=self.cli_cmd,
+                        distro_suffix=(f" ({self.distro})" if self.distro else ""),
                     ),
-                    "fix_hint": "Install Kiro CLI inside the target WSL distribution and verify the configured command.",
+                    "fix_hint": backend_connection_fix_hint("kiro", "tool_compatibility"),
                     "origin": "connection_test",
                 }
         else:
@@ -158,8 +184,8 @@ class KiroBackend(AIBackend):
                 return {
                     "ok": False,
                     "category": "tool_compatibility",
-                    "detail": f"Kiro CLI ('{self.cli_cmd}') was not found in PATH.",
-                    "fix_hint": "Install Kiro CLI or update the configured CLI command.",
+                    "detail": backend_connection_detail("kiro", "cli_not_found", command=self.cli_cmd),
+                    "fix_hint": backend_connection_fix_hint("kiro", "tool_compatibility"),
                     "origin": "connection_test",
                 }
 
@@ -184,6 +210,17 @@ class KiroBackend(AIBackend):
             parts.append(file_path)
         return shlex.join(parts)
 
+    def _build_native_command(self, subcommand: str, *, file_path: Optional[str] = None) -> list[str]:
+        """Build a native command list for direct Kiro CLI execution."""
+        parts = [self.native_cmd or self.cli_cmd, subcommand]
+        if self.model:
+            parts.extend(["--model", self.model])
+        if subcommand == "chat":
+            parts.append("--no-interactive")
+        if file_path is not None:
+            parts.append(file_path)
+        return parts
+
     def _terminate_process(self, process: subprocess.Popen[str]) -> None:
         try:
             process.terminate()
@@ -195,14 +232,15 @@ class KiroBackend(AIBackend):
             except Exception:
                 pass
 
-    def _run_native_bash(self, bash_cmd: str, prompt: str) -> str:
-        """Run a native bash command with cancellation polling."""
+    def _run_native_command(self, command: list[str], prompt: Optional[str] = None) -> tuple[int, str, str]:
+        """Run a native command with cancellation polling."""
         process = subprocess.Popen(
-            ["bash", "-lc", bash_cmd],
+            command,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
         deadline = time.monotonic() + self.timeout
         pending_input = prompt
@@ -215,20 +253,34 @@ class KiroBackend(AIBackend):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 self._terminate_process(process)
-                raise subprocess.TimeoutExpired(["bash", "-lc", bash_cmd], self.timeout)
+                raise subprocess.TimeoutExpired(command, self.timeout)
 
             try:
                 stdout, stderr = process.communicate(
                     input=pending_input,
                     timeout=min(0.2, remaining),
                 )
-                if process.returncode != 0:
-                    err_msg = stderr.strip() or f"Kiro exited with code {process.returncode}"
-                    return f"Error: Kiro CLI – {err_msg}"
-                return stdout.strip()
+                return process.returncode, stdout, stderr
             except subprocess.TimeoutExpired:
                 pending_input = None
                 continue
+
+    def _run_native_bash(self, bash_cmd: str, prompt: str) -> str:
+        """Run a native bash command with cancellation polling."""
+        rc, stdout, stderr = self._run_native_command(["bash", "-lc", bash_cmd], prompt)
+        if rc != 0:
+            err_msg = stderr.strip() or f"Kiro exited with code {rc}"
+            return f"Error: Kiro CLI – {err_msg}"
+        return stdout.strip()
+
+    def _run_native_cli(self, command: list[str], prompt: str) -> str:
+        """Run the native Windows Kiro CLI directly."""
+        rc, stdout, stderr = self._run_native_command(command, prompt)
+        if rc != 0:
+            err_msg = stderr.strip() or f"Kiro exited with code {rc}"
+            logger.error("Kiro CLI error: %s", err_msg)
+            return f"Error: Kiro CLI – {err_msg}"
+        return stdout.strip()
 
     def _run_kiro_prompt(self, prompt: str) -> str:
         """
@@ -239,8 +291,9 @@ class KiroBackend(AIBackend):
         Kiro CLI.
         """
         try:
-            # Build the kiro-cli invocation; use bash -lc on both platforms so
-            # that ~/.local/bin (where kiro-cli lives) is always on the PATH.
+            if os.name == "nt" and self._use_native_windows:
+                return self._run_native_cli(self._build_native_command("chat"), prompt)
+
             bash_cmd = self._build_bash_command("chat")
 
             if os.name == "nt":
@@ -270,10 +323,11 @@ class KiroBackend(AIBackend):
         """
         Review a file by passing its path directly to Kiro.
 
-        On Windows the path is transparently converted to a WSL mount path.
+        On Windows the path is passed natively when a Windows Kiro install is
+        available, otherwise it is converted to a WSL mount path.
         """
         try:
-            if os.name == "nt":
+            if os.name == "nt" and not self._use_native_windows:
                 wsl_path = windows_to_wsl_path(file_path)
             else:
                 wsl_path = file_path
@@ -282,6 +336,12 @@ class KiroBackend(AIBackend):
                 review_type, lang, self._project_context, self._detected_frameworks,
             )
             prompt = f"{system_prompt}\n\nReview the file at: {wsl_path}"
+
+            if os.name == "nt" and self._use_native_windows:
+                return self._run_native_cli(
+                    self._build_native_command("review", file_path=file_path),
+                    prompt,
+                )
 
             bash_cmd = self._build_bash_command("review", file_path=wsl_path)
 

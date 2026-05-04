@@ -33,6 +33,13 @@ def _windows_monitor_inventory() -> list[dict[str, Any]]:
         return []
 
     user32 = ctypes.windll.user32
+    user32.EnumDisplayMonitors.argtypes = [
+        wintypes.HDC,
+        ctypes.POINTER(wintypes.RECT),
+        ctypes.c_void_p,
+        wintypes.LPARAM,
+    ]
+    user32.EnumDisplayMonitors.restype = wintypes.BOOL
     monitors: list[dict[str, Any]] = []
 
     class MONITORINFOEXW(ctypes.Structure):
@@ -43,6 +50,9 @@ def _windows_monitor_inventory() -> list[dict[str, Any]]:
             ("dwFlags", ctypes.c_ulong),
             ("szDevice", ctypes.c_wchar * 32),
         ]
+
+    user32.GetMonitorInfoW.argtypes = [wintypes.HMONITOR, ctypes.POINTER(MONITORINFOEXW)]
+    user32.GetMonitorInfoW.restype = wintypes.BOOL
 
     monitor_enum_proc = ctypes.WINFUNCTYPE(
         wintypes.BOOL,
@@ -55,6 +65,13 @@ def _windows_monitor_inventory() -> list[dict[str, Any]]:
     get_dpi_for_monitor = None
     try:
         get_dpi_for_monitor = ctypes.windll.shcore.GetDpiForMonitor
+        get_dpi_for_monitor.argtypes = [
+            wintypes.HMONITOR,
+            ctypes.c_int,
+            ctypes.POINTER(ctypes.c_uint),
+            ctypes.POINTER(ctypes.c_uint),
+        ]
+        get_dpi_for_monitor.restype = ctypes.c_long
     except Exception:
         get_dpi_for_monitor = None
 
@@ -78,7 +95,7 @@ def _windows_monitor_inventory() -> list[dict[str, Any]]:
         return 1
 
     callback = monitor_enum_proc(_callback)
-    user32.EnumDisplayMonitors(0, 0, callback, 0)
+    user32.EnumDisplayMonitors(None, None, callback, 0)
     return monitors
 
 
@@ -88,6 +105,8 @@ def _describe_window_monitor(app: Any, monitors: list[dict[str, Any]]) -> dict[s
 
     hwnd = int(app.winfo_id())
     user32 = ctypes.windll.user32
+    user32.MonitorFromWindow.argtypes = [wintypes.HWND, wintypes.DWORD]
+    user32.MonitorFromWindow.restype = wintypes.HMONITOR
     monitor_handle = int(user32.MonitorFromWindow(hwnd, 2))
     scaling = None
     try:

@@ -7,9 +7,11 @@ create_backend() factory instead of BedrockClient().
 import io
 import json
 import logging
+import runpy
 import sys
 import configparser
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -127,6 +129,15 @@ def test_dry_run_does_not_require_backend(monkeypatch):
     assert exit_code == 0
 
 
+def test_load_spec_content_reads_file_for_dry_run(tmp_path: Path):
+    spec_file = tmp_path / "requirements.md"
+    spec_file.write_text("display_name is required\n", encoding="utf-8")
+
+    loaded = cli._load_spec_content(str(spec_file), dry_run=True)
+
+    assert loaded == "display_name is required\n"
+
+
 def test_recommend_types_prints_recommendation_summary(monkeypatch, capsys):
     class _FakeBackend:
         pass
@@ -183,6 +194,51 @@ def test_setup_logging_writes_local_api_audit_events_to_dedicated_file(tmp_path:
     contents = audit_log_file.read_text(encoding="utf-8")
     assert "Local HTTP audit: action=job_submit" in contents
     assert "job_id=test-job" in contents
+
+
+def test_serve_api_command_accepts_backend_override_and_starts_server(monkeypatch: pytest.MonkeyPatch) -> None:
+    created: dict[str, Any] = {}
+
+    def _fake_create_local_http_app(*, max_concurrent_jobs: int = 1, **_kwargs: Any) -> object:
+        created["max_concurrent_jobs"] = max_concurrent_jobs
+        created["app"] = object()
+        return created["app"]
+
+    def _fake_run_local_http_server(app: Any, *, host: str = "127.0.0.1", port: int = 8765, **_kwargs: Any) -> None:
+        created["served_app"] = app
+        created["host"] = host
+        created["port"] = port
+
+    monkeypatch.setattr(cli, "create_local_http_app", _fake_create_local_http_app)
+    monkeypatch.setattr(cli, "run_local_http_server", _fake_run_local_http_server)
+
+    exit_code = run_main_with_args([
+        "serve-api",
+        "--backend",
+        "local",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8891",
+        "--max-concurrent-jobs",
+        "2",
+    ])
+
+    assert exit_code == 0
+    assert created["served_app"] is created["app"]
+    assert created["host"] == "127.0.0.1"
+    assert created["port"] == 8891
+    assert created["max_concurrent_jobs"] == 2
+    assert config.get("backend", "type") == "local"
+
+
+def test_module_entrypoint_preserves_main_exit_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cli, "main", lambda: 7)
+
+    with pytest.raises(SystemExit) as excinfo:
+        runpy.run_module("aicodereviewer", run_name="__main__")
+
+    assert excinfo.value.code == 7
 
 
 def test_recommend_types_does_not_require_review_metadata(monkeypatch):
@@ -421,6 +477,54 @@ def test_parse_review_types_custom_preset_alias(tmp_path: Path):
     assert result == ["secure_defaults", "data_validation"]
 
 
+def test_check_connection_uses_diagnostic_fix_hint_without_legacy_extra_hints(monkeypatch: pytest.MonkeyPatch) -> None:
+    printed: list[str] = []
+
+    class _FakeBackend:
+        def validate_connection_diagnostic(self):
+            return {
+                "ok": False,
+                "category": "auth",
+                "detail": "GitHub Copilot CLI is not authenticated.",
+                "fix_hint": t("health.hint_copilot_auth"),
+                "origin": "connection_test",
+            }
+
+    monkeypatch.setattr(cli, "resolve_backend_type", lambda backend_name: (backend_name or "copilot", {}))
+    monkeypatch.setattr(cli, "create_backend", lambda _backend: _FakeBackend())
+    monkeypatch.setattr(cli, "_print_console", printed.append)
+
+    exit_code = cli._check_connection("copilot")
+
+    assert exit_code == 1
+    assert t("conn.fix_hint", fix_hint=t("health.hint_copilot_auth")) in printed
+    assert not any("Install GitHub Copilot CLI" in line for line in printed)
+    assert not any("/login to authenticate" in line for line in printed if line != t("conn.fix_hint", fix_hint=t("health.hint_copilot_auth")))
+
+
+def test_check_connection_falls_back_to_backend_specific_hint_when_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    printed: list[str] = []
+
+    class _FakeBackend:
+        def validate_connection_diagnostic(self):
+            return {
+                "ok": False,
+                "category": "configuration",
+                "detail": "Unknown api_type 'bogus'.",
+                "fix_hint": "",
+                "origin": "connection_test",
+            }
+
+    monkeypatch.setattr(cli, "resolve_backend_type", lambda backend_name: (backend_name or "local", {}))
+    monkeypatch.setattr(cli, "create_backend", lambda _backend: _FakeBackend())
+    monkeypatch.setattr(cli, "_print_console", printed.append)
+
+    exit_code = cli._check_connection("local")
+
+    assert exit_code == 1
+    assert t("conn.fix_hint", fix_hint=t("health.hint_local_api_type")) in printed
+
+
 def test_list_type_presets_prints_definitions(capsys):
     """Listing presets should print the preset names and included review types."""
     exit_code = run_main_with_args(["--list-type-presets"])
@@ -499,7 +603,13 @@ def test_list_addons_reads_checked_in_example_addon_from_configured_paths(monkey
 def test_check_connection_success(monkeypatch, capsys):
     """--check-connection with a successful backend prints success."""
     mock_backend = MagicMock()
-    mock_backend.validate_connection.return_value = True
+    mock_backend.validate_connection_diagnostic.return_value = {
+        "ok": True,
+        "category": "none",
+        "detail": "",
+        "fix_hint": "",
+        "origin": "connection_test",
+    }
     monkeypatch.setattr(cli, "create_backend", lambda name: mock_backend)
 
     exit_code = run_main_with_args(["--check-connection", "--backend", "bedrock"])
@@ -510,14 +620,13 @@ def test_check_connection_success(monkeypatch, capsys):
 
 
 def test_check_connection_failure(monkeypatch, capsys):
-    """--check-connection with a failing backend prints failure and hints."""
+    """--check-connection with a failing backend prints the normalized diagnostic hint."""
     mock_backend = MagicMock()
-    mock_backend.validate_connection.return_value = False
     mock_backend.validate_connection_diagnostic.return_value = {
         "ok": False,
         "category": "auth",
-        "detail": "GitHub Copilot CLI is not authenticated.",
-        "fix_hint": "Run 'copilot' and use /login to authenticate.",
+        "detail": t("health.copilot_auth_fail"),
+        "fix_hint": t("health.hint_copilot_auth"),
         "origin": "connection_test",
     }
     monkeypatch.setattr(cli, "create_backend", lambda name: mock_backend)
@@ -529,14 +638,19 @@ def test_check_connection_failure(monkeypatch, capsys):
     assert "❌" in captured.out or "fail" in captured.out.lower()
     assert "Failure category" in captured.out or "失敗分類" in captured.out
     assert "auth" in captured.out.lower()
-    # Should include local backend hints
-    assert "Hint" in captured.out or "ヒント" in captured.out
+    assert t("conn.fix_hint", fix_hint=t("health.hint_copilot_auth")) in captured.out
 
 
 def test_check_connection_is_standalone(monkeypatch):
     """--check-connection should NOT require --programmers/--reviewers/path."""
     mock_backend = MagicMock()
-    mock_backend.validate_connection.return_value = True
+    mock_backend.validate_connection_diagnostic.return_value = {
+        "ok": True,
+        "category": "none",
+        "detail": "",
+        "fix_hint": "",
+        "origin": "connection_test",
+    }
     monkeypatch.setattr(cli, "create_backend", lambda name: mock_backend)
 
     # Should not raise SystemExit
@@ -546,7 +660,13 @@ def test_check_connection_is_standalone(monkeypatch):
 def test_check_connection_accepts_backend_alias(monkeypatch):
     received_names = []
     mock_backend = MagicMock()
-    mock_backend.validate_connection.return_value = True
+    mock_backend.validate_connection_diagnostic.return_value = {
+        "ok": True,
+        "category": "none",
+        "detail": "",
+        "fix_hint": "",
+        "origin": "connection_test",
+    }
 
     def _fake_create_backend(name):
         received_names.append(name)

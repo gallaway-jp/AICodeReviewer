@@ -678,3 +678,4 @@ class ReviewTabBuilder:
         )
         self.host._elapsed_lbl.grid(row=run_row + 3, column=0, sticky="e", padx=(0, 10), pady=(0, 4))
         self.host._review_submission_queue.on_queue_panel_ready()
+        self.host._start_review_submission_queue_poll()

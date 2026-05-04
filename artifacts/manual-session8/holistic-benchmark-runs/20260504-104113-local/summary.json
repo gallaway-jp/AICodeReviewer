@@ -1,0 +1,50 @@
+{
+  "fixtures_evaluated": 1,
+  "fixtures_passed": 0,
+  "fixtures_failed": 1,
+  "overall_score": 0.0,
+  "results": [
+    {
+      "fixture_id": "auth-guard-regression",
+      "title": "Authorization Guard Regression",
+      "report_path": "D:\\Development\\Python\\AICodeReviewer-manual-audit\\artifacts\\manual-session8\\holistic-benchmark-runs\\20260504-104113-local\\reports\\auth-guard-regression.json",
+      "passed": false,
+      "score": 0.0,
+      "minimum_score": 1.0,
+      "matched_expectations": 0,
+      "total_expectations": 1,
+      "missing_report": false,
+      "expectation_results": [
+        {
+          "expectation_id": "missing-admin-guard",
+          "matched": false,
+          "matched_issue_id": null,
+          "matched_file_path": null,
+          "reason": "No issue matched the expected holistic finding",
+          "failed_checks": [
+            "context_scope",
+            "description_keywords"
+          ],
+          "best_candidate_issue_id": "issue-0002",
+          "best_candidate_file_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-gui-benchmark-run-1rx5s6cg\\fixtures\\auth-guard-regression\\project\\src\\auth.py"
+        }
+      ],
+      "benchmark_metadata": {}
+    }
+  ],
+  "backend": "local",
+  "status": "completed",
+  "representative_fixture_ids": [
+    "auth-guard-regression"
+  ],
+  "representative_fixtures": [
+    {
+      "id": "auth-guard-regression",
+      "title": "Authorization Guard Regression",
+      "scope": "project",
+      "review_types": [
+        "security"
+      ]
+    }
+  ]
+}

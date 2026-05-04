@@ -35,7 +35,7 @@ def test_config_new_sections():
     with patch('configparser.ConfigParser.read'):
         config = Config()
         assert config.get('backend', 'type') == 'bedrock'
-        assert config.get('kiro', 'cli_command') == 'kiro'
+        assert config.get('kiro', 'cli_command') == 'kiro-cli'
         assert config.get('copilot', 'copilot_path') == 'copilot'
 
 

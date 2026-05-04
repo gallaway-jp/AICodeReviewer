@@ -188,3 +188,28 @@ class TestApplyAIFix:
         assert result.diagnostic.category == "provider"
         assert result.diagnostic.retryable is True
         assert result.diagnostic.retry_delay_seconds == 30
+
+    def test_generate_ai_fix_result_rejects_review_json_payload(self):
+        mock_client = MagicMock()
+        mock_client.get_fix.return_value = (
+            '{"review_type":"security","language":"ja","files":[{"filename":"utility.py","findings":[{"title":"Weak hash"}]}]}'
+        )
+
+        issue = ReviewIssue(
+            file_path="/path/to/test.py",
+            issue_type="security",
+            severity="high",
+            description="Test issue",
+            code_snippet="code",
+            ai_feedback="feedback"
+        )
+
+        with patch('builtins.open', MagicMock()) as mock_open, \
+             patch('os.path.getsize', return_value=1000):
+            mock_open.return_value.__enter__.return_value.read.return_value = "code"
+            result = generate_ai_fix_result(issue, mock_client, "security", "ja")
+
+        assert result.content is None
+        assert result.diagnostic is not None
+        assert result.diagnostic.category == "provider"
+        assert "review JSON" in result.diagnostic.detail

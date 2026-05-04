@@ -1,0 +1,130 @@
+{
+  "fixtures_root": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-fixture-authoring-8yhkwjuc\\fixtures",
+  "fixture_root": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-fixture-authoring-8yhkwjuc\\fixtures\\api-design-get-create-endpoint-sanity",
+  "fixture_manifest": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-fixture-authoring-8yhkwjuc\\fixtures\\api-design-get-create-endpoint-sanity\\fixture.json",
+  "project_root": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-fixture-authoring-8yhkwjuc\\fixtures\\api-design-get-create-endpoint-sanity\\project",
+  "report_file": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-fixture-authoring-8yhkwjuc\\reports\\api-design-get-create-endpoint-sanity.json",
+  "commands": {
+    "list_fixtures": {
+      "args": [
+        "D:\\Development\\Python\\AICodeReviewer\\.venv\\Scripts\\python.exe",
+        "tools/evaluate_holistic_benchmarks.py",
+        "--fixtures-root",
+        "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-fixture-authoring-8yhkwjuc\\fixtures",
+        "--list-fixtures"
+      ],
+      "returncode": 0,
+      "stdout": "{\n  \"fixtures\": [\n    {\n      \"id\": \"api-design-get-create-endpoint-sanity\",\n      \"title\": \"API Design GET Create Endpoint Sanity\",\n      \"scope\": \"project\",\n      \"review_types\": [\n        \"api_design\"\n      ]\n    }\n  ]\n}\n",
+      "stderr": ""
+    },
+    "evaluate_single": {
+      "args": [
+        "D:\\Development\\Python\\AICodeReviewer\\.venv\\Scripts\\python.exe",
+        "tools/evaluate_holistic_benchmarks.py",
+        "--fixtures-root",
+        "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-fixture-authoring-8yhkwjuc\\fixtures",
+        "--fixture",
+        "api-design-get-create-endpoint-sanity",
+        "--report-file",
+        "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-fixture-authoring-8yhkwjuc\\reports\\api-design-get-create-endpoint-sanity.json"
+      ],
+      "returncode": 0,
+      "stdout": "{\n  \"fixtures_evaluated\": 1,\n  \"fixtures_passed\": 1,\n  \"fixtures_failed\": 0,\n  \"overall_score\": 1.0,\n  \"results\": [\n    {\n      \"fixture_id\": \"api-design-get-create-endpoint-sanity\",\n      \"title\": \"API Design GET Create Endpoint Sanity\",\n      \"report_path\": \"C:\\\\Users\\\\Colin\\\\AppData\\\\Local\\\\Temp\\\\aicr-fixture-authoring-8yhkwjuc\\\\reports\\\\api-design-get-create-endpoint-sanity.json\",\n      \"passed\": true,\n      \"score\": 1.0,\n      \"minimum_score\": 1.0,\n      \"matched_expectations\": 1,\n      \"total_expectations\": 1,\n      \"missing_report\": false,\n      \"expectation_results\": [\n        {\n          \"expectation_id\": \"get-create-endpoint\",\n          \"matched\": true,\n          \"matched_issue_id\": null,\n          \"matched_file_path\": \"C:\\\\Users\\\\Colin\\\\AppData\\\\Local\\\\Temp\\\\aicr-fixture-authoring-8yhkwjuc\\\\fixtures\\\\api-design-get-create-endpoint-sanity\\\\project\\\\api.py\",\n          \"reason\": null,\n          \"failed_checks\": [],\n          \"best_candidate_issue_id\": null,\n          \"best_candidate_file_path\": null\n        }\n      ],\n      \"benchmark_metadata\": {}\n    }\n  ]\n}\n",
+      "stderr": ""
+    },
+    "evaluate_directory": {
+      "args": [
+        "D:\\Development\\Python\\AICodeReviewer\\.venv\\Scripts\\python.exe",
+        "tools/evaluate_holistic_benchmarks.py",
+        "--fixtures-root",
+        "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-fixture-authoring-8yhkwjuc\\fixtures",
+        "--report-dir",
+        "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-fixture-authoring-8yhkwjuc\\reports"
+      ],
+      "returncode": 0,
+      "stdout": "{\n  \"fixtures_evaluated\": 1,\n  \"fixtures_passed\": 1,\n  \"fixtures_failed\": 0,\n  \"overall_score\": 1.0,\n  \"results\": [\n    {\n      \"fixture_id\": \"api-design-get-create-endpoint-sanity\",\n      \"title\": \"API Design GET Create Endpoint Sanity\",\n      \"report_path\": \"C:\\\\Users\\\\Colin\\\\AppData\\\\Local\\\\Temp\\\\aicr-fixture-authoring-8yhkwjuc\\\\reports\\\\api-design-get-create-endpoint-sanity.json\",\n      \"passed\": true,\n      \"score\": 1.0,\n      \"minimum_score\": 1.0,\n      \"matched_expectations\": 1,\n      \"total_expectations\": 1,\n      \"missing_report\": false,\n      \"expectation_results\": [\n        {\n          \"expectation_id\": \"get-create-endpoint\",\n          \"matched\": true,\n          \"matched_issue_id\": null,\n          \"matched_file_path\": \"C:\\\\Users\\\\Colin\\\\AppData\\\\Local\\\\Temp\\\\aicr-fixture-authoring-8yhkwjuc\\\\fixtures\\\\api-design-get-create-endpoint-sanity\\\\project\\\\api.py\",\n          \"reason\": null,\n          \"failed_checks\": [],\n          \"best_candidate_issue_id\": null,\n          \"best_candidate_file_path\": null\n        }\n      ],\n      \"benchmark_metadata\": {}\n    }\n  ]\n}\n",
+      "stderr": ""
+    }
+  },
+  "list_fixture_ids": [
+    {
+      "id": "api-design-get-create-endpoint-sanity",
+      "title": "API Design GET Create Endpoint Sanity",
+      "scope": "project",
+      "review_types": [
+        "api_design"
+      ]
+    }
+  ],
+  "single_evaluation": {
+    "fixtures_evaluated": 1,
+    "fixtures_passed": 1,
+    "fixtures_failed": 0,
+    "overall_score": 1.0,
+    "results": [
+      {
+        "fixture_id": "api-design-get-create-endpoint-sanity",
+        "title": "API Design GET Create Endpoint Sanity",
+        "report_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-fixture-authoring-8yhkwjuc\\reports\\api-design-get-create-endpoint-sanity.json",
+        "passed": true,
+        "score": 1.0,
+        "minimum_score": 1.0,
+        "matched_expectations": 1,
+        "total_expectations": 1,
+        "missing_report": false,
+        "expectation_results": [
+          {
+            "expectation_id": "get-create-endpoint",
+            "matched": true,
+            "matched_issue_id": null,
+            "matched_file_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-fixture-authoring-8yhkwjuc\\fixtures\\api-design-get-create-endpoint-sanity\\project\\api.py",
+            "reason": null,
+            "failed_checks": [],
+            "best_candidate_issue_id": null,
+            "best_candidate_file_path": null
+          }
+        ],
+        "benchmark_metadata": {}
+      }
+    ]
+  },
+  "directory_evaluation": {
+    "fixtures_evaluated": 1,
+    "fixtures_passed": 1,
+    "fixtures_failed": 0,
+    "overall_score": 1.0,
+    "results": [
+      {
+        "fixture_id": "api-design-get-create-endpoint-sanity",
+        "title": "API Design GET Create Endpoint Sanity",
+        "report_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-fixture-authoring-8yhkwjuc\\reports\\api-design-get-create-endpoint-sanity.json",
+        "passed": true,
+        "score": 1.0,
+        "minimum_score": 1.0,
+        "matched_expectations": 1,
+        "total_expectations": 1,
+        "missing_report": false,
+        "expectation_results": [
+          {
+            "expectation_id": "get-create-endpoint",
+            "matched": true,
+            "matched_issue_id": null,
+            "matched_file_path": "C:\\Users\\Colin\\AppData\\Local\\Temp\\aicr-fixture-authoring-8yhkwjuc\\fixtures\\api-design-get-create-endpoint-sanity\\project\\api.py",
+            "reason": null,
+            "failed_checks": [],
+            "best_candidate_issue_id": null,
+            "best_candidate_file_path": null
+          }
+        ],
+        "benchmark_metadata": {}
+      }
+    ]
+  },
+  "sanity_checks": {
+    "list_returncode_zero": true,
+    "single_returncode_zero": true,
+    "directory_returncode_zero": true,
+    "single_fixture_passed": true,
+    "directory_fixture_passed": true
+  }
+}

@@ -445,6 +445,10 @@ class BenchmarkTabHarness:
         self.app._open_selected_benchmark_report_directory()
         self.app.update_idletasks()
 
+    def run_benchmarks(self) -> None:
+        self.app.benchmark_run_btn.invoke()
+        self.app.update_idletasks()
+
     def filter_count_text(self) -> str:
         return str(self.app._filter_count_lbl.cget("text"))
 

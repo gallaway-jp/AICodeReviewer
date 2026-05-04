@@ -133,6 +133,7 @@ Common next moves:
 
 - use `--scope diff` with `--commits` or `--diff-file`
 - choose a smaller review bundle instead of `--type all`
+- inspect preset bundles with `aicodereviewer --list-type-presets` and reuse a preset key such as `runtime_safety`
 - pass `--backend` explicitly in scripts and repeatable runs
 
 Use [CLI Guide](cli.md) for the full flag and tool-mode reference.
@@ -140,6 +141,14 @@ Use [CLI Guide](cli.md) for the full flag and tool-mode reference.
 ## Diff Review Workflow
 
 Use this path when you want to review only changed files or a specific patch instead of the whole project.
+
+If you repeat the same review bundles often, you can also use a built-in preset key in `--type`.
+
+Example:
+
+```bash
+aicodereviewer . --scope diff --commits HEAD~3..HEAD --type release_safety --dry-run
+```
 
 ### Review a commit range
 
@@ -165,6 +174,7 @@ Important rules:
 
 - use either `--commits` or `--diff-file`, not both
 - keep the review bundle focused when the diff is small and specific
+- the real diff review stays constrained to the selected patch or commit range, even for documentation, dependency, or license review types
 - use a dry run first if you are unsure whether the diff input covers the files you expect
 
 This is usually the best starting point for pull-request review, pre-merge validation, or targeted regression checking.
@@ -276,6 +286,12 @@ Example:
 aicodereviewer . --type specification --spec-file requirements.md --programmers Alice --reviewers Bob --backend local
 ```
 
+Combined example:
+
+```bash
+aicodereviewer . --type specification,maintainability --spec-file requirements.md --programmers Alice --reviewers Bob --backend local
+```
+
 You can combine `specification` with other review types, but a focused specification-only run is often easier to validate first.
 
 Common uses:
@@ -288,6 +304,7 @@ Important rules:
 
 - `--spec-file` is required for specification reviews
 - use a readable project or diff target so the review has both the code and the spec context
+- when `specification` is combined with other review types, the same `--spec-file` content is still applied to the mixed review prompt
 - if you are reviewing a recent change only, combine `--type specification` with `--scope diff`
 
 ## GUI First Session
@@ -325,7 +342,9 @@ After a review completes:
 
 Useful companion workflows:
 
+- while one review is already running, use the inline queue panel to inspect the active plus queued submissions, target a specific queued item, and cancel it without losing the visible queue state
 - detach Addon Review, Benchmarks, Settings, or Output Log into their own windows when you want a multi-window layout
+- use the shared status-bar window action when you want the current detachable page to open or refocus without hunting for the tab-local button
 - pin a preferred review-type bundle if you repeat the same startup selection often
 - use Benchmarks to compare saved benchmark runs if you are tuning prompts, models, or review bundles
 
@@ -352,9 +371,10 @@ aicodereviewer analyze-repo . --output-dir artifacts/generated-addon-preview --a
 Useful notes:
 
 - the page uses the same generated preview directory produced by `analyze-repo`
-- the Addon Review page can be detached into its own window when you want the diff surface visible beside the rest of the app
+- the Addon Review page can be detached into its own window when you want the diff surface visible beside the rest of the app, and the shared status-bar window action will switch between `Open In Window` and `Focus Window` for that page
 - approval writes the decision record and installs the addon into the default or chosen install directory
 - rejection records the decision without activating the addon
+- detached Addon Review windows participate in the same restart restore flow as Benchmarks, Settings, and Output Log
 
 Use [Addons Guide](addons.md) when you need the full manifest contract or the CLI approval commands.
 
@@ -363,6 +383,8 @@ Use [Addons Guide](addons.md) when you need the full manifest contract or the CL
 Use this path when you want to generate saved benchmark summaries before comparing them in the desktop browser.
 
 ![Annotated benchmark workflow](images/gui-benchmarks-workflow.png)
+
+The current desktop build also exposes a `Run Benchmarks` action beside the saved-run controls. The checked-in screenshot still emphasizes the compare surfaces, but you no longer need to create summary files manually before starting a basic benchmark run from the GUI.
 
 In this capture:
 
@@ -373,7 +395,8 @@ In this capture:
 
 1. Choose the backend you want to evaluate.
 2. Run a backend connection check unless you already know the environment is healthy.
-3. Run the benchmark runner and write results into a dedicated output folder.
+3. Open the Benchmarks tab and use `Run Benchmarks` if you want the simplest path. The app writes a timestamped run folder under the configured saved-runs root and loads the new summary automatically.
+4. Use the CLI runner instead when you need custom fixture selection, repeated runs, or a specific output layout.
 
 Example:
 
@@ -381,8 +404,8 @@ Example:
 python tools/run_holistic_benchmarks.py --backend local --lang en --output-dir artifacts/holistic-benchmarks/local-run-2026-04-07 --summary-out artifacts/holistic-benchmarks/local-run-2026-04-07/summary.json --skip-health-check
 ```
 
-4. Repeat with a different backend, prompt change, or review improvement you want to measure.
-5. Open the Benchmarks tab and load the saved summary JSON files as the primary and comparison runs.
+5. Repeat with a different backend, prompt change, or review improvement you want to measure.
+6. Open the Benchmarks tab and load the saved summary JSON files as the primary and comparison runs when you want a side-by-side comparison.
 
 Useful variants:
 
@@ -395,6 +418,7 @@ Practical advice:
 - keep `--lang en` stable when you want comparable saved runs
 - store each run in its own output folder so the summary JSON and generated artifacts stay grouped together
 - use the generated summary JSON as the thing you load in the Benchmarks tab later
+- the GUI run button is the fastest way to generate one new saved run; the CLI remains the better fit for fixture-specific or repeated-run benchmarking
 
 Use [Quality Benchmarks](benchmarks.md) if you need runner flags or fixture-catalog details.
 
@@ -492,7 +516,7 @@ Use this path when you want to compare two saved benchmark runs and triage the f
 ![Benchmarks tab screenshot](images/gui-benchmarks-tab.png)
 
 1. Open the Benchmarks tab.
-2. Point the tab at the fixture catalog and the folder containing saved benchmark summaries if needed.
+2. If you need a fresh baseline first, use `Run Benchmarks`; otherwise point the tab at the fixture catalog and the folder containing saved benchmark summaries if needed.
 3. Load one summary as the primary run.
 4. Load a second summary as the comparison run.
 5. Inspect the fixture table for shared, primary-only, or comparison-only scenarios.
@@ -701,8 +725,10 @@ Use this path when another local tool should submit reviews or read queue state 
 Start the API explicitly:
 
 ```bash
-aicodereviewer serve-api --host 127.0.0.1 --port 8765
+aicodereviewer serve-api --backend local --host 127.0.0.1 --port 8765
 ```
+
+Omit `--backend` when you want the API to use the backend already configured in `config.ini`.
 
 Or enable the embedded loopback API from desktop Settings and restart the GUI.
 
@@ -719,7 +745,7 @@ Typical workflow:
 1. Start the API.
 
 ```bash
-aicodereviewer serve-api --host 127.0.0.1 --port 8765
+aicodereviewer serve-api --backend local --host 127.0.0.1 --port 8765
 ```
 
 2. Submit a review job that writes a report inside the project root.
@@ -770,6 +796,7 @@ Important rules:
 - `output_file` must stay inside the requested review root or current workspace root
 - for a quick event backlog instead of an open stream, use `timeout=0`
 - the embedded GUI-started API and CLI-started API expose the same route surface
+- job submission, report fetches, and artifact access emit entries on the dedicated local API audit logger
 
 Use [HTTP API Guide](http-api.md) for route and payload details.
 
@@ -790,9 +817,12 @@ Common problem areas:
 - Kiro WSL path or CLI invocation problems on Windows
 - Copilot CLI auth or large-prompt behavior
 - Local LLM URL, API mode, model, or timeout mismatch
+- Windows multi-monitor GUI stalls when `gui.automatic_dpi_awareness` is enabled
 - large review scope causing slow or expensive runs
 
 Use [Troubleshooting](troubleshooting.md) for the detailed recovery guide.
+
+If the Windows GUI becomes sluggish or appears to hang while you drag it across displays, leave `gui.automatic_dpi_awareness = false`. That is the shipped stability-oriented default, and the audit probe on a dual-display setup still reproduced a severe Results-tab stall when that override was enabled.
 
 ## Backend Recovery Guide
 

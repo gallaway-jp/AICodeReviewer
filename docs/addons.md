@@ -145,7 +145,7 @@ Minimal manifest-only review-pack addon:
   "version": "1.0.0",
   "name": "Secure Defaults Addon",
   "compatibility": {
-    "min_app_version": "2.0.0"
+    "min_app_version": "0.3.0"
   },
   "permissions": [
     "review_definitions"

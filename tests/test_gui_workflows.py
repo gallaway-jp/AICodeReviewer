@@ -8,6 +8,7 @@ import threading
 import time
 from pathlib import Path
 from types import SimpleNamespace
+from types import ModuleType
 from typing import Any, Generator
 
 import pytest
@@ -19,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from aicodereviewer.addons import AddonEditorDiagnostic
 from aicodereviewer.addon_generator import generate_addon_preview
 import aicodereviewer.auth as auth
+from aicodereviewer.execution import ReviewExecutionRuntime, ReviewExecutionService, ReviewRequest
 from aicodereviewer.i18n import t
 from aicodereviewer.models import ReviewIssue
 from aicodereviewer.config import config
@@ -290,6 +292,53 @@ def _write_sample_benchmark_summaries(tmp_path: Path) -> tuple[Path, Path, Path]
     return artifacts_root, summary_path, compare_path
 
 
+def _sample_benchmark_run_summary(output_dir: Path) -> dict[str, Any]:
+    return {
+        "backend": "local",
+        "status": "completed",
+        "overall_score": 1.0,
+        "fixtures_evaluated": 1,
+        "fixtures_passed": 1,
+        "fixtures_failed": 0,
+        "representative_fixtures": [
+            {
+                "id": "auth-jwt-bypass",
+                "title": "JWT Auth Bypass",
+                "scope": "project",
+                "review_types": ["security"],
+                "benchmark_metadata": {
+                    "fixture_tags": ["auth", "jwt"],
+                    "expected_focus": ["token validation"],
+                },
+            }
+        ],
+        "generated_reports": [
+            {
+                "fixture_id": "auth-jwt-bypass",
+                "output_path": str(output_dir / "auth-jwt-bypass.json"),
+                "status": "completed",
+                "issue_count": 1,
+                "success": True,
+            }
+        ],
+        "score_summary": {
+            "overall_score": 1.0,
+            "fixtures_evaluated": 1,
+            "fixtures_passed": 1,
+            "fixtures_failed": 0,
+            "representative_fixture_ids": ["auth-jwt-bypass"],
+            "representative_fixtures": [
+                {
+                    "id": "auth-jwt-bypass",
+                    "title": "JWT Auth Bypass",
+                    "scope": "project",
+                    "review_types": ["security"],
+                }
+            ],
+        },
+    }
+
+
 def _runner_with_report_context(
     meta: dict[str, Any] | None = None,
     **kwargs: Any,
@@ -489,6 +538,176 @@ def test_benchmark_tab_loads_representative_fixture_summary_artifact(
     assert set(harness.benchmark_tab.fixture_diff_ids()) == {"auth-jwt-bypass", "cache-gap", "validation-gap"}
 
 
+def test_benchmark_tab_can_run_benchmarks_without_manual_summary_selection(
+    monkeypatch: pytest.MonkeyPatch,
+    harness: GuiTestHarness,
+    tmp_path: Path,
+) -> None:
+    import aicodereviewer.gui.benchmark_mixin as benchmark_mixin
+
+    fixtures_root = tmp_path / "fixtures"
+    fixtures_root.mkdir()
+
+    harness.benchmark_tab.open()
+    harness.app.benchmark_fixtures_root_entry.delete(0, "end")
+    harness.app.benchmark_fixtures_root_entry.insert(0, str(fixtures_root))
+    harness.app.benchmark_artifacts_root_entry.delete(0, "end")
+    harness.app.benchmark_artifacts_root_entry.insert(0, str(tmp_path / "artifacts"))
+
+    def _fake_invoke(argv: list[str]) -> tuple[int, dict[str, Any]]:
+        output_dir = Path(argv[argv.index("--output-dir") + 1])
+        summary_path = Path(argv[argv.index("--summary-out") + 1])
+        json_out_path = Path(argv[argv.index("--json-out") + 1])
+        output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / "auth-jwt-bypass.json").write_text(
+            json.dumps({"status": "completed", "success": True, "issue_count": 1}, indent=2),
+            encoding="utf-8",
+        )
+        summary_payload = _sample_benchmark_run_summary(output_dir)
+        summary_path.parent.mkdir(parents=True, exist_ok=True)
+        summary_path.write_text(json.dumps(summary_payload, indent=2), encoding="utf-8")
+        json_out_path.write_text(
+            json.dumps({"status": "completed", "generated_reports": summary_payload["generated_reports"]}, indent=2),
+            encoding="utf-8",
+        )
+        return 0, {"status": "completed", "generated_reports": summary_payload["generated_reports"]}
+
+    monkeypatch.setattr(benchmark_mixin, "_invoke_holistic_benchmark_runner", _fake_invoke)
+
+    harness.benchmark_tab.run_benchmarks()
+    harness.pump(2)
+
+    assert any("summary.json" in value for value in harness.benchmark_tab.summary_selector_values())
+    assert "summary.json" in harness.benchmark_tab.source_text()
+    assert harness.benchmark_tab.count_text() == "1"
+    assert "auth-jwt-bypass" in harness.benchmark_tab.selected_fixture()
+    assert "JWT Auth Bypass" in harness.benchmark_tab.catalog_text()
+    assert "Overall Score:" in harness.benchmark_tab.primary_summary_text() or "総合スコア：" in harness.benchmark_tab.primary_summary_text()
+    assert any(message == t("gui.benchmark.run_loaded", path="summary.json") and not error for message, error in harness.toasts)
+
+
+def test_benchmark_tab_compares_summary_artifacts_with_top_level_results_and_zero_counts(
+    harness: GuiTestHarness,
+    tmp_path: Path,
+) -> None:
+    artifacts_root = tmp_path / "artifacts"
+    artifacts_root.mkdir()
+
+    primary_report = artifacts_root / "primary-auth-guard-regression.json"
+    compare_report = artifacts_root / "compare-auth-guard-regression.json"
+    primary_report.write_text(json.dumps({"status": "completed", "success": True}, indent=2), encoding="utf-8")
+    compare_report.write_text(json.dumps({"status": "completed", "success": True}, indent=2), encoding="utf-8")
+
+    primary_summary = artifacts_root / "primary-summary.json"
+    compare_summary = artifacts_root / "compare-summary.json"
+
+    primary_payload = {
+        "backend": "local",
+        "status": "completed",
+        "overall_score": 0.0,
+        "fixtures_evaluated": 1,
+        "fixtures_passed": 0,
+        "fixtures_failed": 1,
+        "representative_fixture_ids": ["auth-guard-regression"],
+        "representative_fixtures": [
+            {
+                "id": "auth-guard-regression",
+                "title": "Authorization Guard Regression",
+                "scope": "project",
+                "review_types": ["security"],
+            }
+        ],
+        "results": [
+            {
+                "fixture_id": "auth-guard-regression",
+                "title": "Authorization Guard Regression",
+                "status": "completed",
+                "score": 0.0,
+                "passed": False,
+                "report_path": str(primary_report),
+                "selected_review_types": ["security"],
+            }
+        ],
+    }
+    compare_payload = {
+        "backend": "local",
+        "status": "completed",
+        "overall_score": 1.0,
+        "fixtures_evaluated": 1,
+        "fixtures_passed": 1,
+        "fixtures_failed": 0,
+        "representative_fixture_ids": ["auth-guard-regression"],
+        "representative_fixtures": [
+            {
+                "id": "auth-guard-regression",
+                "title": "Authorization Guard Regression",
+                "scope": "project",
+                "review_types": ["security"],
+            }
+        ],
+        "results": [
+            {
+                "fixture_id": "auth-guard-regression",
+                "title": "Authorization Guard Regression",
+                "status": "completed",
+                "score": 1.0,
+                "passed": True,
+                "report_path": str(compare_report),
+                "selected_review_types": ["security"],
+            }
+        ],
+    }
+
+    primary_summary.write_text(json.dumps(primary_payload, indent=2), encoding="utf-8")
+    compare_summary.write_text(json.dumps(compare_payload, indent=2), encoding="utf-8")
+
+    harness.benchmark_tab.open()
+    harness.benchmark_tab.refresh_summary_selector(artifacts_root)
+    harness.benchmark_tab.select_summary_by_fragment("primary-summary.json")
+    harness.benchmark_tab.load_selected_summary()
+    harness.benchmark_tab.select_summary_by_fragment("compare-summary.json")
+    harness.benchmark_tab.compare_selected_summary()
+
+    primary_text = harness.benchmark_tab.primary_summary_text()
+    compare_text = harness.benchmark_tab.compare_summary_text()
+
+    assert "Fixtures Passed: 0" in primary_text or "通過フィクスチャ数： 0" in primary_text
+    assert "Fixtures Failed: 0" in compare_text or "失敗フィクスチャ数： 0" in compare_text
+    assert "+1.0000" in compare_text
+    assert harness.benchmark_tab.fixture_diff_ids() == ["auth-guard-regression"]
+
+
+def test_benchmark_runner_loader_does_not_require_tools_package_on_sys_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import aicodereviewer.gui.benchmark_mixin as benchmark_mixin
+
+    class _FakeLoader:
+        def exec_module(self, module: ModuleType) -> None:
+            def _main(argv: list[str]) -> int:
+                print(json.dumps({"status": "completed", "argv": list(argv)}))
+                return 0
+
+            module.main = _main  # type: ignore[attr-defined]
+
+    monkeypatch.delitem(sys.modules, benchmark_mixin._HOLISTIC_BENCHMARK_RUNNER_MODULE, raising=False)
+    monkeypatch.setattr(
+        benchmark_mixin.importlib.util,
+        "spec_from_file_location",
+        lambda name, path: SimpleNamespace(loader=_FakeLoader(), name=name, origin=str(path)),
+    )
+    monkeypatch.setattr(
+        benchmark_mixin.importlib.util,
+        "module_from_spec",
+        lambda spec: ModuleType(spec.name),
+    )
+
+    exit_code, payload = benchmark_mixin._invoke_holistic_benchmark_runner(["--backend", "local"])
+
+    assert exit_code == 0
+    assert payload == {"status": "completed", "argv": ["--backend", "local"]}
+
+
 def test_review_backend_dropdown_stays_in_sync_with_settings(
     harness: GuiTestHarness,
 ) -> None:
@@ -513,6 +732,344 @@ def test_review_backend_dropdown_stays_in_sync_with_settings(
 
     assert harness.app.backend_var.get() == "local"
     assert harness.app.review_backend_display_var.get() == t("gui.review.backend_local")
+
+
+def test_settings_local_llm_api_key_save_rotate_and_revoke_via_gui(
+    app_factory: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    temporary_config_path = tmp_path / "config.ini"
+    original_config_path = config.config_path or (Path.cwd() / "config.ini")
+    credential_ref = auth.build_credential_reference("local_llm", "api_key")
+    keyring_store: dict[tuple[str, str], str] = {}
+
+    def _set_password(service: str, account: str, secret: str) -> None:
+        keyring_store[(service, account)] = secret
+
+    def _get_password(service: str, account: str) -> str | None:
+        return keyring_store.get((service, account))
+
+    def _delete_password(service: str, account: str) -> None:
+        keyring_store.pop((service, account), None)
+
+    monkeypatch.setattr(auth.keyring, "set_password", _set_password)
+    monkeypatch.setattr(auth.keyring, "get_password", _get_password)
+    monkeypatch.setattr(auth.keyring, "delete_password", _delete_password)
+
+    try:
+        _save_default_config_to_path(temporary_config_path)
+        config.set_value("backend", "type", "local")
+        config.save()
+
+        first_harness = GuiTestHarness(app_factory())
+        first_harness.app._build_tab_if_needed(t("gui.tab.settings"))
+        first_harness.pump()
+
+        first_harness.app._settings_backend_var.set(t("gui.settings.backend_local"))
+        first_harness.set_entry(first_harness.app._setting_entries[("local_llm", "api_url")], "http://127.0.0.1:11434")
+        first_harness.app._setting_entries[("local_llm", "api_type")].set("openai")
+        first_harness.app._setting_entries[("local_llm", "model")].set("qwen/qwen3.5-9b")
+        first_harness.set_entry(first_harness.app._setting_entries[("local_llm", "api_key")], "session-secret-1")
+        first_harness.app._settings_save_btn.invoke()
+        first_harness.pump()
+
+        assert config.get("backend", "type") == "local"
+        assert config.get("local_llm", "api_url") == "http://127.0.0.1:11434"
+        assert config.get("local_llm", "api_type") == "openai"
+        assert config.get("local_llm", "model") == "qwen/qwen3.5-9b"
+        assert config.get("local_llm", "api_key") == credential_ref
+        assert auth.get_config_credential("local_llm", "api_key").secret == "session-secret-1"
+        assert any(message == t("gui.settings.saved_ok") and not error for message, error in first_harness.toasts)
+
+        _reset_config_to_path(temporary_config_path)
+
+        second_harness = GuiTestHarness(app_factory())
+        second_harness.app._build_tab_if_needed(t("gui.tab.settings"))
+        second_harness.pump()
+
+        assert second_harness.app._setting_entries[("local_llm", "api_key")].get() == "session-secret-1"
+        assert second_harness.app._setting_entries[("local_llm", "api_url")].get() == "http://127.0.0.1:11434"
+        assert second_harness.app._setting_entries[("local_llm", "api_type")].get() == "openai"
+        assert second_harness.app._setting_entries[("local_llm", "model")].get() == "qwen/qwen3.5-9b"
+
+        second_harness.app._local_api_key_rotate_btn.invoke()
+        second_harness.pump()
+
+        assert second_harness.app._setting_entries[("local_llm", "api_key")].get() == ""
+        assert config.get("local_llm", "api_key") == credential_ref
+        assert auth.get_config_credential("local_llm", "api_key").missing_reference is True
+        assert any(message == t("gui.settings.local_api_key_rotated") and not error for message, error in second_harness.toasts)
+
+        second_harness.set_entry(second_harness.app._setting_entries[("local_llm", "api_key")], "session-secret-2")
+        second_harness.app._settings_save_btn.invoke()
+        second_harness.pump()
+
+        assert config.get("local_llm", "api_key") == credential_ref
+        assert auth.get_config_credential("local_llm", "api_key").secret == "session-secret-2"
+
+        _reset_config_to_path(temporary_config_path)
+
+        third_harness = GuiTestHarness(app_factory())
+        third_harness.app._build_tab_if_needed(t("gui.tab.settings"))
+        third_harness.pump()
+
+        assert third_harness.app._setting_entries[("local_llm", "api_key")].get() == "session-secret-2"
+
+        third_harness.app._local_api_key_revoke_btn.invoke()
+        third_harness.pump()
+
+        assert third_harness.app._setting_entries[("local_llm", "api_key")].get() == ""
+        assert config.get("local_llm", "api_key") == ""
+        assert auth.get_config_credential("local_llm", "api_key").source == "none"
+        assert any(message == t("gui.settings.local_api_key_revoked") and not error for message, error in third_harness.toasts)
+
+        _reset_config_to_path(temporary_config_path)
+
+        fourth_harness = GuiTestHarness(app_factory())
+        fourth_harness.app._build_tab_if_needed(t("gui.tab.settings"))
+        fourth_harness.pump()
+
+        assert fourth_harness.app._setting_entries[("local_llm", "api_key")].get() == ""
+    finally:
+        _reset_config_to_path(original_config_path)
+
+
+def test_settings_backend_specific_values_persist_across_app_restart_via_gui(
+    app_factory: Any,
+    tmp_path: Path,
+) -> None:
+    temporary_config_path = tmp_path / "config.ini"
+    original_config_path = config.config_path or (Path.cwd() / "config.ini")
+
+    try:
+        _save_default_config_to_path(temporary_config_path)
+
+        first_harness = GuiTestHarness(app_factory())
+        first_harness.app._build_tab_if_needed(t("gui.tab.settings"))
+        first_harness.pump()
+
+        first_harness.app._settings_backend_var.set(t("gui.settings.backend_copilot"))
+
+        first_harness.app._setting_entries[("model", "model_id")].set("amazon.nova-micro-v1:0")
+        first_harness.set_entry(first_harness.app._setting_entries[("aws", "region")], "us-west-2")
+        first_harness.set_entry(first_harness.app._setting_entries[("aws", "sso_session")], "colin-sso")
+        first_harness.set_entry(first_harness.app._setting_entries[("aws", "access_key_id")], "AKIATEST123")
+
+        first_harness.app._setting_entries[("kiro", "wsl_distro")].set("Ubuntu-24.04")
+        first_harness.set_entry(first_harness.app._setting_entries[("kiro", "cli_command")], "C:/Tools/kiro-cli.exe")
+        first_harness.set_entry(first_harness.app._setting_entries[("kiro", "timeout")], "450")
+        first_harness.app._setting_entries[("kiro", "model")].set("minimax-m2.1")
+
+        first_harness.set_entry(first_harness.app._setting_entries[("copilot", "copilot_path")], "C:/Tools/copilot.exe")
+        first_harness.set_entry(first_harness.app._setting_entries[("copilot", "timeout")], "123")
+        first_harness.app._setting_entries[("copilot", "model")].set("gpt-5-mini")
+
+        first_harness.app._settings_save_btn.invoke()
+        first_harness.pump()
+
+        assert config.get("backend", "type") == "copilot"
+        assert config.get("model", "model_id") == "amazon.nova-micro-v1:0"
+        assert config.get("aws", "region") == "us-west-2"
+        assert config.get("aws", "sso_session") == "colin-sso"
+        assert config.get("aws", "access_key_id") == "AKIATEST123"
+        assert config.get("kiro", "wsl_distro") == "Ubuntu-24.04"
+        assert config.get("kiro", "cli_command") == "C:/Tools/kiro-cli.exe"
+        assert config.get("kiro", "timeout") == "450"
+        assert config.get("kiro", "model") == "minimax-m2.1"
+        assert config.get("copilot", "copilot_path") == "C:/Tools/copilot.exe"
+        assert config.get("copilot", "timeout") == "123"
+        assert config.get("copilot", "model") == "gpt-5-mini"
+        assert any(message == t("gui.settings.saved_ok") and not error for message, error in first_harness.toasts)
+
+        _reset_config_to_path(temporary_config_path)
+
+        second_harness = GuiTestHarness(app_factory())
+        second_harness.app._build_tab_if_needed(t("gui.tab.settings"))
+        second_harness.pump()
+
+        assert second_harness.app._settings_backend_var.get() == t("gui.settings.backend_copilot")
+        assert second_harness.app._setting_entries[("model", "model_id")].get() == "amazon.nova-micro-v1:0"
+        assert second_harness.app._setting_entries[("aws", "region")].get() == "us-west-2"
+        assert second_harness.app._setting_entries[("aws", "sso_session")].get() == "colin-sso"
+        assert second_harness.app._setting_entries[("aws", "access_key_id")].get() == "AKIATEST123"
+        assert second_harness.app._setting_entries[("kiro", "wsl_distro")].get() == "Ubuntu-24.04"
+        assert second_harness.app._setting_entries[("kiro", "cli_command")].get() == "C:/Tools/kiro-cli.exe"
+        assert second_harness.app._setting_entries[("kiro", "timeout")].get() == "450"
+        assert second_harness.app._setting_entries[("kiro", "model")].get() == "minimax-m2.1"
+        assert second_harness.app._setting_entries[("copilot", "copilot_path")].get() == "C:/Tools/copilot.exe"
+        assert second_harness.app._setting_entries[("copilot", "timeout")].get() == "123"
+        assert second_harness.app._setting_entries[("copilot", "model")].get() == "gpt-5-mini"
+    finally:
+        _reset_config_to_path(original_config_path)
+
+
+def test_settings_runtime_tuning_values_persist_across_app_restart_via_gui(
+    app_factory: Any,
+    tmp_path: Path,
+) -> None:
+    temporary_config_path = tmp_path / "config.ini"
+    original_config_path = config.config_path or (Path.cwd() / "config.ini")
+
+    try:
+        _save_default_config_to_path(temporary_config_path)
+
+        first_harness = GuiTestHarness(app_factory())
+        first_harness.app._build_tab_if_needed(t("gui.tab.settings"))
+        first_harness.pump()
+
+        first_harness.set_entry(first_harness.app._setting_entries[("performance", "max_requests_per_minute")], "37")
+        first_harness.set_entry(first_harness.app._setting_entries[("performance", "min_request_interval_seconds")], "2.5")
+        first_harness.set_entry(first_harness.app._setting_entries[("performance", "max_file_size_mb")], "24")
+        first_harness.set_entry(first_harness.app._setting_entries[("processing", "batch_size")], "8")
+        first_harness.app._setting_entries[("processing", "combine_files")].set(False)
+
+        first_harness.app._settings_save_btn.invoke()
+        first_harness.pump()
+
+        assert config.get("performance", "max_requests_per_minute") == 37
+        assert config.get("performance", "min_request_interval_seconds") == 2.5
+        assert config.get("performance", "max_file_size_mb") == 24 * 1024 * 1024
+        assert config.get("processing", "batch_size") == 8
+        assert config.get("processing", "combine_files") == "false"
+        assert any(message == t("gui.settings.saved_ok") and not error for message, error in first_harness.toasts)
+
+        _reset_config_to_path(temporary_config_path)
+
+        second_harness = GuiTestHarness(app_factory())
+        second_harness.app._build_tab_if_needed(t("gui.tab.settings"))
+        second_harness.pump()
+
+        assert second_harness.app._setting_entries[("performance", "max_requests_per_minute")].get() == "37"
+        assert second_harness.app._setting_entries[("performance", "min_request_interval_seconds")].get() == "2.5"
+        assert second_harness.app._setting_entries[("performance", "max_file_size_mb")].get() == "24"
+        assert second_harness.app._setting_entries[("processing", "batch_size")].get() == "8"
+        assert second_harness.app._setting_entries[("processing", "combine_files")].get() is False
+    finally:
+        _reset_config_to_path(original_config_path)
+
+
+def test_settings_invalid_numeric_value_blocks_gui_save_without_persisting_other_edits(
+    app_factory: Any,
+    tmp_path: Path,
+) -> None:
+    temporary_config_path = tmp_path / "config.ini"
+    original_config_path = config.config_path or (Path.cwd() / "config.ini")
+
+    try:
+        _save_default_config_to_path(temporary_config_path)
+
+        first_harness = GuiTestHarness(app_factory())
+        first_harness.app._build_tab_if_needed(t("gui.tab.settings"))
+        first_harness.pump()
+
+        first_harness.set_entry(first_harness.app._setting_entries[("performance", "max_requests_per_minute")], "0")
+        first_harness.set_entry(first_harness.app._setting_entries[("processing", "batch_size")], "8")
+
+        first_harness.app._settings_save_btn.invoke()
+        first_harness.pump()
+
+        assert any("not a valid" in message and error for message, error in first_harness.toasts)
+        assert first_harness.app._setting_entries[("performance", "max_requests_per_minute")].get() == "0"
+        assert first_harness.app._setting_entries[("processing", "batch_size")].get() == "8"
+        assert config.get("performance", "max_requests_per_minute") == 10
+        assert config.get("processing", "batch_size") == 5
+
+        _reset_config_to_path(temporary_config_path)
+
+        second_harness = GuiTestHarness(app_factory())
+        second_harness.app._build_tab_if_needed(t("gui.tab.settings"))
+        second_harness.pump()
+
+        assert second_harness.app._setting_entries[("performance", "max_requests_per_minute")].get() == "10"
+        assert second_harness.app._setting_entries[("processing", "batch_size")].get() == "5"
+    finally:
+        _reset_config_to_path(original_config_path)
+
+
+def test_settings_save_failure_shows_error_and_keeps_on_disk_config_unchanged_across_restart(
+    app_factory: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    temporary_config_path = tmp_path / "config.ini"
+    original_config_path = config.config_path or (Path.cwd() / "config.ini")
+
+    try:
+        _save_default_config_to_path(temporary_config_path)
+
+        first_harness = GuiTestHarness(app_factory())
+        first_harness.app._build_tab_if_needed(t("gui.tab.settings"))
+        first_harness.pump()
+
+        first_harness.set_entry(first_harness.app._setting_entries[("performance", "max_requests_per_minute")], "37")
+        first_harness.set_entry(first_harness.app._setting_entries[("processing", "batch_size")], "8")
+
+        monkeypatch.setattr(config, "save", lambda: (_ for _ in ()).throw(OSError("disk full")))
+
+        first_harness.app._settings_save_btn.invoke()
+        first_harness.pump()
+
+        assert any(
+            message == t("gui.settings.save_error", error="disk full") and error
+            for message, error in first_harness.toasts
+        )
+        assert first_harness.app._setting_entries[("performance", "max_requests_per_minute")].get() == "37"
+        assert first_harness.app._setting_entries[("processing", "batch_size")].get() == "8"
+
+        _reset_config_to_path(temporary_config_path)
+
+        second_harness = GuiTestHarness(app_factory())
+        second_harness.app._build_tab_if_needed(t("gui.tab.settings"))
+        second_harness.pump()
+
+        assert second_harness.app._setting_entries[("performance", "max_requests_per_minute")].get() == "10"
+        assert second_harness.app._setting_entries[("processing", "batch_size")].get() == "5"
+    finally:
+        _reset_config_to_path(original_config_path)
+
+
+def test_settings_output_formats_guard_reenables_json_and_keeps_on_disk_config_unchanged_across_restart(
+    app_factory: Any,
+    tmp_path: Path,
+) -> None:
+    temporary_config_path = tmp_path / "config.ini"
+    original_config_path = config.config_path or (Path.cwd() / "config.ini")
+
+    try:
+        _save_default_config_to_path(temporary_config_path)
+
+        first_harness = GuiTestHarness(app_factory())
+        first_harness.app._build_tab_if_needed(t("gui.tab.settings"))
+        first_harness.pump()
+
+        first_harness.set_entry(first_harness.app._setting_entries[("performance", "max_requests_per_minute")], "37")
+        first_harness.app._format_vars["json"].set(False)
+        first_harness.app._format_vars["txt"].set(False)
+        first_harness.app._format_vars["md"].set(False)
+
+        first_harness.app._settings_save_btn.invoke()
+        first_harness.pump()
+
+        assert first_harness.app._format_vars["json"].get() is True
+        assert any(
+            message == t("gui.settings.output_formats_required") and error
+            for message, error in first_harness.toasts
+        )
+        assert first_harness.app._setting_entries[("performance", "max_requests_per_minute")].get() == "37"
+
+        _reset_config_to_path(temporary_config_path)
+
+        second_harness = GuiTestHarness(app_factory())
+        second_harness.app._build_tab_if_needed(t("gui.tab.settings"))
+        second_harness.pump()
+
+        assert second_harness.app._setting_entries[("performance", "max_requests_per_minute")].get() == "10"
+        assert second_harness.app._format_vars["json"].get() is True
+        assert second_harness.app._format_vars["txt"].get() is True
+        assert second_harness.app._format_vars["md"].get() is False
+    finally:
+        _reset_config_to_path(original_config_path)
 
 
 def test_benchmark_tab_opens_fixture_diff_report_json_files(
@@ -3593,6 +4150,7 @@ def test_gui_starts_and_stops_local_http_server_when_enabled(
         assert application.local_http_base_url_var.get() == "http://127.0.0.1:8899"
         assert "GET /api/review-presets" in application.local_http_docs_box.get("0.0", "end")
         assert "POST /api/recommendations/review-types" in application.local_http_docs_box.get("0.0", "end")
+        assert "GET /api/jobs/{job_id}/artifacts/{artifact_key}" in application.local_http_docs_box.get("0.0", "end")
 
         application._copy_local_http_base_url()
         assert clipboard["value"] == "http://127.0.0.1:8899"
@@ -3602,6 +4160,96 @@ def test_gui_starts_and_stops_local_http_server_when_enabled(
             application.destroy()
             if handle is not None:
                 assert handle.closed is True
+
+
+def test_review_queue_panel_auto_refreshes_for_runtime_jobs_submitted_outside_gui(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from aicodereviewer.gui.app import App
+
+    config_path = tmp_path / "gui-runtime-queue.ini"
+    _save_default_config_to_path(config_path)
+    monkeypatch.setattr(config, "config_path", config_path)
+    _reset_config_to_path(config_path)
+
+    release_event = threading.Event()
+    started_event = threading.Event()
+
+    def _slow_collect(*_args: Any, cancel_check: Any = None, **_kwargs: Any) -> list[Any]:
+        started_event.set()
+        while not release_event.is_set():
+            if cancel_check is not None and cancel_check():
+                return []
+            time.sleep(0.01)
+        return []
+
+    runtime = ReviewExecutionRuntime(
+        execution_service=ReviewExecutionService(
+            scan_fn=lambda *_args: [{"path": "src/example.py"}],
+            collect_issues_fn=_slow_collect,
+        ),
+        backend_factory=lambda _backend_name: object(),
+        max_concurrent_jobs=1,
+    )
+
+    application = None
+    try:
+        application = App(testing_mode=True, review_runtime=runtime)
+        harness = GuiTestHarness(application)
+        harness.app._build_tab_if_needed(t("gui.tab.review"))
+        harness.app.tabs.set(t("gui.tab.review"))
+        harness.pump(2)
+
+        request = ReviewRequest(
+            path=str(tmp_path),
+            scope="project",
+            diff_file=None,
+            commits=None,
+            review_types=["security"],
+            spec_content=None,
+            target_lang="en",
+            backend_name="local",
+            programmers=[],
+            reviewers=[],
+            dry_run=False,
+        )
+        queued_request = ReviewRequest(
+            path=str(tmp_path),
+            scope="project",
+            diff_file=None,
+            commits=None,
+            review_types=["security"],
+            spec_content=None,
+            target_lang="en",
+            backend_name="local",
+            programmers=[],
+            reviewers=[],
+            dry_run=True,
+        )
+
+        first_job = runtime.submit_job(request)
+        second_job = runtime.submit_job(queued_request)
+
+        assert started_event.wait(timeout=1.0)
+
+        harness.wait_until(
+            lambda: set(harness.queue_panel.display_ids()) == {first_job.job_id, second_job.job_id},
+            timeout=3.0,
+            message="queue panel never refreshed to show runtime-submitted API jobs",
+        )
+
+        visible_ids = set(harness.queue_panel.display_ids())
+        assert visible_ids == {first_job.job_id, second_job.job_id}
+        assert harness.queue_panel.summary_text() != t("gui.review.queue_empty")
+        assert first_job.job_id in harness.queue_panel.detail_text()
+    finally:
+        release_event.set()
+        if application is not None:
+            try:
+                application.destroy()
+            except Exception:
+                pass
 
 
 def test_runtime_tuning_settings_persist_across_app_restart(

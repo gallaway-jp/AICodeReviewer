@@ -208,6 +208,57 @@ def _infer_related_files_from_text(
     return inferred
 
 
+def _normalize_code_text(text: str) -> str:
+    """Collapse whitespace so short code snippets can be matched across formatting differences."""
+    return " ".join(text.split())
+
+
+def _entry_matches_code_context(entry_content: str, code_context: str) -> bool:
+    """Return True when *code_context* appears to belong to *entry_content*."""
+    normalized_context = _normalize_code_text(code_context)
+    if len(normalized_context) < 12:
+        return False
+
+    normalized_entry = _normalize_code_text(entry_content)
+    if normalized_context in normalized_entry:
+        return True
+
+    context_lines = [line.strip() for line in code_context.splitlines() if line.strip()]
+    if not context_lines:
+        return False
+    return all(line in entry_content for line in context_lines)
+
+
+def _resolve_entry_for_finding(
+    filename: str,
+    code_context: str,
+    entry: Dict[str, Any],
+    file_entries: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Prefer the file whose content matches the finding snippet when the filename is unreliable."""
+    if not code_context:
+        return entry
+
+    entry_content = entry.get("content")
+    if isinstance(entry_content, str) and _entry_matches_code_context(entry_content, code_context):
+        return entry
+
+    matching_entries = [
+        candidate
+        for candidate in file_entries
+        if isinstance(candidate.get("content"), str)
+        and _entry_matches_code_context(str(candidate.get("content") or ""), code_context)
+    ]
+    if len(matching_entries) == 1:
+        logger.info(
+            "Reassigned finding from '%s' to '%s' based on code-context match",
+            filename or entry.get("name") or "<unknown>",
+            matching_entries[0].get("name") or matching_entries[0].get("path") or "<unknown>",
+        )
+        return matching_entries[0]
+    return entry
+
+
 # ── Line-number extraction ─────────────────────────────────────────────────
 
 _LINE_PATTERNS = [
@@ -341,10 +392,6 @@ def _json_to_issues(
         elif not entry:
             entry = {"name": filename, "path": filename, "content": ""}
 
-        entry_content = entry.get("content")
-        if not isinstance(entry_content, str):
-            entry_content = ""
-
         for finding_any in findings:
             if not isinstance(finding_any, dict):
                 continue
@@ -368,6 +415,10 @@ def _json_to_issues(
             desc = str(finding.get("description") or "")
             suggestion = str(finding.get("suggestion") or finding.get("recommendation") or "")
             code_ctx = str(finding.get("code_context") or finding.get("code_snippet") or "")
+            resolved_entry = _resolve_entry_for_finding(filename, code_ctx, entry, file_entries)
+            resolved_entry_content = resolved_entry.get("content")
+            if not isinstance(resolved_entry_content, str):
+                resolved_entry_content = ""
             context_scope = str(finding.get("context_scope") or "local").strip().lower()
             if context_scope not in allowed_scopes:
                 context_scope = "local"
@@ -398,7 +449,7 @@ def _json_to_issues(
                 review_type,
             )
             inferred_related_files = _infer_related_files_from_text(
-                str(entry.get("name") or filename),
+                str(resolved_entry.get("name") or filename),
                 file_entries,
                 [title, desc, systemic_impact, evidence_basis],
             )
@@ -447,12 +498,12 @@ def _json_to_issues(
 
             # Fallback code snippet from entry content
             code_snippet = code_ctx or (
-                entry_content[:200] + ("…" if len(entry_content) > 200 else "")
-                if entry_content else ""
+                resolved_entry_content[:200] + ("…" if len(resolved_entry_content) > 200 else "")
+                if resolved_entry_content else ""
             )
 
             issues.append(ReviewIssue(
-                file_path=entry.get("path", filename),
+                file_path=resolved_entry.get("path", filename),
                 line_number=line_num,
                 issue_type=category,
                 severity=severity,

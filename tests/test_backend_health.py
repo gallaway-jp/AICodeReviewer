@@ -6,6 +6,7 @@ import pytest
 
 import aicodereviewer.auth as auth
 from aicodereviewer.backends import health
+from aicodereviewer.diagnostics import backend_connection_detail, backend_connection_fix_hint
 
 
 class _Response:
@@ -74,6 +75,17 @@ def test_run_connection_test_uses_backend_diagnostic(monkeypatch):
     assert check.category == "transport"
     assert check.origin == "connection_test"
     assert check.detail == "Connection refused by local server."
+
+
+def test_backend_connection_fix_hint_uses_health_hint_vocabulary():
+    assert backend_connection_fix_hint("copilot", "auth") == health.t("health.hint_copilot_auth")
+    assert backend_connection_fix_hint("local", "configuration") == health.t("health.hint_local_api_type")
+
+
+def test_backend_connection_detail_uses_translated_backend_specific_string():
+    detail = backend_connection_detail("local", "invalid_api_type", api_type="bogus")
+
+    assert detail == health.t("health.detail_local_invalid_api_type", api_type="bogus")
 
 
 def test_check_copilot_accepts_copilot_specific_token(monkeypatch):
@@ -198,6 +210,51 @@ def test_check_local_llm_uses_lmstudio_models_endpoint_after_normalization(monke
 
     assert requested_urls == ["http://localhost:1234/api/v1/models"]
     assert report.ready is True
+    reasoning_check = next(check for check in report.checks if check.name == health.t("health.local_reasoning_mode"))
+    assert reasoning_check.passed is True
+    assert "OpenAI-compatible chat-completions path" in reasoning_check.detail
+
+
+def test_check_local_llm_accepts_current_lmstudio_models_payload(monkeypatch):
+    monkeypatch.setattr(health.config, "get", lambda section, key, default=None: {
+        ("local_llm", "api_url"): "http://localhost:1234",
+        ("local_llm", "api_type"): "lmstudio",
+        ("local_llm", "model"): "qwen/qwen3.5-9b",
+        ("local_llm", "api_key"): "",
+    }.get((section, key), default))
+    monkeypatch.setattr(
+        "requests.get",
+        lambda url, timeout, headers: _Response(200, {
+            "models": [
+                {"key": "qwen/qwen3.5-9b", "display_name": "Qwen3.5 9B"},
+            ],
+        }),
+    )
+
+    report = health.check_local_llm()
+
+    assert report.ready is True
+    model_check = next(check for check in report.checks if check.name == "Model Availability")
+    assert model_check.passed is True
+
+
+def test_check_local_llm_openai_reports_lmstudio_reasoning_limit(monkeypatch):
+    monkeypatch.setattr(health.config, "get", lambda section, key, default=None: {
+        ("local_llm", "api_url"): "http://localhost:1234/v1",
+        ("local_llm", "api_type"): "openai",
+        ("local_llm", "model"): "gpt-local",
+        ("local_llm", "api_key"): "",
+    }.get((section, key), default))
+    monkeypatch.setattr(
+        "requests.get",
+        lambda url, timeout, headers: _Response(200, {"data": [{"id": "gpt-local"}]}),
+    )
+
+    report = health.check_local_llm()
+
+    reasoning_check = next(check for check in report.checks if check.name == health.t("health.local_reasoning_mode"))
+    assert reasoning_check.passed is True
+    assert "switch local_llm.api_type to 'lmstudio'" in reasoning_check.detail
 
 
 def test_check_local_llm_anthropic_requires_explicit_model(monkeypatch):
@@ -248,7 +305,8 @@ def test_check_bedrock_reports_missing_aws_cli(monkeypatch):
     assert report.checks[0].passed is False
 
 
-def test_check_kiro_reports_missing_wsl(monkeypatch):
+def test_check_kiro_reports_missing_native_and_wsl(monkeypatch):
+    monkeypatch.setattr(health, "_resolve_kiro_exe", lambda _cmd: "")
     monkeypatch.setattr(health.shutil, "which", lambda _cmd: None)
 
     report = health.check_kiro()

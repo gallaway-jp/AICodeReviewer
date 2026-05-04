@@ -62,7 +62,9 @@ Capabilities:
 - choose backend
 - enter programmers and reviewers
 - run a full review or dry run
-- inspect the built-in review queue summary and cancel queued submissions when scheduler-backed execution is active
+- inspect the built-in review queue summary and targeted submission details when scheduler-backed execution is active
+- cancel a queued or active selected submission directly from the queue panel
+- keep recent completed or cancelled submissions visible long enough to confirm the last queue outcome
 
 Additional controls:
 - progress bar
@@ -92,9 +94,10 @@ Capabilities:
 
 ### Benchmarks Tab
 
-Use the Benchmarks tab to compare saved benchmark runs and inspect representative scenarios.
+Use the Benchmarks tab to start a fresh benchmark run, compare saved benchmark runs, and inspect representative scenarios.
 
 Capabilities:
+- run the built-in holistic benchmark suite directly from the desktop app and auto-load the generated summary when the run finishes
 - browse the built-in benchmark fixture catalog from the configured scenarios folder
 - discover saved benchmark summary artifacts under the configured saved-runs folder
 - load one summary as the main run and a second summary as the comparison run
@@ -152,14 +155,18 @@ Currently supported detachable pages:
 
 Behavior:
 - each supported page exposes an `Open In Window` action in the main tab and through the shared status-bar window action
+- the shared status-bar action is disabled on Review and Results because those pages stay anchored in the main window
+- once a supported page is already detached, the shared status-bar action changes to `Focus Window` for that page until you redock it
 - detached windows expose a `Redock` action that returns the page to the main tab
 - the Review and Results tabs remain anchored in the main window
 - detached window geometry is persisted and restored on restart through the GUI config
+- when detached pages are configured to reopen on startup, the app restores those windows and then presents the main window normally instead of staying hidden after launch
 - the app keeps one canonical surface active per detachable page, then rebuilds that page in the active host during detach and redock
 
 Windows display note:
 - the default Windows GUI setting disables CustomTkinter automatic DPI awareness to avoid stalls and hangs when moving the window across mixed-DPI monitors
 - if you prefer sharper per-monitor scaling and your setup is stable, you can opt back in with `gui.automatic_dpi_awareness = true`
+- mixed-DPI validation is still best treated as a machine-specific check because the safer default favors startup and cross-monitor stability over aggressive per-monitor scaling behavior
 
 Keyboard shortcuts:
 - `Ctrl+Shift+O` opens the currently selected detachable page in its own window

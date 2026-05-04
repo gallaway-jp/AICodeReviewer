@@ -42,7 +42,7 @@ flowchart TD
 flowchart LR
 	subgraph Entry[Entry Points]
 		CLI[CLI\nmain.py]
-		GUI[GUI\napp.py + mixins]
+		GUI[GUI\napp.py + helpers + mixins]
 	end
 
 	subgraph Core[Core Review Pipeline]
@@ -104,7 +104,7 @@ sequenceDiagram
 	Runner->>Exec: create job and execute request
 	Exec->>Scanner: discover files for scope
 	alt dry run
-		Runner-->>User: list files and exit
+		Runner-->>User: list files, emit dry-run state, and exit
 	else full review
 		Exec->>Reviewer: collect review issues
 		Reviewer->>Backend: request model responses

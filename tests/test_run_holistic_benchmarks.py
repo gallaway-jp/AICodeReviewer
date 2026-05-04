@@ -251,6 +251,81 @@ def test_runner_emits_benchmark_metadata_in_generated_reports(monkeypatch, capsy
     assert payload["generated_reports"][0]["review_types"] == ["security"]
 
 
+def test_runner_writes_summary_artifacts_with_representative_fixture_metadata(monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(
+        run_holistic_benchmarks,
+        "_health_payload",
+        lambda backend_name: {
+            "backend": backend_name,
+            "ready": True,
+            "summary": "ready",
+            "checks": [],
+        },
+    )
+
+    summary_out = tmp_path / "summary.json"
+    json_out = tmp_path / "run.json"
+
+    def _fake_invoke_review_tool(args):
+        output_path = Path(args[args.index("--json-out") + 1])
+        output_path.write_text(
+            json.dumps(
+                {
+                    "status": "completed",
+                    "success": True,
+                    "issue_count": 1,
+                    "report": {
+                        "issues_found": [
+                            {
+                                "file_path": "src/admin.py",
+                                "issue_type": "security",
+                                "severity": "high",
+                                "description": "The admin endpoint bypasses the admin guard by skipping require_admin and accepts any authenticated user.",
+                                "context_scope": "cross_file",
+                                "related_files": ["src/auth.py"],
+                                "systemic_impact": "Privilege checks are inconsistent across admin routes.",
+                                "evidence_basis": "admin.py stopped calling require_admin before returning sensitive data.",
+                            }
+                        ]
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        return 0, {"status": "completed", "success": True, "issue_count": 1}
+
+    monkeypatch.setattr(run_holistic_benchmarks, "_invoke_review_tool", _fake_invoke_review_tool)
+
+    exit_code = run_holistic_benchmarks.main(
+        [
+            "--fixtures-root",
+            str(FIXTURES_ROOT),
+            "--output-dir",
+            str(tmp_path / "reports"),
+            "--summary-out",
+            str(summary_out),
+            "--json-out",
+            str(json_out),
+            "--fixture",
+            "auth-guard-regression",
+            "--skip-health-check",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    summary_payload = json.loads(summary_out.read_text(encoding="utf-8"))
+    run_payload = json.loads(json_out.read_text(encoding="utf-8"))
+
+    assert exit_code == 0
+    assert payload["representative_fixture_ids"] == ["auth-guard-regression"]
+    assert payload["representative_fixtures"][0]["id"] == "auth-guard-regression"
+    assert summary_payload["backend"] == run_payload["backend"] == payload["backend"]
+    assert summary_payload["representative_fixture_ids"] == ["auth-guard-regression"]
+    assert summary_payload["representative_fixtures"][0]["id"] == "auth-guard-regression"
+    assert run_payload["representative_fixture_ids"] == ["auth-guard-regression"]
+    assert run_payload["representative_fixtures"][0]["id"] == "auth-guard-regression"
+
+
 def test_runner_repeats_runs_and_emits_stability_summary(monkeypatch, capsys, tmp_path):
     monkeypatch.setattr(
         run_holistic_benchmarks,

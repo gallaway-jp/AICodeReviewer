@@ -15,7 +15,7 @@ import shutil
 from dataclasses import dataclass, field
 from typing import Any, List, Optional
 
-from aicodereviewer.auth import resolve_credential_value
+from aicodereviewer.auth import get_profile_name, resolve_credential_value
 from aicodereviewer.config import config
 from aicodereviewer.diagnostics import (
     failure_category_from_exception as _failure_category_from_exception,
@@ -27,6 +27,8 @@ from aicodereviewer.i18n import t
 # statements continue to work.
 from aicodereviewer.backends.models import (  # noqa: F401
     _run_quiet,
+    _resolve_copilot_exe,
+    _resolve_kiro_exe,
     get_copilot_models,
     _discover_copilot_models,
     get_kiro_models,
@@ -48,6 +50,15 @@ _LOCAL_PROVIDER_LABELS = {
     "ollama": "Ollama",
     "anthropic": "Anthropic-compatible",
 }
+
+
+def _local_reasoning_detail(api_type: str) -> str:
+    """Return an informational health detail for local reasoning controls."""
+    if api_type == "lmstudio":
+        return t("health.detail_local_reasoning_lmstudio")
+    if api_type == "openai":
+        return t("health.detail_local_reasoning_openai")
+    return ""
 
 
 @dataclass
@@ -111,6 +122,19 @@ def _check_command_exists(cmd: str, friendly_name: str) -> CheckResult:
     )
 
 
+def _aws_cli_base_command() -> tuple[list[str], str]:
+    """Build an AWS CLI command prefix that honors the stored profile when available."""
+    command = ["aws"]
+    profile = ""
+    try:
+        profile = get_profile_name(interactive=False).strip()
+    except Exception:
+        profile = ""
+    if profile:
+        command.extend(["--profile", profile])
+    return command, profile
+
+
 # ── AWS Bedrock health ─────────────────────────────────────────────────────
 
 def check_bedrock() -> HealthReport:
@@ -124,14 +148,19 @@ def check_bedrock() -> HealthReport:
         aws_check.fix_hint = t("health.hint_aws_cli")
     checks.append(aws_check)
 
+    aws_cmd, aws_profile = _aws_cli_base_command()
+
     # 2. AWS credentials configured
     if aws_check.passed:
-        rc, _, stderr = _run_quiet(["aws", "sts", "get-caller-identity"])
+        rc, _, stderr = _run_quiet(aws_cmd + ["sts", "get-caller-identity"])
         if rc == 0:
             checks.append(CheckResult(
                 name=t("health.aws_credentials"),
                 passed=True,
-                detail=t("health.aws_creds_ok"),
+                detail=(
+                    f"{t('health.aws_creds_ok')} (profile: {aws_profile})"
+                    if aws_profile else t("health.aws_creds_ok")
+                ),
             ))
         else:
             checks.append(CheckResult(
@@ -151,7 +180,7 @@ def check_bedrock() -> HealthReport:
             try:
                 region = config.get("aws", "region", "us-east-1")
                 rc, _, stderr = _run_quiet(
-                    ["aws", "bedrock", "get-foundation-model",
+                    aws_cmd + ["bedrock", "get-foundation-model",
                      "--model-identifier", model_id,
                      "--region", region,
                      "--output", "json"],
@@ -205,9 +234,36 @@ def check_bedrock() -> HealthReport:
 # ── Kiro CLI health ────────────────────────────────────────────────────────
 
 def check_kiro() -> HealthReport:
-    """Check Kiro CLI (WSL) prerequisites."""
+    """Check Kiro CLI prerequisites, preferring native Windows installs."""
     report = HealthReport(backend="kiro")
     checks = []
+    cli_cmd = config.get("kiro", "cli_command", "kiro-cli").strip()
+
+    if os.name == "nt":
+        native_path = _resolve_kiro_exe(cli_cmd)
+        native_found = bool(native_path and os.path.isfile(native_path))
+        if native_found:
+            checks.append(CheckResult(
+                name=t("health.kiro_cli"),
+                passed=True,
+                detail=t("health.kiro_found", path=native_path),
+            ))
+
+            rc, stdout, _stderr = _run_quiet([native_path, "whoami"], timeout=15)
+            auth_ok = rc == 0 and bool(stdout.strip())
+            checks.append(CheckResult(
+                name=t("health.kiro_auth"),
+                passed=auth_ok,
+                detail=(t("health.kiro_auth_ok") if auth_ok else t("health.kiro_auth_fail")),
+                fix_hint="" if auth_ok else t("health.hint_kiro_auth"),
+                category="none" if auth_ok else "auth",
+            ))
+
+            report.checks = checks
+            report.ready = all(c.passed for c in checks)
+            report.summary = (t("health.ready") if report.ready
+                              else t("health.not_ready", count=len(report.failed_checks)))
+            return report
 
     # 1. WSL installed
     wsl_path = shutil.which("wsl")
@@ -259,7 +315,6 @@ def check_kiro() -> HealthReport:
             ))
 
         # 3. Kiro CLI inside WSL — use login shell so ~/.local/bin is on PATH
-        cli_cmd = config.get("kiro", "cli_command", "kiro").strip()
         wsl_kiro_cmd = ["wsl"]
         if distro:
             wsl_kiro_cmd += ["-d", distro]
@@ -342,7 +397,7 @@ def check_copilot() -> HealthReport:
         # Verify it is the real standalone CLI, not a leftover .BAT
         # from the retired gh-copilot extension
         # Use short timeout (3s) for version check to fail fast
-        found_path = shutil.which(copilot_path) or copilot_path
+        found_path = _resolve_copilot_exe(copilot_path)
         logger.debug("Found copilot at '%s', verifying with --version...", found_path)
         verify_start = time.time()
         rc, stdout, stderr = _run_quiet([found_path, "--version"], timeout=3)
@@ -504,6 +559,14 @@ def check_local_llm(api_type_override: str | None = None) -> HealthReport:
         fix_hint="" if api_type_ok else "Use one of: lmstudio, ollama, openai, anthropic.",
         category="none" if api_type_ok else "configuration",
     ))
+
+    reasoning_detail = _local_reasoning_detail(api_type)
+    if reasoning_detail:
+        checks.append(CheckResult(
+            name=t("health.local_reasoning_mode"),
+            passed=True,
+            detail=reasoning_detail,
+        ))
 
     if credential.missing_reference:
         checks.append(CheckResult(

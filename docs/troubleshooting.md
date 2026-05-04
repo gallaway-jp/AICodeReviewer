@@ -54,6 +54,9 @@ Symptoms:
 Check:
 - `copilot` is installed and authenticated
 - the account has the correct subscription and permissions
+- if tool-aware file access is enabled, confirm `tool_file_access.backend_allowlist` still includes `copilot`
+- if a file read is denied, compare the path against the configured workspace root and `tool_file_access.sensitive_path_globs`
+- inspect `tool_access_audit` in tool-mode or execution output if you need to distinguish a true tool failure from a clean fallback to the static prompt path
 - rerun with narrower review scope if investigating prompt-size behavior
 
 ## Local LLM Connection Problems

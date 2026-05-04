@@ -1,0 +1,103 @@
+{
+  "before_report": "artifacts\\manual-session8\\holistic-benchmark-runs\\20260504-104854-local\\reports\\auth-guard-regression.json",
+  "after_report": "artifacts\\manual-session8\\holistic-benchmark-runs\\20260504-104925-local\\reports\\cache-invalidation-gap.json",
+  "before": {
+    "issue_count": 3,
+    "severity_counts": {
+      "high": 2,
+      "medium": 1
+    },
+    "issue_type_counts": {
+      "authentication": 1,
+      "authorization": 2
+    },
+    "context_scope_counts": {
+      "local": 3
+    }
+  },
+  "after": {
+    "issue_count": 3,
+    "severity_counts": {
+      "high": 1,
+      "medium": 2
+    },
+    "issue_type_counts": {
+      "missing_cache_invalidation": 1,
+      "performance": 2
+    },
+    "context_scope_counts": {
+      "cross_file": 2,
+      "local": 1
+    }
+  },
+  "delta": {
+    "issue_count": 0,
+    "unchanged_count": 0,
+    "added_count": 3,
+    "removed_count": 3,
+    "added": [
+      {
+        "file": "cache.py",
+        "line": 4,
+        "issue_type": "performance",
+        "severity": "high",
+        "context_scope": "local",
+        "related_files": [],
+        "description": "Blocking I/O in hot path: Synchronous cache lookup blocks execution: The get_user_profile function performs a synchronous dictionary lookup. While dict.get is O(1), if this function is called inside a"
+      },
+      {
+        "file": "profile_service.py",
+        "line": 1,
+        "issue_type": "missing_cache_invalidation",
+        "severity": "medium",
+        "context_scope": "cross_file",
+        "related_files": [
+          "cache.py",
+          "cache.py"
+        ],
+        "description": "Missing cache invalidation across write and read paths"
+      },
+      {
+        "file": "profile_service.py",
+        "line": 1,
+        "issue_type": "performance",
+        "severity": "medium",
+        "context_scope": "cross_file",
+        "related_files": [
+          "cache.py",
+          "cache.py"
+        ],
+        "description": "Missing caching opportunity: update_user_profile bypasses cache consistency: The update_user_profile function updates a local 'store' dictionary but does not interact with the global PROFILE_CACHE def"
+      }
+    ],
+    "removed": [
+      {
+        "file": "admin.py",
+        "line": 4,
+        "issue_type": "authorization",
+        "severity": "high",
+        "context_scope": "local",
+        "related_files": [],
+        "description": "Missing Admin Role Check for Sensitive Data Exposure: The function get_audit_log() calls require_login() but fails to verify that the user has the 'admin' role before returning sensitive data ('sensit"
+      },
+      {
+        "file": "auth.py",
+        "line": 1,
+        "issue_type": "authentication",
+        "severity": "high",
+        "context_scope": "local",
+        "related_files": [],
+        "description": "Missing Authorization Check in require_login: The require_login function only validates the existence of a user ID but fails to verify the user's role. An attacker with a valid session (or ID) but wit"
+      },
+      {
+        "file": "auth.py",
+        "line": 1,
+        "issue_type": "authorization",
+        "severity": "medium",
+        "context_scope": "local",
+        "related_files": [],
+        "description": "Reliance on Dictionary State for Authorization: Both functions rely on passing a 'user' dictionary containing 'role' and 'id'. If the upstream data source (e.g., database query result, session store, "
+      }
+    ]
+  }
+}

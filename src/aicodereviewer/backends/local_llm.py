@@ -15,6 +15,7 @@ Configuration (``config.ini`` ``[local_llm]`` section)::
     api_key   =                # optional – some servers require a dummy key
     timeout   = 300
     max_tokens = 4096
+    reasoning = default        # LM Studio native only: default | off | low | medium | high | on
     enable_web_search = true
 """
 import logging
@@ -29,8 +30,18 @@ import requests
 from .base import AIBackend
 from aicodereviewer.auth import resolve_credential_value
 from aicodereviewer.config import config
+from aicodereviewer.diagnostics import backend_connection_detail, backend_connection_fix_hint
 
 logger = logging.getLogger(__name__)
+
+_LMSTUDIO_REASONING_OPTIONS = frozenset({
+    "default",
+    "off",
+    "low",
+    "medium",
+    "high",
+    "on",
+})
 
 _API_URL_SUFFIXES: dict[str, tuple[str, ...]] = {
     "lmstudio": ("/api/v1", "/v1"),
@@ -192,6 +203,8 @@ class LocalLLMBackend(AIBackend):
             self.api_key = str(api_key)
         self.timeout: int = int(float(config.get("local_llm", "timeout", "300") or "300"))
         self.max_tokens: int = int(config.get("local_llm", "max_tokens", "4096") or "4096")
+        raw_reasoning = str(config.get("local_llm", "reasoning", "default") or "default")
+        self.reasoning: str = self._normalize_lmstudio_reasoning(raw_reasoning)
         if enable_web_search is None:
             self.enable_web_search = bool(
                 config.get("local_llm", "enable_web_search", True)
@@ -238,6 +251,19 @@ class LocalLLMBackend(AIBackend):
 
         normalized = urlunsplit((parsed.scheme, parsed.netloc, path or "", parsed.query, parsed.fragment))
         return normalized.rstrip("/")
+
+    @staticmethod
+    def _normalize_lmstudio_reasoning(value: str) -> str:
+        normalized = value.strip().lower()
+        if not normalized or normalized == "auto":
+            return "default"
+        if normalized in _LMSTUDIO_REASONING_OPTIONS:
+            return normalized
+        logger.warning(
+            "Unknown local_llm.reasoning value '%s'; falling back to 'default'",
+            value,
+        )
+        return "default"
 
     def _get_model_to_use(self) -> str:
         """Get the actual model to use for inference.
@@ -408,34 +434,32 @@ class LocalLLMBackend(AIBackend):
                 return {
                     "ok": False,
                     "category": "configuration",
-                    "detail": (
-                        f"Unknown api_type '{self.api_type}'. Use 'lmstudio', 'ollama', 'openai' or 'anthropic'."
-                    ),
-                    "fix_hint": "Set local_llm.api_type to one of: lmstudio, ollama, openai, anthropic.",
+                    "detail": backend_connection_detail("local", "invalid_api_type", api_type=self.api_type),
+                    "fix_hint": backend_connection_fix_hint("local", "configuration"),
                     "origin": "connection_test",
                 }
 
             return {
                 "ok": bool(ok),
                 "category": "none" if ok else "provider",
-                "detail": "" if ok else "Local LLM backend did not accept the validation request.",
-                "fix_hint": "Check the local server, selected model, API type, and credentials." if not ok else "",
+                "detail": "" if ok else backend_connection_detail("local", "validation_failed"),
+                "fix_hint": backend_connection_fix_hint("local", "provider") if not ok else "",
                 "origin": "connection_test",
             }
         except requests.ConnectionError:
             return {
                 "ok": False,
                 "category": "transport",
-                "detail": f"Cannot connect to {self.api_url}. Is the LLM server running?",
-                "fix_hint": "Start the local server and verify the configured base URL.",
+                "detail": backend_connection_detail("local", "unreachable", url=self.api_url),
+                "fix_hint": backend_connection_fix_hint("local", "transport"),
                 "origin": "connection_test",
             }
         except requests.Timeout:
             return {
                 "ok": False,
                 "category": "timeout",
-                "detail": f"Connection to {self.api_url} timed out.",
-                "fix_hint": "Increase the timeout or reduce server startup latency before retrying.",
+                "detail": backend_connection_detail("local", "timeout", url=self.api_url),
+                "fix_hint": backend_connection_fix_hint("local", "timeout"),
                 "origin": "connection_test",
             }
         except Exception as exc:
@@ -449,7 +473,7 @@ class LocalLLMBackend(AIBackend):
                 "ok": False,
                 "category": category,
                 "detail": str(exc),
-                "fix_hint": "Check the configured model, API type, credentials, and server compatibility.",
+                "fix_hint": backend_connection_fix_hint("local", category),
                 "origin": "connection_test",
             }
 
@@ -513,7 +537,7 @@ class LocalLLMBackend(AIBackend):
     @staticmethod
     def _parse_model_list(data: dict[str, Any], parser: str) -> list[str]:
         """Extract model identifiers from an API response."""
-        if parser in ("openai", "lmstudio"):
+        if parser == "openai":
             items = data.get("data", [])
             if not isinstance(items, list):
                 return []
@@ -524,6 +548,22 @@ class LocalLLMBackend(AIBackend):
                     continue
                 item_dict = cast(dict[str, Any], item)
                 model_id = item_dict.get("id")
+                if isinstance(model_id, str) and model_id:
+                    model_ids.append(model_id)
+            return model_ids
+        if parser == "lmstudio":
+            items = data.get("models")
+            if not isinstance(items, list):
+                items = data.get("data", [])
+            if not isinstance(items, list):
+                return []
+            typed_items = cast(list[Any], items)
+            model_ids: list[str] = []
+            for item in typed_items:
+                if not isinstance(item, dict):
+                    continue
+                item_dict = cast(dict[str, Any], item)
+                model_id = item_dict.get("key") or item_dict.get("id")
                 if isinstance(model_id, str) and model_id:
                     model_ids.append(model_id)
             return model_ids
@@ -553,8 +593,13 @@ class LocalLLMBackend(AIBackend):
             list_parser="lmstudio",
             test_url=f"{self.api_url}/api/v1/chat",
             test_payload_fn=lambda model: {
-                "model": model, "input": "Hello",
-                "max_output_tokens": 5, "temperature": 0,
+                **{
+                    "model": model,
+                    "input": "Hello",
+                    "max_output_tokens": 5,
+                    "temperature": 0,
+                },
+                **({"reasoning": self.reasoning} if self.reasoning != "default" else {}),
             },
             headers=headers,
             label="LM Studio",
@@ -577,6 +622,8 @@ class LocalLLMBackend(AIBackend):
             "max_output_tokens": self.max_tokens,
             "temperature": 0.1,
         }
+        if self.reasoning != "default":
+            payload["reasoning"] = self.reasoning
 
         resp = requests.post(
             f"{self.api_url}/api/v1/chat",

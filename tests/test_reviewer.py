@@ -6,17 +6,37 @@ Updated for v2.0 API: collect_review_issues now takes review_types (List[str])
 instead of a single review_type string.
 """
 import json
+import pytest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from pathlib import Path
 from typing import List
-from aicodereviewer.reviewer import collect_review_issues, verify_issue_resolved, FileInfo, _merge_combined_with_fallback
+from aicodereviewer.reviewer import collect_review_issues, verify_issue_resolved, FileInfo, LocalReasoningOnlyResponseError, _merge_combined_with_fallback, _augment_documentation_review_targets
 from aicodereviewer.models import ReviewIssue
 from aicodereviewer.tool_access import ToolReviewContext, ToolReviewTarget
 
 
 class TestCollectReviewIssues:
     """Test review issue collection functionality"""
+
+    def test_augment_documentation_targets_keeps_diff_scope_narrow(self, tmp_path: Path):
+        """Documentation target augmentation must not widen diff-scope reviews."""
+        docs_dir = tmp_path / "docs"
+        docs_dir.mkdir()
+        changed_file = docs_dir / "changed.md"
+        other_file = docs_dir / "guide.md"
+        changed_file.write_text("updated", encoding="utf-8")
+        other_file.write_text("existing", encoding="utf-8")
+
+        target_files: List[FileInfo] = [{  # type: ignore[list-item]
+            'path': changed_file,
+            'content': 'updated',
+            'filename': 'docs/changed.md',
+        }]
+
+        augmented = _augment_documentation_review_targets(target_files, ["documentation"])
+
+        assert augmented == target_files
 
     def test_collect_review_issues_project_scope(self):
         """Test collecting issues from project scope files"""
@@ -2338,6 +2358,78 @@ class TestCollectReviewIssues:
         assert Path(supplement.file_path).name == "report_export.py"
         assert [Path(path).name for path in supplement.related_files] == ["api.py"]
         assert "arbitrary command" in (supplement.systemic_impact or "").lower()
+
+    def test_collect_review_issues_raises_on_unsupported_local_reasoning_only_error(self):
+        mock_client = MagicMock()
+        mock_client.backend_name = "local"
+        mock_client.get_review.return_value = (
+            "Error: OpenAI-compatible endpoint returned empty assistant content and reasoning_content only. "
+            "Configure a non-thinking model or disable server-side thinking mode for tool-mode JSON reviews."
+        )
+
+        target_files: List[FileInfo] = [  # type: ignore[list-item]
+            {
+                "path": Path("/path/to/user_auth.py"),
+                "content": (
+                    "import hashlib\n\n"
+                    "def hash_password(password: str) -> str:\n"
+                    "    return hashlib.md5(password.encode(\"utf-8\")).hexdigest()\n"
+                ),
+                "filename": "user_auth.py",
+            },
+            {
+                "path": Path("/path/to/session_store.py"),
+                "content": (
+                    "import pickle\n\n"
+                    "def load_session(blob: bytes):\n"
+                    "    return pickle.loads(blob)\n"
+                ),
+                "filename": "session_store.py",
+            },
+        ]
+
+        with pytest.raises(LocalReasoningOnlyResponseError, match="reasoning_content only"):
+            collect_review_issues(target_files, ["security"], mock_client, "en")
+
+        assert mock_client.get_review.call_count == 1
+
+    def test_collect_review_issues_raises_when_partial_fallback_hits_local_reasoning_only_error(self):
+        mock_client = MagicMock()
+        mock_client.backend_name = "local"
+        mock_client.get_review.side_effect = [
+            json.dumps({
+                "files": [
+                    {
+                        "filename": "a.py",
+                        "findings": [{
+                            "severity": "high",
+                            "category": "security",
+                            "title": "Issue A",
+                            "description": "Combined response only covered the first file.",
+                        }],
+                    },
+                ],
+            }),
+            "Error: OpenAI-compatible endpoint returned empty assistant content and reasoning_content only. Configure a non-thinking model or disable server-side thinking mode for tool-mode JSON reviews.",
+        ]
+
+        target_files: List[FileInfo] = [  # type: ignore[list-item]
+            {
+                "path": Path("/path/to/a.py"),
+                "content": "print('a')",
+                "filename": "a.py",
+            },
+            {
+                "path": Path("/path/to/b.py"),
+                "content": "print('b')",
+                "filename": "b.py",
+            },
+        ]
+
+        with pytest.raises(LocalReasoningOnlyResponseError, match="b.py"):
+            collect_review_issues(target_files, ["security"], mock_client, "en")
+
+        assert mock_client.get_review.call_count == 2
 
     def test_collect_review_issues_adds_local_ssrf_security_supplement(self):
         mock_client = MagicMock()

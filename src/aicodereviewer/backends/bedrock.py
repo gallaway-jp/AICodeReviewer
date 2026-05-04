@@ -17,6 +17,8 @@ from botocore.config import Config as BotoConfig
 from .base import AIBackend
 from aicodereviewer.config import config
 from aicodereviewer.auth import create_aws_session
+from aicodereviewer.diagnostics import backend_connection_detail, backend_connection_fix_hint
+from aicodereviewer.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -157,8 +159,8 @@ class BedrockBackend(AIBackend):
             return {
                 "ok": False,
                 "category": "auth",
-                "detail": "AWS login has expired. Run 'aws sso login' to refresh.",
-                "fix_hint": "Run 'aws sso login' or reconfigure AWS credentials.",
+                "detail": backend_connection_detail("bedrock", "auth_expired"),
+                "fix_hint": backend_connection_fix_hint("bedrock", "auth"),
                 "origin": "connection_test",
             }
         except ClientError as exc:
@@ -174,16 +176,16 @@ class BedrockBackend(AIBackend):
             return {
                 "ok": False,
                 "category": category,
-                "detail": msg or "Bedrock connection test failed.",
-                "fix_hint": "Check AWS credentials, Bedrock permissions, region, and model access.",
+                "detail": msg or backend_connection_detail("bedrock", "connection_failed"),
+                "fix_hint": backend_connection_fix_hint("bedrock", category),
                 "origin": "connection_test",
             }
         except Exception as exc:
             return {
                 "ok": False,
                 "category": "provider",
-                "detail": str(exc),
-                "fix_hint": "Check Bedrock service availability and backend configuration.",
+                "detail": str(exc) or backend_connection_detail("bedrock", "connection_failed"),
+                "fix_hint": backend_connection_fix_hint("bedrock", "provider"),
                 "origin": "connection_test",
             }
 

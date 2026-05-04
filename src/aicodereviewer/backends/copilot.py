@@ -34,6 +34,8 @@ from typing import Any, Callable, Optional
 from .base import AIBackend
 from .models import _resolve_copilot_exe
 from aicodereviewer.config import config
+from aicodereviewer.diagnostics import backend_connection_detail, backend_connection_fix_hint
+from aicodereviewer.i18n import t
 from aicodereviewer.tool_access import (
     ToolAccessAudit,
     ToolAccessAuditEntry,
@@ -198,8 +200,8 @@ class CopilotBackend(AIBackend):
             return {
                 "ok": False,
                 "category": "tool_compatibility",
-                "detail": f"GitHub Copilot CLI ('{self.copilot_path}') was not found in PATH.",
-                "fix_hint": "Install the standalone GitHub Copilot CLI and verify the configured executable path.",
+                "detail": backend_connection_detail("copilot", "cli_not_found", path=self.copilot_path),
+                "fix_hint": backend_connection_fix_hint("copilot", "tool_compatibility"),
                 "origin": "connection_test",
             }
 
@@ -217,16 +219,16 @@ class CopilotBackend(AIBackend):
             return {
                 "ok": False,
                 "category": "auth",
-                "detail": "GitHub Copilot CLI is not authenticated.",
-                "fix_hint": "Run 'copilot' and use /login, or configure GH_TOKEN / GITHUB_TOKEN.",
+                "detail": t("health.copilot_auth_fail"),
+                "fix_hint": backend_connection_fix_hint("copilot", "auth"),
                 "origin": "connection_test",
             }
         except TimeoutError as exc:
             return {
                 "ok": False,
                 "category": "timeout",
-                "detail": str(exc),
-                "fix_hint": "Retry the connection test and verify the Copilot CLI is responsive.",
+                "detail": backend_connection_detail("copilot", "timeout", error=str(exc)),
+                "fix_hint": backend_connection_fix_hint("copilot", "timeout"),
                 "origin": "connection_test",
             }
         except Exception as exc:
@@ -242,7 +244,7 @@ class CopilotBackend(AIBackend):
                 "ok": False,
                 "category": category,
                 "detail": str(exc),
-                "fix_hint": "Check Copilot authentication, CLI installation, and model availability.",
+                "fix_hint": backend_connection_fix_hint("copilot", category),
                 "origin": "connection_test",
             }
 
