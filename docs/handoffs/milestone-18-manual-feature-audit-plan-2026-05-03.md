@@ -38,15 +38,15 @@ Backend-specific execution rule for this milestone:
 | Session | Focus | Backend scope on this machine | Status | Latest result |
 |---|---|---|---|---|
 | S1 | Install and startup baseline | no backend dependency; packaged and source install paths both available now | completed | pass for source install and packaged installer smoke validation; GUI opened on Review tab; earlier Copilot startup noise was traced and reduced |
-| S2 | Backend configuration and health | all four configured backends are now runnable on this machine | in progress | local, copilot, kiro, and bedrock health checks all pass with explicit low-cost test models; health surfaces are normalized and the Local LLM Settings save/rotate/revoke path is now covered through the real GUI widgets |
-| S3 | Core CLI review flows | run with local backend first | in progress | dry run, preset expansion, patch diff, commit diff, specification-only, and mixed specification review surfaces are now all exercised live; diff-scope widening and mixed-spec prompt loss were both fixed during the audit |
+| S2 | Backend configuration and health | all four configured backends are now runnable on this machine | completed | local, copilot, kiro, and bedrock health checks all pass with explicit low-cost test models; health surfaces are normalized and the Local LLM Settings save/rotate/revoke plus backend-specific Settings persistence paths now have live GUI evidence |
+| S3 | Core CLI review flows | run with local backend first | completed | dry run, preset expansion, patch diff, commit diff, specification-only, mixed specification, interactive actions, and AI-fix preview paths are now all exercised live; the false-clean, file-mapping, diff-scope widening, mixed-spec prompt, and fix-prompt defects were fixed during the audit |
 | S4 | Tool mode and report artifacts | run with local backend first | completed | local tool-mode review, health, resume, fix-plan, apply-fixes, and cancellation envelopes are exercised end to end on an isolated fixture; LM Studio model advertisement parsing and specification dry-run spec loading were fixed during the pass |
 | S5 | GUI core review workflow | run with local backend first | completed | scheduler-backed queue visibility, queued-cancel behavior, and recent-completed queue entries now have live desktop evidence alongside the earlier Output Log and health-dialog probe |
-| S6 | GUI detach, restore, desktop ergonomics | backend-agnostic after startup | in progress | shared status-bar detach behavior and startup presentation with reopened detached windows now have live desktop evidence; mixed-DPI cross-monitor validation is blocked on this machine because only one display is currently available to the probe |
+| S6 | GUI detach, restore, desktop ergonomics | backend-agnostic after startup | partial | shared status-bar detach behavior, lazy-surface restore, and startup presentation with reopened detached windows now have live desktop evidence; the only remaining gap is mixed-DPI cross-monitor validation, which is blocked on this single-display machine |
 | S7 | Addons and generated addon review | mostly backend-agnostic; use local only if generation path is exercised | completed | live desktop Addon Review probing now covers preview load, diff inspection, approve/reject decisions, and visible English wording on the real GUI surface |
-| S8 | Benchmarks and quality tooling | local preferred; others blocked unless setup changes | in progress | live evidence now confirms the Benchmarks tab can start a local run, persist timestamped saved runs, auto-load the generated summary, compare two real saved summary artifacts, compare two real per-fixture report artifacts with `tools/compare_review_reports.py`, and follow the documented fixture-authoring evaluator path on a fresh temp fixture; the probes also flushed out and fixed runner-import, summary-metadata, and zero-count summary rendering defects |
+| S8 | Benchmarks and quality tooling | local preferred; others blocked unless setup changes | completed | live evidence now confirms the Benchmarks tab can start a local run, persist timestamped saved runs, auto-load and compare real summary artifacts, compare real per-fixture reports, and follow the documented fixture-authoring evaluator path; the runner-import, summary-metadata, and zero-count rendering defects were fixed during the audit |
 | S9 | Local HTTP and shared scheduler | local backend path is the primary runnable slice | completed | embedded and CLI-started local HTTP startup now both have live evidence on `local`; route discovery, recommendations, job submission, SSE/event reads, report/artifact fetch, shared GUI queue visibility, and dedicated audit-log emission are all exercised end to end |
-| S10 | Recovery, security, localization, polish | local and copilot fully runnable on this machine; remaining backend recovery slices only if new gaps surface | in progress | local recovery/localization and Copilot tool-aware sensitive-path handling now both have live evidence; the final reactive docs polish pass has been applied only to verified drift |
+| S10 | Recovery, security, localization, polish | local and copilot fully runnable on this machine; additional backend recovery slices only if a new gap is reproduced later | completed | local recovery/localization and Copilot tool-aware sensitive-path handling now both have live evidence; the final reactive docs polish pass was limited to verified drift and the remaining notes are documentation-only follow-up constraints |
 
 ## Branch Strategy
 
@@ -414,7 +414,7 @@ Follow-up notes:
 
 ## Session 2 Working Log
 
-Current status: backend readiness repaired; health reporting is normalized; Local LLM credential actions and backend-specific Bedrock, Kiro, and Copilot Settings persistence now have real GUI-surface coverage before broader manual GUI and CLI passes
+Current status: completed for the planned backend-configuration and health slice on this machine; readiness is repaired, health reporting is normalized, and the key Settings persistence and credential actions now have live GUI-surface evidence
 
 Observed so far on 2026-05-03:
 
@@ -439,7 +439,7 @@ Follow-up notes:
 
 ## Session 3 Working Log
 
-Current status: Session 3 is underway on the documented sample-project path; the Local backend false-clean path has been fixed, and the security review is being re-exercised on the live CLI flow
+Current status: completed for the planned core CLI slice on this machine; the documented sample-project, diff, specification, interactive, and AI-fix-preview paths all now have live evidence, and the key reviewer/fixer defects exposed during the pass were fixed and revalidated
 
 Observed so far on 2026-05-03:
 
@@ -518,7 +518,7 @@ Follow-up notes:
 
 ## Session 6 Working Log
 
-Current status: underway with focused regression coverage plus live detached-window evidence; shared status-bar detach behavior and startup presentation are now verified, and the only remaining Session 6 gap is mixed-DPI cross-monitor validation on a multi-display setup
+Current status: partial for the planned detached-window slice on this machine; shared status-bar detach behavior, lazy-surface restore, and startup presentation are now verified, and the only remaining gap is mixed-DPI cross-monitor validation on a multi-display setup
 
 Observed so far on 2026-05-04:
 
@@ -558,7 +558,7 @@ Follow-up notes:
 
 ## Session 8 Working Log
 
-Current status: the main Session 8 user-facing and contributor-facing seams now have live evidence. The Benchmarks tab no longer requires a user to understand saved summary files before starting a basic benchmark run, real saved summaries round-trip back into both the main-run and comparison views correctly, and the documented fixture-authoring evaluator path now has a direct sanity artifact as well.
+Current status: completed for the planned Session 8 benchmark slice on this machine. The Benchmarks tab no longer requires a user to understand saved summary files before starting a basic benchmark run, real saved summaries round-trip back into both the main-run and comparison views correctly, and the documented fixture-authoring evaluator path now has a direct sanity artifact as well.
 
 Observed so far on 2026-05-04:
 
@@ -619,7 +619,7 @@ Follow-up notes:
 
 ## Session 10 Working Log
 
-Current status: underway with the first local recovery/localization slice recorded. The current worktree now preserves `python -m aicodereviewer` exit codes correctly, the local failure-and-recovery path has fresh CLI evidence, and English/Japanese CLI plus GUI language surfaces are verified on this machine.
+Current status: completed for the planned Session 10 slice on this machine. The current worktree now preserves `python -m aicodereviewer` exit codes correctly, the local failure-and-recovery path has fresh CLI evidence, English/Japanese CLI plus GUI language surfaces are verified, and the Copilot tool-aware sensitive-path path now has live audit-backed evidence.
 
 Observed so far on 2026-05-04:
 
@@ -639,4 +639,4 @@ Follow-up notes:
 
 - The sensitive-path slice and the reactive docs polish pass are now complete for Session 10.
 - Leave `docs/configuration.md` alone for now because the current worktree already has unrelated local edits there; the maintained guide already documents the tool-aware sensitive-path contract accurately.
-- Keep Session 10 open only for any additional recovery/security follow-up that later manual probes actually expose.
+- Session 10 itself no longer needs another routine pass on this machine; only reopen it if a later manual probe exposes a new recovery, localization, or security mismatch.
