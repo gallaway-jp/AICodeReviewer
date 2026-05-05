@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from abc import ABCMeta
 import logging
 import queue
 import threading
@@ -10,7 +11,11 @@ import customtkinter as ctk  # type: ignore[import-untyped]
 
 _original_ctk_entry = ctk.CTkEntry
 
-class _SafeCTkEntry:
+class _SafeCTkEntryMeta(ABCMeta):
+    pass
+
+
+class _SafeCTkEntry(metaclass=_SafeCTkEntryMeta):
     def __new__(cls, *args: Any, **kwargs: Any) -> Any:
         try:
             return _original_ctk_entry(*args, **kwargs)
@@ -28,6 +33,7 @@ class _SafeCTkEntry:
                 raise
             return tk.Entry(master, **kwargs)
 
+_SafeCTkEntry.register(_original_ctk_entry)
 ctk.CTkEntry = _SafeCTkEntry
 
 from aicodereviewer.addons import install_addon_runtime
@@ -67,7 +73,7 @@ class AppBootstrapHelper:
         install_addon_runtime()
         install_review_registry(merge_review_pack_paths(get_active_review_pack_paths()))
         self.host._testing_mode = testing_mode
-        self._apply_saved_language()
+        self._apply_saved_language(testing_mode=testing_mode)
         self._apply_saved_theme()
         self._configure_window()
         self._initialize_log_state()
@@ -128,10 +134,12 @@ class AppBootstrapHelper:
         self.host._queue_handler.setLevel(level)
         root_logger.addHandler(self.host._queue_handler)
 
-    def _apply_saved_language(self) -> None:
+    def _apply_saved_language(self, *, testing_mode: bool) -> None:
         saved_lang = config.get("gui", "language", "").strip()
         if saved_lang and saved_lang != "system":
             self.host._ui_lang = saved_lang
+        elif testing_mode:
+            self.host._ui_lang = "en"
         else:
             self.host._ui_lang = get_system_language()
         set_locale(self.host._ui_lang)

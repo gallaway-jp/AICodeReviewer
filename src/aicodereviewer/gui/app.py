@@ -37,7 +37,7 @@ from .app_composition import AppCompositionHelper
 from .benchmark_mixin import BenchmarkTabMixin
 from .review_mixin import ReviewTabMixin
 from .popup_utils import schedule_popup_after, schedule_titlebar_fix
-from .results_mixin import ResultsTabMixin, IssueCard, _NUMERIC_SETTINGS
+from .results_mixin import ResultsTabMixin, IssueCard, NUMERIC_SETTINGS, _NUMERIC_SETTINGS
 from .settings_mixin import SettingsTabMixin
 from .health_mixin import HealthMixin
 
@@ -49,6 +49,7 @@ __all__ = [
     "App",
     "launch",
     "IssueCard",
+    "NUMERIC_SETTINGS",
     "_NUMERIC_SETTINGS",
     "_CancelledError",
     "_fix_titlebar",
@@ -348,7 +349,7 @@ class App(
 
     def _gui_toast_duration_ms(self) -> int:
         try:
-            return max(1000, int(config.get("gui", "toast_duration_ms", 6000) or 6000))
+            return max(50, int(config.get("gui", "toast_duration_ms", 6000) or 6000))
         except Exception:
             return 6000
 

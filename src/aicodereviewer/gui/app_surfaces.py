@@ -14,6 +14,22 @@ from aicodereviewer.i18n import t
 logger = logging.getLogger(__name__)
 
 
+def _grid(widget: Any, /, **kwargs: Any) -> None:
+    widget.grid(**kwargs)
+
+
+def _pack(widget: Any, /, **kwargs: Any) -> None:
+    widget.pack(**kwargs)
+
+
+def _bind(widget: Any, sequence: str, command: Any, *, add: str | bool = True) -> None:
+    widget.bind(sequence, command, add=add)
+
+
+def _minsize(window: Any, width: int | None = None, height: int | None = None) -> None:
+    window.minsize(width, height)
+
+
 class AppSurfaceHelper:
     LOG_LEVELS = ["All", "DEBUG", "INFO", "WARNING", "ERROR"]
     LEVEL_MAP = {"All": 0, "DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40}
@@ -40,14 +56,14 @@ class AppSurfaceHelper:
             return "break"
 
         for widget in self._walk_widgets(root):
-            widget.bind("<Control-w>", _handler, add="+")
-            widget.bind("<Control-W>", _handler, add="+")
-            widget.bind("<Control-Shift-w>", _handler, add="+")
-            widget.bind("<Control-Shift-W>", _handler, add="+")
+            _bind(widget, "<Control-w>", _handler, add="+")
+            _bind(widget, "<Control-W>", _handler, add="+")
+            _bind(widget, "<Control-Shift-w>", _handler, add="+")
+            _bind(widget, "<Control-Shift-W>", _handler, add="+")
 
     def build_status_bar(self) -> None:
         status_frame = ctk.CTkFrame(self.host, fg_color="transparent")
-        status_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=(2, 6))
+        _grid(status_frame, row=1, column=0, sticky="ew", padx=10, pady=(2, 6))
         status_frame.grid_columnconfigure(0, weight=1)
         status_frame.grid_columnconfigure(1, weight=0)
         status_frame.grid_columnconfigure(2, weight=0)
@@ -61,7 +77,7 @@ class AppSurfaceHelper:
             wraplength=640,
             justify="left",
         )
-        self.host._status_label.grid(row=0, column=0, sticky="ew")
+        _grid(self.host._status_label, row=0, column=0, sticky="ew")
 
         self.host._detach_page_btn = ctk.CTkButton(
             status_frame,
@@ -73,7 +89,7 @@ class AppSurfaceHelper:
             text_color=("gray15", "gray92"),
             command=lambda: None,
         )
-        self.host._detach_page_btn.grid(row=0, column=1, padx=(8, 0))
+        _grid(self.host._detach_page_btn, row=0, column=1, padx=(8, 0))
 
         self.host.cancel_btn = ctk.CTkButton(
             status_frame,
@@ -84,7 +100,7 @@ class AppSurfaceHelper:
             state="disabled",
             command=self.host._cancel_operation,
         )
-        self.host.cancel_btn.grid(row=0, column=2, padx=(8, 0))
+        _grid(self.host.cancel_btn, row=0, column=2, padx=(8, 0))
 
         self.host._health_countdown_lbl = ctk.CTkLabel(
             status_frame,
@@ -94,21 +110,22 @@ class AppSurfaceHelper:
             width=56,
             anchor="e",
         )
-        self.host._health_countdown_lbl.grid(row=0, column=3, padx=(4, 0))
+        _grid(self.host._health_countdown_lbl, row=0, column=3, padx=(4, 0))
 
-        status_frame.bind(
+        _bind(
+            status_frame,
             "<Configure>",
             self.host._schedule_status_bar_layout_refresh,
             add="+",
         )
 
         # Single coalesced handler for all window Configure events
-        self.host.bind("<Configure>", self.host._schedule_window_resize_refresh, add="+")
+        _bind(self.host, "<Configure>", self.host._schedule_window_resize_refresh, add="+")
         self.refresh_detach_action_state()
 
     def _current_detachable_page_state(self) -> dict[str, Any] | None:
         current_tab = str(self.host.tabs.get())
-        page_map = {
+        page_map: dict[str, dict[str, Any]] = {
             t("gui.tab.log"): {
                 "page_key": "log",
                 "command": self.host._open_detached_log_window,
@@ -169,14 +186,14 @@ class AppSurfaceHelper:
             text_color=("gray35", "gray70"),
             font=ctk.CTkFont(size=11),
         )
-        self.host.log_intro_label.grid(row=0, column=0, sticky="ew", padx=6, pady=(4, 0))
+        _grid(self.host.log_intro_label, row=0, column=0, sticky="ew", padx=6, pady=(4, 0))
 
         filter_frame = ctk.CTkFrame(tab, fg_color="transparent")
-        filter_frame.grid(row=1, column=0, sticky="ew", padx=6, pady=(4, 0))
+        _grid(filter_frame, row=1, column=0, sticky="ew", padx=6, pady=(4, 0))
         self.host._log_filter_frame = filter_frame
 
         self.host._log_level_label = ctk.CTkLabel(filter_frame, text=t("gui.log.level"))
-        self.host._log_level_label.grid(row=0, column=0, padx=(0, 4))
+        _grid(self.host._log_level_label, row=0, column=0, padx=(0, 4))
         self.host._log_level_var = ctk.StringVar(value="All")
         self.host._log_level_menu = ctk.CTkOptionMenu(
             filter_frame,
@@ -185,7 +202,7 @@ class AppSurfaceHelper:
             width=110,
             command=self.host._on_log_level_changed,
         )
-        self.host._log_level_menu.grid(row=0, column=1, padx=(0, 8))
+        _grid(self.host._log_level_menu, row=0, column=1, padx=(0, 8))
 
         self.host.log_box = ctk.CTkTextbox(
             tab,
@@ -193,10 +210,10 @@ class AppSurfaceHelper:
             wrap="word",
             font=ctk.CTkFont(family="Consolas", size=12),
         )
-        self.host.log_box.grid(row=2, column=0, sticky="nsew", padx=6, pady=6)
+        _grid(self.host.log_box, row=2, column=0, sticky="nsew", padx=6, pady=6)
 
         btn_frame = ctk.CTkFrame(tab, fg_color="transparent")
-        btn_frame.grid(row=3, column=0, pady=4, padx=6, sticky="ew")
+        _grid(btn_frame, row=3, column=0, pady=4, padx=6, sticky="ew")
         self.host._log_button_frame = btn_frame
 
         self.host.clear_log_btn = ctk.CTkButton(
@@ -205,22 +222,22 @@ class AppSurfaceHelper:
             width=110,
             command=self.host._clear_log,
         )
-        self.host.clear_log_btn.grid(row=0, column=0, padx=6)
+        _grid(self.host.clear_log_btn, row=0, column=0, padx=6)
         self.host.save_log_btn = ctk.CTkButton(
             btn_frame,
             text=t("gui.log.save"),
             width=110,
             command=self.host._save_log,
         )
-        self.host.save_log_btn.grid(row=0, column=1, padx=6)
+        _grid(self.host.save_log_btn, row=0, column=1, padx=6)
         self.host.detach_log_btn = ctk.CTkButton(
             btn_frame,
             text=t("gui.log.open_window"),
             width=140,
             command=self.host._open_detached_log_window,
         )
-        self.host.detach_log_btn.grid(row=0, column=2, padx=6)
-        tab.bind("<Configure>", self.host._schedule_log_layout_refresh, add="+")
+        _grid(self.host.detach_log_btn, row=0, column=2, padx=6)
+        _bind(tab, "<Configure>", self.host._schedule_log_layout_refresh, add="+")
         self.refresh_log_tab_layout()
 
     def _clear_log_container(self, container: Any) -> None:
@@ -247,7 +264,7 @@ class AppSurfaceHelper:
         tab.grid_rowconfigure(0, weight=1)
 
         frame = ctk.CTkFrame(tab)
-        frame.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
+        _grid(frame, row=0, column=0, sticky="nsew", padx=12, pady=12)
         frame.grid_columnconfigure(0, weight=1)
 
         label = ctk.CTkLabel(
@@ -258,22 +275,24 @@ class AppSurfaceHelper:
             wraplength=560,
             text_color=("gray35", "gray70"),
         )
-        label.grid(row=0, column=0, sticky="ew", pady=(0, 10), padx=12)
+        _grid(label, row=0, column=0, sticky="ew", pady=(0, 10), padx=12)
 
         actions = ctk.CTkFrame(frame, fg_color="transparent")
-        actions.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 12))
-        ctk.CTkButton(
+        _grid(actions, row=1, column=0, sticky="w", padx=12, pady=(0, 12))
+        focus_btn = ctk.CTkButton(
             actions,
             text=t("gui.log.focus_window"),
             command=self.host._open_detached_log_window,
-        ).grid(row=0, column=0, padx=(0, 10))
-        ctk.CTkButton(
+        )
+        _grid(focus_btn, row=0, column=0, padx=(0, 10))
+        redock_btn = ctk.CTkButton(
             actions,
             text=t("gui.log.redock"),
             command=self.host._redock_detached_log_window,
             fg_color="gray40",
             hover_color="gray30",
-        ).grid(row=0, column=1)
+        )
+        _grid(redock_btn, row=0, column=1)
 
     def _rebuild_main_log_surface(self) -> None:
         tab = getattr(self.host, "log_root_tab", None)
@@ -334,23 +353,23 @@ class AppSurfaceHelper:
         self.host._log_level_label.grid_forget()
         self.host._log_level_menu.grid_forget()
         if layout_mode == "wide":
-            self.host._log_level_label.grid(row=0, column=0, padx=(0, 4), pady=(0, 2), sticky="w")
-            self.host._log_level_menu.grid(row=0, column=1, padx=(0, 8), pady=(0, 2), sticky="w")
+            _grid(self.host._log_level_label, row=0, column=0, padx=(0, 4), pady=(0, 2), sticky="w")
+            _grid(self.host._log_level_menu, row=0, column=1, padx=(0, 8), pady=(0, 2), sticky="w")
         else:
-            self.host._log_level_label.grid(row=0, column=0, padx=0, pady=(0, 4), sticky="w")
-            self.host._log_level_menu.grid(row=1, column=0, padx=0, pady=(0, 2), sticky="w")
+            _grid(self.host._log_level_label, row=0, column=0, padx=0, pady=(0, 4), sticky="w")
+            _grid(self.host._log_level_menu, row=1, column=0, padx=0, pady=(0, 2), sticky="w")
 
         self.host.clear_log_btn.grid_forget()
         self.host.save_log_btn.grid_forget()
         self.host.detach_log_btn.grid_forget()
         if layout_mode == "wide":
-            self.host.clear_log_btn.grid(row=0, column=0, padx=(0, 6), pady=0, sticky="w")
-            self.host.save_log_btn.grid(row=0, column=1, padx=0, pady=0, sticky="w")
-            self.host.detach_log_btn.grid(row=0, column=2, padx=(6, 0), pady=0, sticky="w")
+            _grid(self.host.clear_log_btn, row=0, column=0, padx=(0, 6), pady=0, sticky="w")
+            _grid(self.host.save_log_btn, row=0, column=1, padx=0, pady=0, sticky="w")
+            _grid(self.host.detach_log_btn, row=0, column=2, padx=(6, 0), pady=0, sticky="w")
         else:
-            self.host.clear_log_btn.grid(row=0, column=0, padx=0, pady=(0, 6), sticky="ew")
-            self.host.save_log_btn.grid(row=1, column=0, padx=0, pady=0, sticky="ew")
-            self.host.detach_log_btn.grid(row=2, column=0, padx=0, pady=(6, 0), sticky="ew")
+            _grid(self.host.clear_log_btn, row=0, column=0, padx=0, pady=(0, 6), sticky="ew")
+            _grid(self.host.save_log_btn, row=1, column=0, padx=0, pady=0, sticky="ew")
+            _grid(self.host.detach_log_btn, row=2, column=0, padx=0, pady=(6, 0), sticky="ew")
 
     @staticmethod
     def _detached_pages() -> set[str]:
@@ -491,12 +510,12 @@ class AppSurfaceHelper:
         win.title(t("gui.log.detached_title"))
         saved_geometry = str(config.get("gui", "detached_log_geometry", "") or "").strip()
         win.geometry(saved_geometry or "900x540")
-        win.minsize(560, 360)
+        _minsize(win, 560, 360)
         self.host._schedule_titlebar_fix(win)
         self.host._detached_log_window = win
 
         container = ctk.CTkFrame(win, fg_color="transparent")
-        container.pack(fill="both", expand=True, padx=10, pady=10)
+        _pack(container, fill="both", expand=True, padx=10, pady=10)
         container.grid_columnconfigure(0, weight=1)
         container.grid_rowconfigure(2, weight=1)
 
@@ -508,11 +527,12 @@ class AppSurfaceHelper:
             text_color=("gray35", "gray70"),
             font=ctk.CTkFont(size=11),
         )
-        intro.grid(row=0, column=0, sticky="ew", pady=(0, 4))
+        _grid(intro, row=0, column=0, sticky="ew", pady=(0, 4))
 
         filter_frame = ctk.CTkFrame(container, fg_color="transparent")
-        filter_frame.grid(row=1, column=0, sticky="ew", pady=(0, 4))
-        ctk.CTkLabel(filter_frame, text=t("gui.log.level")).grid(row=0, column=0, padx=(0, 4), sticky="w")
+        _grid(filter_frame, row=1, column=0, sticky="ew", pady=(0, 4))
+        detached_level_label = ctk.CTkLabel(filter_frame, text=t("gui.log.level"))
+        _grid(detached_level_label, row=0, column=0, padx=(0, 4), sticky="w")
         self.host._detached_log_level_var = ctk.StringVar(value=self.host._log_level_var.get())
         self.host._detached_log_level_menu = ctk.CTkOptionMenu(
             filter_frame,
@@ -521,7 +541,7 @@ class AppSurfaceHelper:
             width=110,
             command=lambda _value: self._sync_log_views(),
         )
-        self.host._detached_log_level_menu.grid(row=0, column=1, padx=(0, 8), sticky="w")
+        _grid(self.host._detached_log_level_menu, row=0, column=1, padx=(0, 8), sticky="w")
 
         self.host._detached_log_box = ctk.CTkTextbox(
             container,
@@ -529,31 +549,31 @@ class AppSurfaceHelper:
             wrap="word",
             font=ctk.CTkFont(family="Consolas", size=12),
         )
-        self.host._detached_log_box.grid(row=2, column=0, sticky="nsew", pady=(0, 6))
+        _grid(self.host._detached_log_box, row=2, column=0, sticky="nsew", pady=(0, 6))
 
         btn_frame = ctk.CTkFrame(container, fg_color="transparent")
-        btn_frame.grid(row=3, column=0, sticky="ew")
+        _grid(btn_frame, row=3, column=0, sticky="ew")
         self.host._detached_log_clear_btn = ctk.CTkButton(
             btn_frame,
             text=t("gui.log.clear"),
             width=110,
             command=self.host._clear_log,
         )
-        self.host._detached_log_clear_btn.grid(row=0, column=0, padx=(0, 6), sticky="w")
+        _grid(self.host._detached_log_clear_btn, row=0, column=0, padx=(0, 6), sticky="w")
         self.host._detached_log_save_btn = ctk.CTkButton(
             btn_frame,
             text=t("gui.log.save"),
             width=110,
             command=lambda: self.save_log(source="detached"),
         )
-        self.host._detached_log_save_btn.grid(row=0, column=1, padx=(0, 6), sticky="w")
+        _grid(self.host._detached_log_save_btn, row=0, column=1, padx=(0, 6), sticky="w")
         self.host._detached_log_redock_btn = ctk.CTkButton(
             btn_frame,
             text=t("gui.log.redock"),
             width=110,
             command=self.host._redock_detached_log_window,
         )
-        self.host._detached_log_redock_btn.grid(row=0, column=2, sticky="w")
+        _grid(self.host._detached_log_redock_btn, row=0, column=2, sticky="w")
 
         def _on_close() -> None:
             if getattr(self.host, "_app_destroying", False):
@@ -570,7 +590,7 @@ class AppSurfaceHelper:
                 pass
 
         win.protocol("WM_DELETE_WINDOW", _on_close)
-        win.bind("<Configure>", _persist_geometry, add="+")
+        _bind(win, "<Configure>", _persist_geometry, add="+")
         self.bind_detached_redock_shortcuts(win, self.redock_detached_log_window)
 
         self.set_page_detached("log", True)
@@ -584,7 +604,7 @@ class AppSurfaceHelper:
         if not getattr(self.host, "_log_polling", True):
             return
         self.host._drain_ui_call_queue()
-        batch = []
+        batch: list[tuple[int, str]] = []
         while True:
             try:
                 batch.append(self.host._log_queue.get_nowait())
@@ -672,13 +692,13 @@ class AppSurfaceHelper:
             if width <= 340:
                 self.host._health_countdown_lbl.grid_remove()
             else:
-                self.host._health_countdown_lbl.grid()
+                _grid(self.host._health_countdown_lbl)
         else:
             self.host._status_label.grid_configure(row=0, column=0, columnspan=1, sticky="ew")
             self.host._detach_page_btn.grid_configure(row=0, column=1, pady=0, sticky="w")
             self.host.cancel_btn.grid_configure(row=0, column=2, columnspan=1, pady=0, sticky="w")
             self.host._health_countdown_lbl.grid_configure(row=0, column=3, pady=0, sticky="e")
-            self.host._health_countdown_lbl.grid()
+            _grid(self.host._health_countdown_lbl)
 
 
     def show_toast(self, message: str, *, duration: int = 6000, error: bool = False) -> None:
@@ -701,7 +721,7 @@ class AppSurfaceHelper:
             wraplength=600,
             anchor="center",
         )
-        lbl.pack(padx=16, pady=8)
+        _pack(lbl, padx=16, pady=8)
 
         def _dismiss() -> None:
             if not toast.winfo_exists() or not self.host.winfo_exists():

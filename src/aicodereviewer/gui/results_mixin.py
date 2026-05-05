@@ -35,7 +35,7 @@ from .shared_ui import MUTED_TEXT, SECTION_BORDER, SECTION_SURFACE
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["ResultsTabMixin", "IssueCard", "_NUMERIC_SETTINGS"]
+__all__ = ["ResultsTabMixin", "IssueCard", "NUMERIC_SETTINGS", "_NUMERIC_SETTINGS"]
 
 
 class IssueCard(TypedDict):
@@ -57,7 +57,7 @@ class IssueCard(TypedDict):
 
 
 # Fields in _setting_entries that must be numeric.
-_NUMERIC_SETTINGS: dict[tuple[str, str], tuple[str, type, float]] = {
+NUMERIC_SETTINGS: dict[tuple[str, str], tuple[str, type, float]] = {
     ("kiro",        "timeout"):                    ("Kiro timeout",             int,   1),
     ("copilot",     "timeout"):                    ("Copilot timeout",          int,   1),
     ("local_llm",   "timeout"):                    ("Local LLM timeout",        int,   1),
@@ -68,6 +68,9 @@ _NUMERIC_SETTINGS: dict[tuple[str, str], tuple[str, type, float]] = {
     ("performance", "max_file_size_mb"):            ("Max file size (MB)",       float, 0),
     ("processing",  "batch_size"):                  ("Batch size",              int,   1),
 }
+
+# Backward-compatible alias for older imports.
+_NUMERIC_SETTINGS = NUMERIC_SETTINGS
 
 
 class ResultsTabMixin:

@@ -1,6 +1,6 @@
 # src/aicodereviewer/gui/settings_mixin.py
 import logging
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 import customtkinter as ctk  # type: ignore[import-untyped]
 
@@ -14,15 +14,90 @@ from .settings_actions import SettingsPersistenceController
 from .settings_addons import SettingsAddonDiagnosticsRenderer
 from .settings_builder import SettingsTabBuilder
 from .settings_layout import SettingsLayoutHelper
-from .results_mixin import _NUMERIC_SETTINGS
+from .results_mixin import NUMERIC_SETTINGS
 
 logger = logging.getLogger(__name__)
 
 __all__ = ["SettingsTabMixin"]
 
 
+def _grid(widget: Any, /, **kwargs: Any) -> None:
+    widget.grid(**kwargs)
+
+
+def _pack(widget: Any, /, **kwargs: Any) -> None:
+    widget.pack(**kwargs)
+
+
+def _bind(widget: Any, sequence: str, command: Any, *, add: str | bool = True) -> None:
+    widget.bind(sequence, command, add=add)
+
+
+def _minsize(window: Any, width: int | None = None, height: int | None = None) -> None:
+    window.minsize(width, height)
+
+
 class SettingsTabMixin:
     """Mixin supplying the Settings tab and its Save / Reset logic."""
+
+    settings_root_tab: Any
+    _settings_addon_intro_label: Any
+    _settings_addon_review_launcher_label: Any
+    _settings_note_label: Any
+    _settings_button_frame: Any
+    _settings_output_formats_frame: Any
+    _format_vars: dict[str, Any]
+    _refresh_addons_btn: Any
+    addon_contributions_frame: Any
+    addon_summary_box: Any
+    addon_diagnostics_box: Any
+    local_http_status_label: Any
+    local_http_copy_btn: Any
+    local_http_docs_box: Any
+    local_http_status_var: Any
+    local_http_base_url_var: Any
+    tabs: Any
+    backend_var: Any
+    _backend_section_labels: dict[str, Any]
+    _settings_backend_var: Any
+
+    if TYPE_CHECKING:
+        from .app_composition import AppCompositionHelper
+
+        def _app_helpers(self) -> AppCompositionHelper: ...
+
+        def _open_detached_settings_window(self, *, restoring: bool = False) -> None: ...
+
+        def _redock_detached_settings_window(self) -> None: ...
+
+        def _schedule_debounced(self, attr: str, delay_ms: int, callback: Any) -> Any: ...
+
+        def _schedule_titlebar_fix(self, window: Any) -> None: ...
+
+        def _show_toast(self, message: str, is_error: bool = False) -> None: ...
+
+        def _refresh_detach_action_state(self) -> None: ...
+
+        def _refresh_copilot_model_list_async(self) -> None: ...
+
+        def _refresh_kiro_model_list_async(self) -> None: ...
+
+        def _refresh_bedrock_model_list_async(self) -> None: ...
+
+        def clipboard_clear(self) -> None: ...
+
+        def clipboard_append(self, value: str) -> None: ...
+
+        def _local_http_runtime_status_snapshot(self) -> tuple[str, str]: ...
+
+        def _schedule_surface_layout_refresh(
+            self,
+            attr: str,
+            callback: Any,
+            *,
+            tab_name: str,
+            detached_window_attr: str | None = None,
+        ) -> Any: ...
 
     def _settings_logical_width(self, *candidates: Any) -> float:
         return SettingsLayoutHelper.resolve_logical_width(self, *candidates)
@@ -192,7 +267,7 @@ class SettingsTabMixin:
         tab.grid_rowconfigure(0, weight=1)
 
         frame = ctk.CTkFrame(tab)
-        frame.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
+        _grid(frame, row=0, column=0, sticky="nsew", padx=12, pady=12)
         frame.grid_columnconfigure(0, weight=1)
 
         label = ctk.CTkLabel(
@@ -203,18 +278,18 @@ class SettingsTabMixin:
             wraplength=560,
             text_color=("gray35", "gray70"),
         )
-        label.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        _grid(label, row=0, column=0, sticky="ew", pady=(0, 10))
         self._detached_settings_placeholder_label = label
 
         button_row = ctk.CTkFrame(frame, fg_color="transparent")
-        button_row.grid(row=1, column=0, sticky="w")
+        _grid(button_row, row=1, column=0, sticky="w")
 
         focus_btn = ctk.CTkButton(
             button_row,
             text=t("gui.settings.focus_window"),
             command=self._open_detached_settings_window,
         )
-        focus_btn.grid(row=0, column=0, padx=(0, 10))
+        _grid(focus_btn, row=0, column=0, padx=(0, 10))
 
         redock_btn = ctk.CTkButton(
             button_row,
@@ -223,7 +298,7 @@ class SettingsTabMixin:
             fg_color="gray40",
             hover_color="gray30",
         )
-        redock_btn.grid(row=0, column=1)
+        _grid(redock_btn, row=0, column=1)
 
     def _rebuild_settings_surface_from_config(self) -> None:
         if self._is_settings_detached():
@@ -278,11 +353,11 @@ class SettingsTabMixin:
         win.title(t("gui.settings.detached_title"))
         saved_geometry = str(config.get("gui", "detached_settings_geometry", "") or "").strip()
         win.geometry(saved_geometry or "980x720")
-        win.minsize(720, 520)
+        _minsize(win, 720, 520)
         self._schedule_titlebar_fix(win)
 
         container = ctk.CTkFrame(win, fg_color="transparent")
-        container.pack(fill="both", expand=True, padx=10, pady=10)
+        _pack(container, fill="both", expand=True, padx=10, pady=10)
         container.grid_columnconfigure(0, weight=1)
         container.grid_rowconfigure(0, weight=1)
 
@@ -306,17 +381,16 @@ class SettingsTabMixin:
                 return
             self._settings_redock_detached_window()
 
-        win.protocol("WM_DELETE_WINDOW", _on_close)
-        win.bind("<Configure>", _persist_geometry, add="+")
-        win.bind(
-            "<Configure>",
-            lambda _event=None: self._schedule_debounced(
+        def _schedule_layout_refresh(_event: Any = None) -> None:
+            self._schedule_debounced(
                 "_detached_settings_layout_refresh_after_id",
                 50,
                 self._refresh_settings_tab_layout,
-            ),
-            add="+",
-        )
+            )
+
+        win.protocol("WM_DELETE_WINDOW", _on_close)
+        _bind(win, "<Configure>", _persist_geometry, add="+")
+        _bind(win, "<Configure>", _schedule_layout_refresh, add="+")
         self._app_helpers().surfaces().set_page_detached("settings", True)
         if restoring:
             self._show_toast(t("gui.settings.window_restored"))
@@ -353,7 +427,7 @@ class SettingsTabMixin:
         return SettingsAddonDiagnosticsRenderer(get_active_addon_runtime())
 
     def _settings_persistence_controller(self) -> SettingsPersistenceController:
-        return SettingsPersistenceController(self, numeric_settings=_NUMERIC_SETTINGS)
+        return SettingsPersistenceController(self, numeric_settings=NUMERIC_SETTINGS)
 
     def _populate_addon_diagnostics(self) -> None:
         view_model = self._settings_addon_renderer().build_view_model()
@@ -408,7 +482,7 @@ class SettingsTabMixin:
 
     # ── Backend sync helpers ──────────────────────────────────────────────
 
-    def _update_backend_section_indicators(self, *args):
+    def _update_backend_section_indicators(self, *args: Any) -> None:
         if not hasattr(self, "_settings_backend_var"):
             return
         display_val = self._settings_backend_var.get()
@@ -420,7 +494,7 @@ class SettingsTabMixin:
             else:
                 label.configure(text="")
 
-    def _sync_menu_to_review(self, *args):
+    def _sync_menu_to_review(self, *args: Any) -> None:
         if not hasattr(self, "_settings_backend_var") or not hasattr(self, "backend_var"):
             return
         display_val = self._settings_backend_var.get()
@@ -428,7 +502,7 @@ class SettingsTabMixin:
         if self.backend_var.get() != internal_val:
             self.backend_var.set(internal_val)
 
-    def _sync_review_to_menu(self, *args):
+    def _sync_review_to_menu(self, *args: Any) -> None:
         if not hasattr(self, "_settings_backend_var") or not hasattr(self, "backend_var"):
             return
         if self._settings_backend_var is None:
