@@ -15,14 +15,43 @@ class AppRuntimeHelper:
 
     def cancel_widget_after_callbacks(self, widget: Any) -> None:
         after_ids = getattr(widget, "_acr_after_ids", None)
-        if not after_ids:
+        if after_ids:
+            pending_after_ids = tuple(after_ids)
+            after_ids.clear()
+            for after_id in pending_after_ids:
+                try:
+                    widget.after_cancel(after_id)
+                except tk.TclError:
+                    continue
+
+        tk_handle = getattr(widget, "tk", None)
+        tk_call = getattr(tk_handle, "call", None)
+        if not callable(tk_call):
             return
-        pending_after_ids = tuple(after_ids)
-        after_ids.clear()
+
+        try:
+            pending_raw = tk_call("after", "info")
+        except tk.TclError:
+            return
+        except Exception:
+            return
+
+        if isinstance(pending_raw, (str, bytes)):
+            pending_after_ids = (pending_raw,)
+        elif isinstance(pending_raw, tuple):
+            pending_after_ids = pending_raw
+        else:
+            try:
+                pending_after_ids = tuple(pending_raw)
+            except Exception:
+                pending_after_ids = ()
+
         for after_id in pending_after_ids:
             try:
                 widget.after_cancel(after_id)
             except tk.TclError:
+                continue
+            except Exception:
                 continue
 
     def ensure_widget_after_cleanup(self, widget: Any) -> None:
