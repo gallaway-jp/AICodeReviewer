@@ -4468,6 +4468,50 @@ def test_global_detach_action_keeps_focus_label_for_live_detached_settings_durin
                 pass
 
 
+def test_status_bar_layout_refresh_is_debounced_and_uses_latest_width() -> None:
+    from aicodereviewer.gui.app import App
+
+    application = App(testing_mode=True)
+    harness = GuiTestHarness(application)
+    width_state = {"value": 320}
+    original_winfo_width = harness.app.winfo_width
+    original_debounce = harness.app._gui_resize_debounce_ms
+
+    try:
+        harness.app.winfo_width = lambda: width_state["value"]
+        harness.app._gui_resize_debounce_ms = lambda: 40
+
+        with harness._callback_lock:
+            baseline_tokens = set(harness._scheduled_callbacks.keys())
+
+        harness.app._schedule_status_bar_layout_refresh()
+        width_state["value"] = 620
+        harness.app._schedule_status_bar_layout_refresh()
+        width_state["value"] = 341
+        harness.app._schedule_status_bar_layout_refresh()
+
+        with harness._callback_lock:
+            pending_tokens = set(harness._scheduled_callbacks.keys())
+        created_tokens = pending_tokens - baseline_tokens
+        assert len(created_tokens) == 1
+
+        harness.wait_until(
+            lambda: getattr(harness.app, "_status_bar_layout_mode", None) == "compact",
+            timeout=1.0,
+            message="status bar layout did not apply latest compact-width state",
+        )
+
+        assert int(harness.app._detach_page_btn.grid_info().get("row", 0)) == 1
+        assert harness.app._health_countdown_lbl.winfo_manager() != ""
+    finally:
+        harness.app.winfo_width = original_winfo_width
+        harness.app._gui_resize_debounce_ms = original_debounce
+        try:
+            harness.app.destroy()
+        except Exception:
+            pass
+
+
 def test_runtime_tuning_settings_persist_across_app_restart(
     app_factory: Any,
     monkeypatch: pytest.MonkeyPatch,
