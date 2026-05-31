@@ -214,6 +214,7 @@ class TestAppCreation:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         calls: list[str] = []
+        scheduled_retries: list[tuple[int, Any]] = []
         app._startup_window_hidden = True
 
         def _fail_deiconify() -> None:
@@ -222,11 +223,34 @@ class TestAppCreation:
 
         monkeypatch.setattr(app, "deiconify", _fail_deiconify)
         monkeypatch.setattr(app, "lift", lambda: calls.append("lift"))
+        monkeypatch.setattr(app, "_schedule_app_after", lambda delay_ms, callback: scheduled_retries.append((delay_ms, callback)))
 
         app._finalize_startup_presentation()
 
         assert calls == ["deiconify"]
         assert app._startup_window_hidden is True
+        assert app._startup_presentation_retry_count == 1
+        assert len(scheduled_retries) == 1
+        assert scheduled_retries[0][0] == app._STARTUP_PRESENTATION_RETRY_MS
+        assert scheduled_retries[0][1] == app._finalize_startup_presentation
+
+    def test_finalize_startup_presentation_stops_retry_scheduling_after_limit(
+        self,
+        app: Any,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        scheduled_retries: list[tuple[int, Any]] = []
+        app._startup_window_hidden = True
+        app._startup_presentation_retry_count = app._STARTUP_PRESENTATION_RETRY_LIMIT
+
+        monkeypatch.setattr(app, "deiconify", lambda: (_ for _ in ()).throw(RuntimeError("deiconify failed")))
+        monkeypatch.setattr(app, "_schedule_app_after", lambda delay_ms, callback: scheduled_retries.append((delay_ms, callback)))
+
+        app._finalize_startup_presentation()
+
+        assert app._startup_window_hidden is True
+        assert app._startup_presentation_retry_count == app._STARTUP_PRESENTATION_RETRY_LIMIT + 1
+        assert scheduled_retries == []
 
     def test_benchmark_tab_widgets(self, app: Any) -> None:
         benchmark_tab = BenchmarkTabHarness(app)

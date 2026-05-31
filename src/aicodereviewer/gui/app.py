@@ -90,6 +90,8 @@ class App(
 
     WIDTH = 1100
     HEIGHT = 820
+    _STARTUP_PRESENTATION_RETRY_MS = 200
+    _STARTUP_PRESENTATION_RETRY_LIMIT = 5
     _testing_mode: bool
     tabs: Any
 
@@ -259,12 +261,20 @@ class App(
             self.deiconify()
         except Exception:
             logging.getLogger(__name__).debug("Startup presentation failed", exc_info=True)
+            retry_count = int(getattr(self, "_startup_presentation_retry_count", 0) or 0) + 1
+            self._startup_presentation_retry_count = retry_count
+            if retry_count <= self._STARTUP_PRESENTATION_RETRY_LIMIT:
+                try:
+                    self._schedule_app_after(self._STARTUP_PRESENTATION_RETRY_MS, self._finalize_startup_presentation)
+                except Exception:
+                    logging.getLogger(__name__).debug("Startup presentation retry scheduling failed", exc_info=True)
             return
         try:
             if not self._has_live_detached_windows():
                 self.lift()
         except Exception:
             logging.getLogger(__name__).debug("Startup lift failed", exc_info=True)
+        self._startup_presentation_retry_count = 0
         self._startup_window_hidden = False
 
     def _ensure_tab(self, tab_name: str) -> Any:
