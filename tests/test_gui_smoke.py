@@ -514,6 +514,34 @@ class TestAppCreation:
             app._refresh_results_tab_layout = original_results_refresh
             app._refresh_settings_tab_layout = original_settings_refresh
 
+    def test_window_resize_refresh_not_scheduled_while_app_destroying(self, app: Any) -> None:
+        calls: list[str] = []
+        app._app_destroying = True
+        app._window_resize_refresh_after_id = None
+        original_schedule = app._schedule_configure_refresh
+        app._schedule_configure_refresh = lambda *_args, **_kwargs: calls.append("scheduled")
+        try:
+            app._schedule_window_resize_refresh()
+            assert calls == []
+            assert app._window_resize_refresh_after_id is None
+        finally:
+            app._schedule_configure_refresh = original_schedule
+            app._app_destroying = False
+
+    def test_status_bar_refresh_not_scheduled_while_app_destroying(self, app: Any) -> None:
+        calls: list[str] = []
+        app._app_destroying = True
+        app._status_bar_layout_refresh_after_id = None
+        original_schedule = app._schedule_configure_refresh
+        app._schedule_configure_refresh = lambda *_args, **_kwargs: calls.append("scheduled")
+        try:
+            app._schedule_status_bar_layout_refresh()
+            assert calls == []
+            assert app._status_bar_layout_refresh_after_id is None
+        finally:
+            app._schedule_configure_refresh = original_schedule
+            app._app_destroying = False
+
     def test_results_settings_and_log_reflow_explicitly_by_logical_width(self, app: Any) -> None:
         app.tabs.set(t("gui.tab.results"))
 

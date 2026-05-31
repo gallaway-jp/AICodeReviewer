@@ -411,6 +411,8 @@ class App(
         )
 
     def _schedule_status_bar_layout_refresh(self, *_args: Any) -> None:
+        if getattr(self, "_app_destroying", False):
+            return
         self._schedule_configure_refresh(
             "_status_bar_layout_refresh_after_id",
             self._gui_resize_debounce_ms(),
@@ -538,6 +540,8 @@ class App(
         Consolidates what was previously three separate refresh chains into one
         debounced call, preventing redundant layout recalculations.
         """
+        if getattr(self, "_app_destroying", False):
+            return
         delay_ms = self._gui_resize_debounce_ms()
         if event is not None and getattr(event, "widget", None) is not self:
             return
@@ -565,6 +569,8 @@ class App(
 
     def _apply_coalesced_resize_refresh(self) -> None:
         """Single refresh call that handles layout, toasts, and scroll regions."""
+        if getattr(self, "_app_destroying", False):
+            return
         try:
             self._app_helpers().shell_layout().apply_geometry_refreshes(active_only=True)
             self._restack_toasts()
