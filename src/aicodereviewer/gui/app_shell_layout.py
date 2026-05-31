@@ -9,6 +9,9 @@ class AppShellLayoutHelper:
     def __init__(self, host: Any) -> None:
         self.host = host
 
+    def _app_destroying(self) -> bool:
+        return bool(getattr(self.host, "_app_destroying", False))
+
     def install_tab_selection_layout_hooks(self) -> None:
         tabs = getattr(self.host, "tabs", None)
         if tabs is None:
@@ -30,6 +33,8 @@ class AppShellLayoutHelper:
 
         # Hook 1: Intercept programmatic tabs.set() calls
         def _set_with_layout_refresh(name: str) -> None:
+            if self._app_destroying():
+                return
             self.host._build_tab_if_needed(name)
             original_set(name)
             _on_tab_selected(name)
@@ -43,6 +48,8 @@ class AppShellLayoutHelper:
             original_command = None
 
         def _tabview_command() -> None:
+            if self._app_destroying():
+                return
             if callable(original_command):
                 original_command()
             # Get the currently selected tab name after the switch
@@ -60,6 +67,8 @@ class AppShellLayoutHelper:
             pass
 
     def schedule_tab_selection_refresh(self, tab_name: str) -> None:
+        if self._app_destroying():
+            return
         self.host._build_tab_if_needed(tab_name)
         refresh_detach_action = getattr(self.host, "_refresh_detach_action_state", None)
         if callable(refresh_detach_action):
@@ -77,6 +86,8 @@ class AppShellLayoutHelper:
             self.host._requested_geometry_width = int(width_text)
 
     def schedule_geometry_refreshes(self, active_only: bool = True) -> None:
+        if self._app_destroying():
+            return
         self.host._schedule_debounced(
             "_geometry_refresh_after_id",
             self.host._gui_resize_debounce_ms(),
@@ -94,6 +105,8 @@ class AppShellLayoutHelper:
         self._perform_geometry_refreshes(active_only)
 
     def _perform_geometry_refreshes(self, active_only: bool = True) -> None:
+        if self._app_destroying():
+            return
         if not getattr(self.host, "winfo_exists", lambda: False)():
             return
         refreshers = self._active_tab_refreshers() if active_only else self._all_layout_refreshers()

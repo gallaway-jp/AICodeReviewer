@@ -252,6 +252,40 @@ class TestAppCreation:
         assert app._startup_presentation_retry_count == app._STARTUP_PRESENTATION_RETRY_LIMIT + 1
         assert scheduled_retries == []
 
+    def test_tab_selection_refresh_not_scheduled_while_app_destroying(
+        self,
+        app: Any,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        helper = app._app_helpers().shell_layout()
+        calls: list[str] = []
+
+        app._app_destroying = True
+        monkeypatch.setattr(app, "_build_tab_if_needed", lambda _name: calls.append("build_tab"))
+        monkeypatch.setattr(app, "_refresh_detach_action_state", lambda: calls.append("refresh_detach"))
+        monkeypatch.setattr(app, "_schedule_app_after", lambda _delay, _callback: calls.append("schedule"))
+
+        helper.schedule_tab_selection_refresh(t("gui.tab.settings"))
+
+        assert calls == []
+        app._app_destroying = False
+
+    def test_geometry_refresh_not_scheduled_while_app_destroying(
+        self,
+        app: Any,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        helper = app._app_helpers().shell_layout()
+        calls: list[str] = []
+
+        app._app_destroying = True
+        monkeypatch.setattr(app, "_schedule_debounced", lambda *_args, **_kwargs: calls.append("debounced"))
+
+        helper.schedule_geometry_refreshes(active_only=True)
+
+        assert calls == []
+        app._app_destroying = False
+
     def test_benchmark_tab_widgets(self, app: Any) -> None:
         benchmark_tab = BenchmarkTabHarness(app)
 
