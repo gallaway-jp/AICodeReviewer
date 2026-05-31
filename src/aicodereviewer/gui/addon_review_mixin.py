@@ -41,7 +41,12 @@ class AddonReviewTabMixin:
                 widget.configure(wraplength=wraplength)
 
     def _open_addon_review_tab(self) -> None:
-        if bool(getattr(self, "_detached_addon_review_window", None)) and self._app_helpers().surfaces().is_page_detached("addon_review"):
+        window = getattr(self, "_detached_addon_review_window", None)
+        if (
+            window is not None
+            and bool(getattr(window, "winfo_exists", lambda: False)())
+            and self._app_helpers().surfaces().is_page_detached("addon_review")
+        ):
             self._focus_detached_addon_review_window()
             return
         self.tabs.set(t("gui.tab.addon_review"))
