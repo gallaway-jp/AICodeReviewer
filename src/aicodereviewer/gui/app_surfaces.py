@@ -480,8 +480,7 @@ class AppSurfaceHelper:
                 self.save_detached_page_geometry(page_key, window.geometry())
             except Exception:
                 pass
-        for page_key in ("log", "settings", "benchmark", "addon_review"):
-            self.set_page_detached(page_key, page_key in live_detached_pages)
+        self._persist_detached_pages(live_detached_pages)
 
     def restore_detached_windows(self) -> None:
         if "settings" in self._detached_pages():
