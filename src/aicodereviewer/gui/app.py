@@ -257,10 +257,14 @@ class App(
             logging.getLogger(__name__).debug("Startup idle refresh failed", exc_info=True)
         try:
             self.deiconify()
+        except Exception:
+            logging.getLogger(__name__).debug("Startup presentation failed", exc_info=True)
+            return
+        try:
             if not self._has_live_detached_windows():
                 self.lift()
         except Exception:
-            logging.getLogger(__name__).debug("Startup presentation failed", exc_info=True)
+            logging.getLogger(__name__).debug("Startup lift failed", exc_info=True)
         self._startup_window_hidden = False
 
     def _ensure_tab(self, tab_name: str) -> Any:

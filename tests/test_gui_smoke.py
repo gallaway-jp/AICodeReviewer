@@ -208,6 +208,26 @@ class TestAppCreation:
         assert calls == ["deiconify", "lift"]
         assert app._startup_window_hidden is False
 
+    def test_finalize_startup_presentation_keeps_hidden_flag_when_deiconify_fails(
+        self,
+        app: Any,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        calls: list[str] = []
+        app._startup_window_hidden = True
+
+        def _fail_deiconify() -> None:
+            calls.append("deiconify")
+            raise RuntimeError("deiconify failed")
+
+        monkeypatch.setattr(app, "deiconify", _fail_deiconify)
+        monkeypatch.setattr(app, "lift", lambda: calls.append("lift"))
+
+        app._finalize_startup_presentation()
+
+        assert calls == ["deiconify"]
+        assert app._startup_window_hidden is True
+
     def test_benchmark_tab_widgets(self, app: Any) -> None:
         benchmark_tab = BenchmarkTabHarness(app)
 
