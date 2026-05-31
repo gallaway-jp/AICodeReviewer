@@ -167,6 +167,47 @@ class TestAppCreation:
         finally:
             config.set_value("gui", "detached_pages", original_detached_pages)
 
+    def test_finalize_startup_presentation_skips_main_lift_when_detached_window_is_live(
+        self,
+        app: Any,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        class _LiveDetachedWindow:
+            def winfo_exists(self) -> bool:
+                return True
+
+        calls: list[str] = []
+        app._startup_window_hidden = True
+        app._detached_settings_window = _LiveDetachedWindow()
+
+        monkeypatch.setattr(app, "deiconify", lambda: calls.append("deiconify"))
+        monkeypatch.setattr(app, "lift", lambda: calls.append("lift"))
+
+        app._finalize_startup_presentation()
+
+        assert calls == ["deiconify"]
+        assert app._startup_window_hidden is False
+
+    def test_finalize_startup_presentation_lifts_main_window_without_detached_windows(
+        self,
+        app: Any,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        calls: list[str] = []
+        app._startup_window_hidden = True
+        app._detached_log_window = None
+        app._detached_settings_window = None
+        app._detached_benchmark_window = None
+        app._detached_addon_review_window = None
+
+        monkeypatch.setattr(app, "deiconify", lambda: calls.append("deiconify"))
+        monkeypatch.setattr(app, "lift", lambda: calls.append("lift"))
+
+        app._finalize_startup_presentation()
+
+        assert calls == ["deiconify", "lift"]
+        assert app._startup_window_hidden is False
+
     def test_benchmark_tab_widgets(self, app: Any) -> None:
         benchmark_tab = BenchmarkTabHarness(app)
 

@@ -229,6 +229,17 @@ class App(
     def _schedule_popup_after(self, window: Any, delay_ms: int, callback: Any) -> Any:
         return schedule_popup_after(window, delay_ms, callback, host=self, skip_in_tests=True)
 
+    def _has_live_detached_windows(self) -> bool:
+        for attr_name in (
+            "_detached_log_window",
+            "_detached_settings_window",
+            "_detached_benchmark_window",
+            "_detached_addon_review_window",
+        ):
+            if self._detached_window_exists(attr_name):
+                return True
+        return False
+
     def _finalize_startup_presentation(self) -> None:
         if not getattr(self, "_startup_window_hidden", False):
             return
@@ -246,7 +257,8 @@ class App(
             logging.getLogger(__name__).debug("Startup idle refresh failed", exc_info=True)
         try:
             self.deiconify()
-            self.lift()
+            if not self._has_live_detached_windows():
+                self.lift()
         except Exception:
             logging.getLogger(__name__).debug("Startup presentation failed", exc_info=True)
         self._startup_window_hidden = False
