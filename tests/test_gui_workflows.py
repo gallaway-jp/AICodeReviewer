@@ -4287,9 +4287,15 @@ def test_global_detach_action_tracks_tab_state_during_runtime_queue_auto_refresh
     try:
         application = App(testing_mode=True, review_runtime=runtime)
         harness = GuiTestHarness(application)
+        original_winfo_width = harness.app.winfo_width
         harness.app._build_tab_if_needed(t("gui.tab.review"))
         harness.app.tabs.set(t("gui.tab.review"))
         harness.pump(2)
+
+        harness.app.winfo_width = lambda: 320
+        harness.app._refresh_status_bar_layout()
+        assert int(harness.app._detach_page_btn.grid_info().get("row", 0)) == 1
+        assert harness.app._health_countdown_lbl.winfo_manager() == ""
 
         review_request = ReviewRequest(
             path=str(tmp_path),
@@ -4344,11 +4350,15 @@ def test_global_detach_action_tracks_tab_state_during_runtime_queue_auto_refresh
         )
         assert harness.app._detach_page_btn.cget("state") == "normal"
         assert harness.app._detach_page_btn.cget("text") == t("gui.settings.open_window")
+        assert int(harness.app._detach_page_btn.grid_info().get("row", 0)) == 1
+        assert harness.app._health_countdown_lbl.winfo_manager() == ""
 
         harness.app.tabs.set(t("gui.tab.review"))
         harness.pump(2)
         assert harness.app._detach_page_btn.cget("state") == "disabled"
     finally:
+        if application is not None:
+            application.winfo_width = original_winfo_width
         release_event.set()
         if application is not None:
             try:
