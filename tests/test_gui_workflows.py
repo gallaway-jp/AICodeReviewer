@@ -4512,6 +4512,46 @@ def test_status_bar_layout_refresh_is_debounced_and_uses_latest_width() -> None:
             pass
 
 
+def test_destroy_cancels_pending_debounced_layout_callbacks() -> None:
+    from aicodereviewer.gui.app import App
+
+    application = App(testing_mode=True)
+    harness = GuiTestHarness(application)
+    original_debounce = harness.app._gui_resize_debounce_ms
+
+    try:
+        harness.app._gui_resize_debounce_ms = lambda: 1000
+
+        harness.app._schedule_status_bar_layout_refresh()
+        harness.app._app_helpers().shell_layout().schedule_geometry_refreshes(active_only=False)
+
+        status_token = getattr(harness.app, "_status_bar_layout_refresh_after_id", None)
+        geometry_token = getattr(harness.app, "_geometry_refresh_after_id", None)
+
+        with harness._callback_lock:
+            pending_before = set(harness._scheduled_callbacks.keys())
+
+        assert status_token is not None
+        assert geometry_token is not None
+        assert status_token in pending_before
+        assert geometry_token in pending_before
+
+        harness.app.destroy()
+
+        with harness._callback_lock:
+            pending_after = set(harness._scheduled_callbacks.keys())
+
+        assert status_token not in pending_after
+        assert geometry_token not in pending_after
+        assert getattr(harness.app, "_log_polling", True) is False
+    finally:
+        harness.app._gui_resize_debounce_ms = original_debounce
+        try:
+            harness.app.destroy()
+        except Exception:
+            pass
+
+
 def test_runtime_tuning_settings_persist_across_app_restart(
     app_factory: Any,
     monkeypatch: pytest.MonkeyPatch,
