@@ -6,11 +6,12 @@ import logging
 import re
 import threading
 import webbrowser
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 import customtkinter as ctk  # type: ignore[import-untyped]
 
 from aicodereviewer.backends.health import (
+    HealthReport,
     check_backend,
     get_copilot_models,
     get_kiro_models,
@@ -27,8 +28,61 @@ logger = logging.getLogger(__name__)
 __all__ = ["HealthMixin"]
 
 
+def _grid(widget: Any, /, **kwargs: Any) -> None:
+    widget.grid(**kwargs)
+
+
+def _bind(widget: Any, sequence: str, command: Any, *, add: str | bool = True) -> None:
+    try:
+        widget.bind(sequence, command, add=add)
+    except TypeError:
+        widget.bind(sequence, command)
+
+
+def _pack(widget: Any, /, **kwargs: Any) -> None:
+    widget.pack(**kwargs)
+
+
 class HealthMixin:
     """Mixin supplying backend health checking and model list refresh."""
+
+    backend_var: Any
+    status_var: Any
+    _testing_mode: bool
+    _active_model_refresh: Any
+
+    if TYPE_CHECKING:
+        def after(self, delay_ms: int, callback: Any) -> Any: ...
+
+        def _schedule_app_after(self, delay_ms: int, callback: Any) -> Any: ...
+
+        def _run_on_ui_thread(self, callback: Any, *args: Any, **kwargs: Any) -> bool: ...
+
+        def _sync_review_to_menu(self) -> None: ...
+
+        def _is_busy(self) -> bool: ...
+
+        def _is_health_check_running(self) -> bool: ...
+
+        def _active_health_check_matches(self, backend_name: str) -> bool: ...
+
+        def _cancel_active_health_check_timer(self) -> None: ...
+
+        def _begin_active_health_check(self, backend_name: str) -> None: ...
+
+        def _set_action_buttons_state(self, state: str) -> None: ...
+
+        def _sync_global_cancel_button(self) -> None: ...
+
+        def _start_health_countdown(self) -> None: ...
+
+        def _stop_health_countdown(self) -> None: ...
+
+        def _bind_active_health_check_timer(self, timer: Any) -> None: ...
+
+        def _finish_active_health_check(self) -> None: ...
+
+        def _show_toast(self, message: str, *, error: bool = False) -> None: ...
 
     def _live_model_combo(self, attr_name: str) -> Any | None:
         """Return a model combobox only when the widget is present and still alive."""
@@ -59,7 +113,7 @@ class HealthMixin:
         """Render a remediation hint, keeping surrounding text visible around links."""
         split_hint = self._split_fix_hint_url(fix_hint)
         if not split_hint:
-            ctk.CTkLabel(
+            _grid(ctk.CTkLabel(
                 parent,
                 text=f"💡 {fix_hint}",
                 anchor="w",
@@ -67,11 +121,11 @@ class HealthMixin:
                 justify="left",
                 text_color="#2563eb",
                 font=ctk.CTkFont(size=11),
-            ).grid(row=row, column=1, sticky="w", padx=4, pady=(0, 4))
+            ), row=row, column=1, sticky="w", padx=4, pady=(0, 4))
             return
 
         _before, url, _after = split_hint
-        ctk.CTkLabel(
+        _grid(ctk.CTkLabel(
             parent,
             text=f"💡 {fix_hint}",
             anchor="w",
@@ -79,7 +133,7 @@ class HealthMixin:
             justify="left",
             text_color="#2563eb",
             font=ctk.CTkFont(size=11),
-        ).grid(row=row, column=1, sticky="w", padx=4, pady=(0, 2))
+        ), row=row, column=1, sticky="w", padx=4, pady=(0, 2))
 
         link_label = ctk.CTkLabel(
             parent,
@@ -89,8 +143,12 @@ class HealthMixin:
             font=ctk.CTkFont(size=11, underline=True),
             cursor="hand2",
         )
-        link_label.grid(row=row + 1, column=1, sticky="w", padx=18, pady=(0, 4))
-        link_label.bind("<Button-1>", lambda e, u=url: webbrowser.open(u))
+
+        def _open_link(_event: Any, target: str = url) -> None:
+            webbrowser.open(target)
+
+        _grid(link_label, row=row + 1, column=1, sticky="w", padx=18, pady=(0, 4))
+        _bind(link_label, "<Button-1>", _open_link)
 
     def _dispatch_health_ui(self, callback: Any, *args: Any, **kwargs: Any) -> bool:
         """Marshal worker-thread callbacks onto the main UI loop when available."""
@@ -238,7 +296,7 @@ class HealthMixin:
 
         threading.Thread(target=_worker, daemon=True).start()
 
-    def _show_health_dialog(self, report):
+    def _show_health_dialog(self, report: HealthReport) -> None:
         if self._testing_mode:
             logger.info("Health dialog suppressed in testing: %s", report.summary)
             return
@@ -254,13 +312,19 @@ class HealthMixin:
             self._refresh_backend_models(report.backend)
 
         summary_color = "green" if report.ready else "#dc2626"
-        ctk.CTkLabel(win, text=report.summary,
-                      text_color=summary_color,
-                      font=ctk.CTkFont(size=14, weight="bold")).pack(
-            padx=10, pady=(10, 6))
+        _pack(
+            ctk.CTkLabel(
+                win,
+                text=report.summary,
+                text_color=summary_color,
+                font=ctk.CTkFont(size=14, weight="bold"),
+            ),
+            padx=10,
+            pady=(10, 6),
+        )
 
         scroll = ctk.CTkFrame(win) if self._testing_mode else ctk.CTkScrollableFrame(win)
-        scroll.pack(fill="both", expand=True, padx=10, pady=4)
+        _pack(scroll, fill="both", expand=True, padx=10, pady=4)
         scroll.grid_columnconfigure(1, weight=1)
 
         row_cursor = 0
@@ -269,16 +333,33 @@ class HealthMixin:
             icon = "✅" if check.passed else "❌"
             color = "green" if check.passed else "#dc2626"
 
-            ctk.CTkLabel(scroll, text=icon, width=24).grid(
-                row=base_row, column=0, sticky="nw", padx=(4, 2), pady=(4, 0))
-            ctk.CTkLabel(scroll, text=check.name,
-                          font=ctk.CTkFont(weight="bold"),
-                          text_color=color).grid(
-                row=base_row, column=1, sticky="w", padx=4, pady=(4, 0))
-            ctk.CTkLabel(scroll, text=check.detail, anchor="w",
-                          wraplength=450,
-                          text_color=("gray30", "gray70")).grid(
-                row=base_row + 1, column=1, sticky="w", padx=4)
+            _grid(ctk.CTkLabel(scroll, text=icon, width=24), row=base_row, column=0, sticky="nw", padx=(4, 2), pady=(4, 0))
+            _grid(
+                ctk.CTkLabel(
+                    scroll,
+                    text=check.name,
+                    font=ctk.CTkFont(weight="bold"),
+                    text_color=color,
+                ),
+                row=base_row,
+                column=1,
+                sticky="w",
+                padx=4,
+                pady=(4, 0),
+            )
+            _grid(
+                ctk.CTkLabel(
+                    scroll,
+                    text=check.detail,
+                    anchor="w",
+                    wraplength=450,
+                    text_color=("gray30", "gray70"),
+                ),
+                row=base_row + 1,
+                column=1,
+                sticky="w",
+                padx=4,
+            )
 
             meta_parts: list[str] = []
             category = getattr(check, "category", "none")
@@ -288,22 +369,27 @@ class HealthMixin:
             if origin:
                 meta_parts.append(f"{t('health.meta_origin')}: {origin.replace('_', ' ')}")
             if meta_parts:
-                ctk.CTkLabel(
-                    scroll,
-                    text=" | ".join(meta_parts),
-                    anchor="w",
-                    wraplength=450,
-                    text_color=("gray45", "gray60"),
-                    font=ctk.CTkFont(size=11),
-                ).grid(row=base_row + 2, column=1, sticky="w", padx=4)
+                _grid(
+                    ctk.CTkLabel(
+                        scroll,
+                        text=" | ".join(meta_parts),
+                        anchor="w",
+                        wraplength=450,
+                        text_color=("gray45", "gray60"),
+                        font=ctk.CTkFont(size=11),
+                    ),
+                    row=base_row + 2,
+                    column=1,
+                    sticky="w",
+                    padx=4,
+                )
 
             row_cursor = base_row + 3
             if check.fix_hint and not check.passed:
                 self._render_health_fix_hint(scroll, row_cursor, check.fix_hint)
                 row_cursor += 2 if self._split_fix_hint_url(check.fix_hint) else 1
 
-        ctk.CTkButton(win, text=t("common.close"),
-                       command=win.destroy).pack(pady=8)
+        _pack(ctk.CTkButton(win, text=t("common.close"), command=win.destroy), pady=8)
 
     def _show_health_error(self, error_msg: str):
         if self._testing_mode:
