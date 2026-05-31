@@ -418,17 +418,37 @@ class TestAppCreation:
     def test_status_bar_reflows_in_narrow_window(self, app: Any) -> None:
         original_winfo_width = app.winfo_width
         try:
-            app.winfo_width = lambda: 320
+            app.winfo_width = lambda: 340
             app._refresh_status_bar_layout()
             assert int(app._status_label.grid_info().get("columnspan", 1)) == 4
             assert app._detach_page_btn.winfo_manager() != ""
             assert app._health_countdown_lbl.winfo_manager() == ""
+            assert int(app._detach_page_btn.grid_info().get("row", 0)) == 1
+            assert getattr(app, "_status_bar_layout_mode", None) == "compact-hidden-countdown"
 
-            app.winfo_width = lambda: 620
+            app.winfo_width = lambda: 341
+            app._refresh_status_bar_layout()
+            assert int(app._status_label.grid_info().get("columnspan", 1)) == 4
+            assert app._detach_page_btn.winfo_manager() != ""
+            assert app._health_countdown_lbl.winfo_manager() != ""
+            assert int(app._detach_page_btn.grid_info().get("row", 0)) == 1
+            assert getattr(app, "_status_bar_layout_mode", None) == "compact"
+
+            app.winfo_width = lambda: 520
+            app._refresh_status_bar_layout()
+            assert int(app._status_label.grid_info().get("columnspan", 1)) == 4
+            assert app._detach_page_btn.winfo_manager() != ""
+            assert app._health_countdown_lbl.winfo_manager() != ""
+            assert int(app._detach_page_btn.grid_info().get("row", 0)) == 1
+            assert getattr(app, "_status_bar_layout_mode", None) == "compact"
+
+            app.winfo_width = lambda: 521
             app._refresh_status_bar_layout()
             assert int(app._status_label.grid_info().get("columnspan", 1)) == 1
             assert app._detach_page_btn.winfo_manager() != ""
             assert app._health_countdown_lbl.winfo_manager() != ""
+            assert int(app._detach_page_btn.grid_info().get("row", 0)) == 0
+            assert getattr(app, "_status_bar_layout_mode", None) == "wide"
         finally:
             app.winfo_width = original_winfo_width
 
