@@ -45,7 +45,6 @@ class AddonReviewTabMixin:
         if (
             window is not None
             and bool(getattr(window, "winfo_exists", lambda: False)())
-            and self._app_helpers().surfaces().is_page_detached("addon_review")
         ):
             self._focus_detached_addon_review_window()
             return

@@ -149,6 +149,24 @@ class TestAppCreation:
         app.update()
         assert app._detach_page_btn.cget("text") == t("gui.settings.open_window")
 
+    def test_global_detach_action_ignores_stale_detached_page_config_without_live_window(self, app: Any) -> None:
+        from aicodereviewer.config import config
+
+        original_detached_pages = str(config.get("gui", "detached_pages", "") or "")
+        try:
+            app.tabs.set(t("gui.tab.settings"))
+            app.update_idletasks()
+            app.update()
+
+            config.set_value("gui", "detached_pages", "settings")
+            app._detached_settings_window = None
+            app._refresh_detach_action_state()
+
+            assert app._detach_page_btn.cget("state") == "normal"
+            assert app._detach_page_btn.cget("text") == t("gui.settings.open_window")
+        finally:
+            config.set_value("gui", "detached_pages", original_detached_pages)
+
     def test_benchmark_tab_widgets(self, app: Any) -> None:
         benchmark_tab = BenchmarkTabHarness(app)
 

@@ -5883,6 +5883,79 @@ def test_log_tab_detached_window_restores_after_restart(
     assert config.get("gui", "detached_pages", "") == "log"
 
 
+def test_shutdown_reconciles_detached_pages_with_live_windows_for_restart_restore(
+    app_factory: Any,
+    tmp_path: Path,
+) -> None:
+    original_config_path = config.config_path
+    temporary_config_path = tmp_path / "detached-pages-shutdown-reconcile.ini"
+
+    try:
+        _save_default_config_to_path(temporary_config_path)
+
+        first_app = app_factory()
+        first_app.tabs.set(t("gui.tab.settings"))
+        first_app.update_idletasks()
+        first_app.update()
+        first_app.detach_settings_btn.invoke()
+        first_app.update_idletasks()
+        first_app.update()
+
+        assert first_app._detached_settings_window is not None
+        assert config.get("gui", "detached_pages", "") == "settings"
+
+        # Simulate runtime config drift while detached window is still live.
+        config.set_value("gui", "detached_pages", "")
+        config.save()
+
+        first_app.destroy()
+
+        assert config.get("gui", "detached_pages", "") == "settings"
+
+        second_app = app_factory()
+        second_app.update_idletasks()
+        second_app.update()
+
+        assert second_app._detached_settings_window is not None
+        assert config.get("gui", "detached_pages", "") == "settings"
+    finally:
+        _reset_config_to_path(original_config_path)
+
+
+def test_shutdown_clears_stale_detached_pages_without_live_windows(
+    app_factory: Any,
+    tmp_path: Path,
+) -> None:
+    original_config_path = config.config_path
+    temporary_config_path = tmp_path / "detached-pages-shutdown-clear-stale.ini"
+
+    try:
+        _save_default_config_to_path(temporary_config_path)
+
+        first_app = app_factory()
+        first_app.tabs.set(t("gui.tab.settings"))
+        first_app.update_idletasks()
+        first_app.update()
+
+        # Simulate stale persisted state: detached flag says open, but no detached window exists.
+        config.set_value("gui", "detached_pages", "settings")
+        config.save()
+        first_app._detached_settings_window = None
+
+        first_app.destroy()
+
+        assert config.get("gui", "detached_pages", "") == ""
+
+        second_app = app_factory()
+        second_app.update_idletasks()
+        second_app.update()
+
+        assert second_app._detached_settings_window is None
+        assert config.get("gui", "detached_pages", "") == ""
+    finally:
+        _reset_config_to_path(original_config_path)
+
+
 def test_four_detached_pages_restore_after_restart(
     app_factory: Any,
     tmp_path: Path,

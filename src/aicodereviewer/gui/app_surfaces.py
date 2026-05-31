@@ -128,24 +128,28 @@ class AppSurfaceHelper:
         page_map: dict[str, dict[str, Any]] = {
             t("gui.tab.log"): {
                 "page_key": "log",
+                "detached_window_attr": "_detached_log_window",
                 "command": self.host._open_detached_log_window,
                 "open_label": t("gui.log.open_window"),
                 "focus_label": t("gui.log.focus_window"),
             },
             t("gui.tab.settings"): {
                 "page_key": "settings",
+                "detached_window_attr": "_detached_settings_window",
                 "command": self.host._open_detached_settings_window,
                 "open_label": t("gui.settings.open_window"),
                 "focus_label": t("gui.settings.focus_window"),
             },
             t("gui.tab.benchmarks"): {
                 "page_key": "benchmark",
+                "detached_window_attr": "_detached_benchmark_window",
                 "command": self.host._open_detached_benchmark_window,
                 "open_label": t("gui.benchmark.open_window"),
                 "focus_label": t("gui.benchmark.focus_window"),
             },
             t("gui.tab.addon_review"): {
                 "page_key": "addon_review",
+                "detached_window_attr": "_detached_addon_review_window",
                 "command": self.host._open_detached_addon_review_window,
                 "open_label": t("gui.addon_review.open_window"),
                 "focus_label": t("gui.addon_review.focus_window"),
@@ -155,7 +159,11 @@ class AppSurfaceHelper:
         if state is None:
             return None
         resolved = dict(state)
-        resolved["detached"] = self.is_page_detached(str(resolved["page_key"]))
+        detached_exists = getattr(self.host, "_detached_window_exists", None)
+        resolved["detached"] = bool(
+            callable(detached_exists)
+            and detached_exists(str(resolved["detached_window_attr"]))
+        )
         return resolved
 
     def refresh_detach_action_state(self) -> None:
@@ -457,6 +465,7 @@ class AppSurfaceHelper:
         self.refresh_detach_action_state()
 
     def prepare_detached_windows_for_shutdown(self) -> None:
+        live_detached_pages: set[str] = set()
         for page_key, attr_name in (
             ("log", "_detached_log_window"),
             ("settings", "_detached_settings_window"),
@@ -466,10 +475,13 @@ class AppSurfaceHelper:
             window = getattr(self.host, attr_name, None)
             if window is None or not window.winfo_exists():
                 continue
+            live_detached_pages.add(page_key)
             try:
                 self.save_detached_page_geometry(page_key, window.geometry())
             except Exception:
                 pass
+        for page_key in ("log", "settings", "benchmark", "addon_review"):
+            self.set_page_detached(page_key, page_key in live_detached_pages)
 
     def restore_detached_windows(self) -> None:
         if "settings" in self._detached_pages():

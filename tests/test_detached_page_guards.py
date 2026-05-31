@@ -59,11 +59,20 @@ def test_is_benchmark_detached_requires_live_window() -> None:
     assert _BenchmarkHarness(window=_DummyWindow(exists=True), detached=True)._is_benchmark_detached() is True
     assert _BenchmarkHarness(window=_DummyWindow(exists=False), detached=True)._is_benchmark_detached() is False
     assert _BenchmarkHarness(window=None, detached=True)._is_benchmark_detached() is False
-    assert _BenchmarkHarness(window=_DummyWindow(exists=True), detached=False)._is_benchmark_detached() is False
+    assert _BenchmarkHarness(window=_DummyWindow(exists=True), detached=False)._is_benchmark_detached() is True
 
 
 def test_open_addon_review_tab_focuses_live_detached_window_only() -> None:
     harness = _AddonReviewHarness(window=_DummyWindow(exists=True), detached=True)
+
+    harness._open_addon_review_tab()
+
+    assert harness.focus_calls == 1
+    assert harness.tabs.selected == []
+
+
+def test_open_addon_review_tab_focuses_live_window_even_when_config_state_drifts() -> None:
+    harness = _AddonReviewHarness(window=_DummyWindow(exists=True), detached=False)
 
     harness._open_addon_review_tab()
 

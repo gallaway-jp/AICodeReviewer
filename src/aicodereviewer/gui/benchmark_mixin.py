@@ -154,7 +154,6 @@ class BenchmarkTabMixin:
         return bool(
             window is not None
             and bool(getattr(window, "winfo_exists", lambda: False)())
-            and self._app_helpers().surfaces().is_page_detached("benchmark")
         )
 
     def _capture_textbox_value(self, textbox: Any) -> str:
