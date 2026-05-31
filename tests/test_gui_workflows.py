@@ -4252,6 +4252,111 @@ def test_review_queue_panel_auto_refreshes_for_runtime_jobs_submitted_outside_gu
                 pass
 
 
+def test_global_detach_action_tracks_tab_state_during_runtime_queue_auto_refresh(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from aicodereviewer.gui.app import App
+
+    config_path = tmp_path / "gui-runtime-queue-detach-action.ini"
+    _save_default_config_to_path(config_path)
+    monkeypatch.setattr(config, "config_path", config_path)
+    _reset_config_to_path(config_path)
+
+    release_event = threading.Event()
+    started_event = threading.Event()
+
+    def _slow_collect(*_args: Any, cancel_check: Any = None, **_kwargs: Any) -> list[Any]:
+        started_event.set()
+        while not release_event.is_set():
+            if cancel_check is not None and cancel_check():
+                return []
+            time.sleep(0.01)
+        return []
+
+    runtime = ReviewExecutionRuntime(
+        execution_service=ReviewExecutionService(
+            scan_fn=lambda *_args: [{"path": "src/example.py"}],
+            collect_issues_fn=_slow_collect,
+        ),
+        backend_factory=lambda _backend_name: object(),
+        max_concurrent_jobs=1,
+    )
+
+    application = None
+    try:
+        application = App(testing_mode=True, review_runtime=runtime)
+        harness = GuiTestHarness(application)
+        harness.app._build_tab_if_needed(t("gui.tab.review"))
+        harness.app.tabs.set(t("gui.tab.review"))
+        harness.pump(2)
+
+        review_request = ReviewRequest(
+            path=str(tmp_path),
+            scope="project",
+            diff_file=None,
+            commits=None,
+            review_types=["security"],
+            spec_content=None,
+            target_lang="en",
+            backend_name="local",
+            programmers=[],
+            reviewers=[],
+            dry_run=False,
+        )
+        queued_request = ReviewRequest(
+            path=str(tmp_path),
+            scope="project",
+            diff_file=None,
+            commits=None,
+            review_types=["security"],
+            spec_content=None,
+            target_lang="en",
+            backend_name="local",
+            programmers=[],
+            reviewers=[],
+            dry_run=True,
+        )
+
+        first_job = runtime.submit_job(review_request)
+        second_job = runtime.submit_job(queued_request)
+        assert started_event.wait(timeout=1.0)
+
+        harness.wait_until(
+            lambda: set(harness.queue_panel.display_ids()) == {first_job.job_id, second_job.job_id},
+            timeout=3.0,
+            message="queue panel never refreshed to show runtime-submitted API jobs",
+        )
+
+        harness.app.tabs.set(t("gui.tab.review"))
+        harness.pump(2)
+        assert harness.app._detach_page_btn.cget("state") == "disabled"
+
+        harness.app.tabs.set(t("gui.tab.settings"))
+        harness.pump(2)
+        assert harness.app._detach_page_btn.cget("state") == "normal"
+        assert harness.app._detach_page_btn.cget("text") == t("gui.settings.open_window")
+
+        harness.wait_until(
+            lambda: set(harness.queue_panel.display_ids()) == {first_job.job_id, second_job.job_id},
+            timeout=1.0,
+            message="queue panel ids changed unexpectedly while validating detach action",
+        )
+        assert harness.app._detach_page_btn.cget("state") == "normal"
+        assert harness.app._detach_page_btn.cget("text") == t("gui.settings.open_window")
+
+        harness.app.tabs.set(t("gui.tab.review"))
+        harness.pump(2)
+        assert harness.app._detach_page_btn.cget("state") == "disabled"
+    finally:
+        release_event.set()
+        if application is not None:
+            try:
+                application.destroy()
+            except Exception:
+                pass
+
+
 def test_runtime_tuning_settings_persist_across_app_restart(
     app_factory: Any,
     monkeypatch: pytest.MonkeyPatch,
