@@ -146,6 +146,15 @@ class App(
         return self._app_helpers().runtime().schedule_app_after(delay_ms, callback)
 
     def _schedule_debounced(self, attr: str, delay_ms: int, callback: Any) -> Any:
+        if getattr(self, "_app_destroying", False):
+            pending_after_id = getattr(self, attr, None)
+            if pending_after_id is not None:
+                try:
+                    self.after_cancel(pending_after_id)
+                except Exception:
+                    pass
+                setattr(self, attr, None)
+            return None
         previous = getattr(self, attr, None)
         if previous is not None:
             try:

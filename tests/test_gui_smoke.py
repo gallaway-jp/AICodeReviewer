@@ -273,6 +273,39 @@ class TestAppCreation:
         assert app._startup_window_hidden is True
         app._app_destroying = False
 
+    def test_schedule_debounced_noop_while_app_destroying_for_zero_delay(
+        self,
+        app: Any,
+    ) -> None:
+        calls: list[str] = []
+        app._app_destroying = True
+
+        try:
+            after_id = app._schedule_debounced("_test_debounce_after_id", 0, lambda: calls.append("callback"))
+            assert after_id is None
+            assert calls == []
+        finally:
+            app._app_destroying = False
+
+    def test_schedule_debounced_cancels_pending_id_while_app_destroying(
+        self,
+        app: Any,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        cancelled: list[Any] = []
+        app._app_destroying = True
+        app._test_debounce_after_id = "after#demo"
+
+        monkeypatch.setattr(app, "after_cancel", lambda after_id: cancelled.append(after_id))
+
+        try:
+            after_id = app._schedule_debounced("_test_debounce_after_id", 150, lambda: None)
+            assert after_id is None
+            assert cancelled == ["after#demo"]
+            assert app._test_debounce_after_id is None
+        finally:
+            app._app_destroying = False
+
     def test_tab_selection_refresh_not_scheduled_while_app_destroying(
         self,
         app: Any,
