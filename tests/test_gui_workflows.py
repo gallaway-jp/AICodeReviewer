@@ -4552,6 +4552,53 @@ def test_destroy_cancels_pending_debounced_layout_callbacks() -> None:
             pass
 
 
+def test_destroy_clears_ui_thread_callbacks_queued_before_shutdown() -> None:
+    from aicodereviewer.gui.app import App
+
+    application = App(testing_mode=True)
+    harness = GuiTestHarness(application)
+    callback_hits: list[str] = []
+    enqueue_result: list[bool] = []
+
+    def _worker_enqueue() -> None:
+        enqueue_result.append(harness.app._run_on_ui_thread(lambda value: callback_hits.append(value), "queued-before-destroy"))
+
+    worker = threading.Thread(target=_worker_enqueue)
+    worker.start()
+    worker.join(timeout=1.0)
+
+    assert enqueue_result == [True]
+    assert harness.app._ui_call_queue.empty() is False
+
+    harness.app.destroy()
+
+    assert callback_hits == []
+    assert harness.app._ui_call_queue.empty() is True
+
+
+def test_run_on_ui_thread_rejects_enqueue_after_destroy() -> None:
+    from aicodereviewer.gui.app import App
+
+    application = App(testing_mode=True)
+    harness = GuiTestHarness(application)
+    callback_hits: list[str] = []
+
+    harness.app.destroy()
+
+    enqueue_result: list[bool] = []
+
+    def _worker_enqueue() -> None:
+        enqueue_result.append(harness.app._run_on_ui_thread(lambda value: callback_hits.append(value), "queued-after-destroy"))
+
+    worker = threading.Thread(target=_worker_enqueue)
+    worker.start()
+    worker.join(timeout=1.0)
+
+    assert enqueue_result == [False]
+    assert callback_hits == []
+    assert harness.app._ui_call_queue.empty() is True
+
+
 def test_runtime_tuning_settings_persist_across_app_restart(
     app_factory: Any,
     monkeypatch: pytest.MonkeyPatch,
