@@ -252,6 +252,27 @@ class TestAppCreation:
         assert app._startup_presentation_retry_count == app._STARTUP_PRESENTATION_RETRY_LIMIT + 1
         assert scheduled_retries == []
 
+    def test_finalize_startup_presentation_noop_while_app_destroying(
+        self,
+        app: Any,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        calls: list[str] = []
+        scheduled_retries: list[tuple[int, Any]] = []
+        app._startup_window_hidden = True
+        app._app_destroying = True
+
+        monkeypatch.setattr(app, "deiconify", lambda: calls.append("deiconify"))
+        monkeypatch.setattr(app, "lift", lambda: calls.append("lift"))
+        monkeypatch.setattr(app, "_schedule_app_after", lambda delay_ms, callback: scheduled_retries.append((delay_ms, callback)))
+
+        app._finalize_startup_presentation()
+
+        assert calls == []
+        assert scheduled_retries == []
+        assert app._startup_window_hidden is True
+        app._app_destroying = False
+
     def test_tab_selection_refresh_not_scheduled_while_app_destroying(
         self,
         app: Any,

@@ -243,6 +243,8 @@ class App(
         return False
 
     def _finalize_startup_presentation(self) -> None:
+        if getattr(self, "_app_destroying", False):
+            return
         if not getattr(self, "_startup_window_hidden", False):
             return
         try:
