@@ -30,6 +30,20 @@ __all__ = ["HealthMixin"]
 class HealthMixin:
     """Mixin supplying backend health checking and model list refresh."""
 
+    def _live_model_combo(self, attr_name: str) -> Any | None:
+        """Return a model combobox only when the widget is present and still alive."""
+        combo = getattr(self, attr_name, None)
+        if combo is None:
+            return None
+        exists = getattr(combo, "winfo_exists", None)
+        if callable(exists):
+            try:
+                if not bool(exists()):
+                    return None
+            except Exception:
+                return None
+        return combo
+
     @staticmethod
     def _split_fix_hint_url(fix_hint: str) -> tuple[str, str, str] | None:
         """Return ``(before, url, after)`` when a hint contains a link."""
@@ -311,10 +325,11 @@ class HealthMixin:
 
     def _refresh_copilot_model_list(self):
         models = get_copilot_models()
-        if models and hasattr(self, "_copilot_model_combo"):
-            current = self._copilot_model_combo.get()
-            self._copilot_model_combo.configure(values=["auto"] + models)
-            self._copilot_model_combo.set(current)
+        combo = self._live_model_combo("_copilot_model_combo")
+        if models and combo is not None:
+            current = combo.get()
+            combo.configure(values=["auto"] + models)
+            combo.set(current)
 
     def _refresh_kiro_model_list(self):
         kiro_path = config.get("kiro", "cli_command", "kiro")
@@ -336,11 +351,12 @@ class HealthMixin:
 
         threading.Thread(target=_worker, daemon=True).start()
 
-    def _apply_copilot_models(self, models: list):
-        if models and hasattr(self, "_copilot_model_combo"):
-            current = self._copilot_model_combo.get()
-            self._copilot_model_combo.configure(values=["auto"] + models)
-            self._copilot_model_combo.set(current)
+    def _apply_copilot_models(self, models: list[str]):
+        combo = self._live_model_combo("_copilot_model_combo")
+        if models and combo is not None:
+            current = combo.get()
+            combo.configure(values=["auto"] + models)
+            combo.set(current)
 
     # ── Kiro CLI ────────────────────────────────────────────────────────────
 
@@ -360,22 +376,24 @@ class HealthMixin:
 
         threading.Thread(target=_worker, daemon=True).start()
 
-    def _apply_kiro_models(self, models: list):
-        if hasattr(self, "_kiro_model_combo"):
-            current = self._kiro_model_combo.get()
-            self._kiro_model_combo.configure(values=models)
+    def _apply_kiro_models(self, models: list[str]):
+        combo = self._live_model_combo("_kiro_model_combo")
+        if combo is not None:
+            current = combo.get()
+            combo.configure(values=models)
             if current and current in models:
-                self._kiro_model_combo.set(current)
+                combo.set(current)
 
     # ── Bedrock ────────────────────────────────────────────────────────────
 
     def _refresh_bedrock_model_list(self):
         models = get_bedrock_models()
-        if models and hasattr(self, "_bedrock_model_combo"):
-            current = self._bedrock_model_combo.get()
-            self._bedrock_model_combo.configure(values=models)
+        combo = self._live_model_combo("_bedrock_model_combo")
+        if models and combo is not None:
+            current = combo.get()
+            combo.configure(values=models)
             if current:
-                self._bedrock_model_combo.set(current)
+                combo.set(current)
 
     def _refresh_bedrock_model_list_async(self):
         controller = self._model_refresh_controller()
@@ -391,12 +409,13 @@ class HealthMixin:
 
         threading.Thread(target=_worker, daemon=True).start()
 
-    def _apply_bedrock_models(self, models: list):
-        if models and hasattr(self, "_bedrock_model_combo"):
-            current = self._bedrock_model_combo.get()
-            self._bedrock_model_combo.configure(values=models)
+    def _apply_bedrock_models(self, models: list[str]):
+        combo = self._live_model_combo("_bedrock_model_combo")
+        if models and combo is not None:
+            current = combo.get()
+            combo.configure(values=models)
             if current:
-                self._bedrock_model_combo.set(current)
+                combo.set(current)
 
     # ── Local LLM ──────────────────────────────────────────────────────────
 
@@ -404,11 +423,12 @@ class HealthMixin:
         api_url = config.get("local_llm", "api_url", "http://localhost:1234")
         api_type = config.get("local_llm", "api_type", "lmstudio")
         models = get_local_models(api_url, api_type)
-        if models and hasattr(self, "_local_model_combo"):
-            current = self._local_model_combo.get()
-            self._local_model_combo.configure(values=models)
+        combo = self._live_model_combo("_local_model_combo")
+        if models and combo is not None:
+            current = combo.get()
+            combo.configure(values=models)
             if current:
-                self._local_model_combo.set(current)
+                combo.set(current)
 
     def _refresh_local_model_list_async(self):
         controller = self._model_refresh_controller()
@@ -426,9 +446,10 @@ class HealthMixin:
 
         threading.Thread(target=_worker, daemon=True).start()
 
-    def _apply_local_models(self, models: list):
-        if models and hasattr(self, "_local_model_combo"):
-            current = self._local_model_combo.get()
-            self._local_model_combo.configure(values=models)
+    def _apply_local_models(self, models: list[str]):
+        combo = self._live_model_combo("_local_model_combo")
+        if models and combo is not None:
+            current = combo.get()
+            combo.configure(values=models)
             if current:
-                self._local_model_combo.set(current)
+                combo.set(current)

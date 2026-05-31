@@ -84,6 +84,8 @@ class SettingsTabMixin:
 
         def _refresh_bedrock_model_list_async(self) -> None: ...
 
+        def _refresh_local_model_list_async(self) -> None: ...
+
         def clipboard_clear(self) -> None: ...
 
         def clipboard_append(self, value: str) -> None: ...
@@ -172,6 +174,27 @@ class SettingsTabMixin:
                 format_checkboxes,
                 layout.output_format_columns,
             )
+
+        if hasattr(self, "_settings_button_frame") and getattr(self, "_settings_layout_structure_state", None) != structure_state:
+            SettingsLayoutHelper.apply_button_layout(
+                buttons,
+                stacked=layout.stack_settings_buttons,
+            )
+
+        if hasattr(self, "_refresh_addons_btn") and (
+            previous_state is None or previous_state.refresh_addons_sticky != layout.refresh_addons_sticky
+        ):
+            self._refresh_addons_btn.grid_configure(sticky=layout.refresh_addons_sticky)
+
+        if hasattr(self, "addon_contributions_frame") and (
+            previous_state is None or previous_state.contribution_wraplength != layout.contribution_wraplength
+        ):
+            SettingsLayoutHelper.apply_contribution_wraplength(
+                self.addon_contributions_frame,
+                wraplength=layout.contribution_wraplength,
+            )
+        self._settings_layout_state = layout
+        self._settings_layout_structure_state = structure_state
 
         if hasattr(self, "_settings_button_frame") and getattr(self, "_settings_layout_structure_state", None) != structure_state:
             SettingsLayoutHelper.apply_button_layout(
@@ -451,11 +474,13 @@ class SettingsTabMixin:
 
     def _auto_populate_models(self):
         """Populate models only for the backend currently selected in Settings."""
-        if hasattr(self, "_settings_backend_var"):
-            display_val = self._settings_backend_var.get()
+        settings_backend_var = getattr(self, "_settings_backend_var", None)
+        if settings_backend_var is not None:
+            display_val = settings_backend_var.get()
             current_backend = getattr(self, "_backend_reverse_map", {}).get(display_val, "")
         else:
-            current_backend = self.backend_var.get() if hasattr(self, "backend_var") else ""
+            backend_var = getattr(self, "backend_var", None)
+            current_backend = backend_var.get() if backend_var is not None else ""
 
         refresher = {
             "copilot": self._refresh_copilot_model_list_async,
@@ -485,35 +510,39 @@ class SettingsTabMixin:
     # ── Backend sync helpers ──────────────────────────────────────────────
 
     def _update_backend_section_indicators(self, *args: Any) -> None:
-        if not hasattr(self, "_settings_backend_var"):
+        settings_backend_var = getattr(self, "_settings_backend_var", None)
+        if settings_backend_var is None:
             return
-        display_val = self._settings_backend_var.get()
+        display_val = settings_backend_var.get()
         current_backend = getattr(self, "_backend_reverse_map", {}).get(display_val, "")
-        for backend_key, label in self._backend_section_labels.items():
+        for backend_key, label in getattr(self, "_backend_section_labels", {}).items():
             if backend_key == current_backend:
                 label.configure(text=t("gui.settings.active_backend"),
                                 text_color=("green", "#4ade80"))
             else:
                 label.configure(text="")
 
+
     def _sync_menu_to_review(self, *args: Any) -> None:
-        if not hasattr(self, "_settings_backend_var") or not hasattr(self, "backend_var"):
+        settings_backend_var = getattr(self, "_settings_backend_var", None)
+        backend_var = getattr(self, "backend_var", None)
+        if settings_backend_var is None or backend_var is None:
             return
-        display_val = self._settings_backend_var.get()
+        display_val = settings_backend_var.get()
         internal_val = getattr(self, "_backend_reverse_map", {}).get(display_val, "bedrock")
-        if self.backend_var.get() != internal_val:
-            self.backend_var.set(internal_val)
+        if backend_var.get() != internal_val:
+            backend_var.set(internal_val)
 
     def _sync_review_to_menu(self, *args: Any) -> None:
-        if not hasattr(self, "_settings_backend_var") or not hasattr(self, "backend_var"):
+        settings_backend_var = getattr(self, "_settings_backend_var", None)
+        backend_var = getattr(self, "backend_var", None)
+        if settings_backend_var is None or backend_var is None:
             return
-        if self._settings_backend_var is None:
-            return
-        internal_val = self.backend_var.get()
+        internal_val = backend_var.get()
         display_val = getattr(self, "_backend_display_map", {}).get(
             internal_val, t("gui.settings.backend_bedrock"))
-        if self._settings_backend_var.get() != display_val:
-            self._settings_backend_var.set(display_val)
+        if settings_backend_var.get() != display_val:
+            settings_backend_var.set(display_val)
 
     def _copy_local_http_base_url(self) -> None:
         base_url = self._local_http_base_url_value()

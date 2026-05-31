@@ -38,6 +38,20 @@ class _DummyCombo:
         self.set_calls.append(value)
 
 
+class _ExplodingDestroyedCombo:
+    def winfo_exists(self) -> bool:
+        return False
+
+    def get(self) -> str:
+        raise AssertionError("destroyed combo should not be queried")
+
+    def configure(self, *, values: list[str]) -> None:
+        raise AssertionError("destroyed combo should not be configured")
+
+    def set(self, value: str) -> None:
+        raise AssertionError("destroyed combo should not be updated")
+
+
 class _ImmediateThread:
     def __init__(self, *, target: Any, daemon: bool) -> None:
         self._target = target
@@ -74,6 +88,19 @@ def test_apply_kiro_models_does_not_force_missing_selection() -> None:
 
     assert combo.configured_values == ["claude-sonnet-4", "claude-opus-4"]
     assert combo.set_calls == []
+
+
+def test_apply_model_lists_ignore_none_or_destroyed_combos() -> None:
+    harness = _Harness(_DummyController(), _DummyCombo("claude-sonnet-4"))
+    harness._copilot_model_combo = None
+    harness._kiro_model_combo = _ExplodingDestroyedCombo()
+    harness._bedrock_model_combo = None
+    harness._local_model_combo = _ExplodingDestroyedCombo()
+
+    harness._apply_copilot_models(["gpt-5.4"])
+    harness._apply_kiro_models(["claude-sonnet-4"])
+    harness._apply_bedrock_models(["anthropic.claude-3-7-sonnet"])
+    harness._apply_local_models(["mistral-small"])
 
 
 def test_refresh_kiro_model_list_async_uses_configured_cli_and_distro(monkeypatch: Any) -> None:

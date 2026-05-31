@@ -192,6 +192,7 @@ class AppBootstrapHelper:
     def _initialize_dynamic_attrs(self) -> None:
         self.host._settings_backend_var = None
         self.host._copilot_model_combo = None
+        self.host._kiro_model_combo = None
         self.host._bedrock_model_combo = None
         self.host._local_model_combo = None
         self.host._local_http_server_handle = None
