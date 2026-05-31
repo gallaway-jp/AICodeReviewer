@@ -150,6 +150,23 @@ def _resolve_kiro_exe(cli_path: str) -> str:
 _copilot_models_cache: Dict[str, List[str]] = {}
 
 
+def _is_nonfatal_copilot_model_discovery_error(exc: Exception) -> bool:
+    """Return True for SDK schema mismatches that should not warn at startup.
+
+    Copilot model discovery is optional. Some SDK/CLI combinations return model
+    metadata that the installed SDK cannot fully validate, which should not be
+    surfaced as a user-facing warning during normal GUI startup.
+    """
+    message = str(exc or "").strip().lower()
+    if not message:
+        return False
+    return (
+        "missing required fields in modelcapabilities" in message
+        or ("modelcapabilities" in message and "supports=none" in message)
+        or ("modelcapabilities" in message and "limits=none" in message)
+    )
+
+
 def get_copilot_models(copilot_path: str = "") -> List[str]:
     """Return cached list of Copilot models, discovering them lazily if needed.
 
@@ -224,7 +241,10 @@ def _discover_copilot_models(copilot_path: str = "copilot") -> List[str]:
         # or main thread, neither of which has a running event loop.
         models = asyncio.run(_discover_copilot_models_via_sdk(resolved_path))
     except Exception as exc:
-        logger.warning("SDK Copilot model discovery failed: %s", exc)
+        if _is_nonfatal_copilot_model_discovery_error(exc):
+            logger.debug("SDK Copilot model discovery returned unsupported metadata: %s", exc)
+        else:
+            logger.warning("SDK Copilot model discovery failed: %s", exc)
         models = []
 
     if models:

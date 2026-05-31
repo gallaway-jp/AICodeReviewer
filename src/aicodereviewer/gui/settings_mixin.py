@@ -457,12 +457,14 @@ class SettingsTabMixin:
         else:
             current_backend = self.backend_var.get() if hasattr(self, "backend_var") else ""
 
-        if current_backend == "copilot":
-            self._refresh_copilot_model_list_async()
-        elif current_backend == "kiro":
-            self._refresh_kiro_model_list_async()
-        elif current_backend == "bedrock":
-            self._refresh_bedrock_model_list_async()
+        refresher = {
+            "copilot": self._refresh_copilot_model_list_async,
+            "kiro": self._refresh_kiro_model_list_async,
+            "bedrock": self._refresh_bedrock_model_list_async,
+            "local": self._refresh_local_model_list_async,
+        }.get(current_backend)
+        if refresher is not None:
+            refresher()
 
     # ══════════════════════════════════════════════════════════════════════
     #  SETTINGS save / reset

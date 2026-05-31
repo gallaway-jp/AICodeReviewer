@@ -126,6 +126,40 @@ def test_refresh_kiro_model_list_async_skips_work_when_refresh_is_already_active
     assert combo.set_calls == []
 
 
+def test_refresh_current_backend_models_async_forwards_current_backend_to_dispatch_helper() -> None:
+    harness = _Harness(_DummyController(), _DummyCombo("claude-sonnet-4"))
+
+    observed_calls: list[str] = []
+    harness._refresh_backend_models_async = lambda backend_name: observed_calls.append(backend_name)
+
+    for backend_name in ("copilot", "kiro", "bedrock", "local", "unknown"):
+        observed_calls.clear()
+        harness.backend_var = SimpleNamespace(get=lambda name=backend_name: name)
+
+        harness._refresh_current_backend_models_async()
+
+        assert observed_calls == [backend_name]
+
+
+def test_refresh_backend_models_dispatches_selected_backend() -> None:
+    harness = _Harness(_DummyController(), _DummyCombo("claude-sonnet-4"))
+
+    observed_calls: list[str] = []
+    harness._refresh_copilot_model_list = lambda: observed_calls.append("copilot")
+    harness._refresh_kiro_model_list = lambda: observed_calls.append("kiro")
+    harness._refresh_bedrock_model_list = lambda: observed_calls.append("bedrock")
+    harness._refresh_local_model_list = lambda: observed_calls.append("local")
+
+    for backend_name in ("copilot", "kiro", "bedrock", "local", "unknown"):
+        observed_calls.clear()
+
+        harness._refresh_backend_models(backend_name)
+
+        expected = [] if backend_name == "unknown" else [backend_name]
+        assert observed_calls == expected
+
+
+
 def test_split_fix_hint_url_extracts_before_url_and_after() -> None:
     parts = HealthMixin._split_fix_hint_url(
         "Install the AWS CLI from https://aws.amazon.com/cli/ and run 'aws configure sso'."

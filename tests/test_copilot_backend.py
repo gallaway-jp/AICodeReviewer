@@ -473,3 +473,25 @@ class TestGetCopilotModels:
         client.start.assert_awaited_once()
         client.stop.assert_awaited_once()
         client.list_models.assert_awaited_once()
+
+    def test_known_sdk_model_capabilities_mismatch_is_debug_only(self):
+        from aicodereviewer.backends import models as m
+
+        error = RuntimeError(
+            "Missing required fields in ModelCapabilities: supports=None, limits=None"
+        )
+
+        with (
+            patch.object(m, "_resolve_copilot_exe", return_value="copilot.exe"),
+            patch.object(m, "_discover_copilot_models_via_sdk", AsyncMock(side_effect=error)),
+            patch.object(m.logger, "debug") as mock_debug,
+            patch.object(m.logger, "warning") as mock_warning,
+        ):
+            result = m._discover_copilot_models("copilot")
+
+        assert result == []
+        mock_warning.assert_not_called()
+        assert any(
+            call.args and "unsupported metadata" in str(call.args[0]).lower()
+            for call in mock_debug.call_args_list
+        )

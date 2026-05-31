@@ -91,6 +91,26 @@ class HealthMixin:
         """Return the runtime owner for backend model-refresh state."""
         return getattr(self, "_active_model_refresh")
 
+    def _refresh_backend_models(self, backend_name: str) -> None:
+        refresher = {
+            "copilot": self._refresh_copilot_model_list,
+            "kiro": self._refresh_kiro_model_list,
+            "bedrock": self._refresh_bedrock_model_list,
+            "local": self._refresh_local_model_list,
+        }.get(backend_name)
+        if refresher is not None:
+            refresher()
+
+    def _refresh_backend_models_async(self, backend_name: str) -> None:
+        refresher = {
+            "copilot": self._refresh_copilot_model_list_async,
+            "kiro": self._refresh_kiro_model_list_async,
+            "bedrock": self._refresh_bedrock_model_list_async,
+            "local": self._refresh_local_model_list_async,
+        }.get(backend_name)
+        if refresher is not None:
+            refresher()
+
     def _schedule_titlebar_fix(self, window: Any) -> None:
         """Defer titlebar tweaks for popup windows without leaking fragile Tk callbacks in tests."""
         schedule_titlebar_fix(window, host=self)
@@ -184,12 +204,7 @@ class HealthMixin:
                                 self.status_var.set,
                                 t("health.auto_ok", backend=backend_name),
                             )
-                            if backend_name == "copilot":
-                                self._dispatch_health_ui(self._refresh_copilot_model_list)
-                            elif backend_name == "bedrock":
-                                self._dispatch_health_ui(self._refresh_bedrock_model_list)
-                            elif backend_name == "local":
-                                self._dispatch_health_ui(self._refresh_local_model_list)
+                            self._dispatch_health_ui(self._refresh_backend_models, backend_name)
                         else:
                             self._dispatch_health_ui(self._show_health_dialog, report)
                             self._dispatch_health_ui(self.status_var.set, t("common.ready"))
@@ -221,12 +236,8 @@ class HealthMixin:
         self._schedule_titlebar_fix(win)
         win.bind("<Control-w>", lambda e: win.destroy())
 
-        if report.backend == "copilot" and report.ready:
-            self._refresh_copilot_model_list()
-        elif report.backend == "bedrock" and report.ready:
-            self._refresh_bedrock_model_list()
-        elif report.backend == "local" and report.ready:
-            self._refresh_local_model_list()
+        if report.ready:
+            self._refresh_backend_models(report.backend)
 
         summary_color = "green" if report.ready else "#dc2626"
         ctk.CTkLabel(win, text=report.summary,
@@ -294,12 +305,7 @@ class HealthMixin:
 
     def _refresh_current_backend_models_async(self):
         backend = self.backend_var.get()
-        if backend == "copilot":
-            self._refresh_copilot_model_list_async()
-        elif backend == "bedrock":
-            self._refresh_bedrock_model_list_async()
-        elif backend == "local":
-            self._refresh_local_model_list_async()
+        self._refresh_backend_models_async(backend)
 
     # ── Copilot ────────────────────────────────────────────────────────────
 
@@ -309,6 +315,12 @@ class HealthMixin:
             current = self._copilot_model_combo.get()
             self._copilot_model_combo.configure(values=["auto"] + models)
             self._copilot_model_combo.set(current)
+
+    def _refresh_kiro_model_list(self):
+        kiro_path = config.get("kiro", "cli_command", "kiro")
+        wsl_distro = config.get("kiro", "wsl_distro", "")
+        models = get_kiro_models(kiro_path, wsl_distro)
+        self._apply_kiro_models(models)
 
     def _refresh_copilot_model_list_async(self):
         controller = self._model_refresh_controller()
