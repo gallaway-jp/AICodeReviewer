@@ -13,6 +13,9 @@ class AppRuntimeHelper:
     def __init__(self, host: Any) -> None:
         self.host = host
 
+    def _should_drain_global_after_callbacks(self, widget: Any) -> bool:
+        return bool(getattr(self.host, "_app_destroying", False) and widget is self.host)
+
     def cancel_widget_after_callbacks(self, widget: Any) -> None:
         after_ids = getattr(widget, "_acr_after_ids", None)
         if after_ids:
@@ -23,6 +26,9 @@ class AppRuntimeHelper:
                     widget.after_cancel(after_id)
                 except tk.TclError:
                     continue
+
+        if not self._should_drain_global_after_callbacks(widget):
+            return
 
         tk_handle = getattr(widget, "tk", None)
         tk_call = getattr(tk_handle, "call", None)

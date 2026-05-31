@@ -46,17 +46,19 @@ def _helper() -> AppRuntimeHelper:
     host = SimpleNamespace(
         _ui_thread_id=threading.get_ident(),
         _log_polling=True,
+        _app_destroying=False,
         _ui_call_queue=queue.Queue(),
     )
     return AppRuntimeHelper(host)
 
 
 def test_cancel_widget_after_callbacks_cancels_tracked_and_tk_pending_callbacks() -> None:
-    helper = _helper()
     widget = _DummyWidget(
         tracked_after=("tracked-1",),
         pending_after=("tk-1", "tk-2"),
     )
+    widget._app_destroying = True
+    helper = AppRuntimeHelper(widget)
 
     helper.cancel_widget_after_callbacks(widget)
 
@@ -65,12 +67,13 @@ def test_cancel_widget_after_callbacks_cancels_tracked_and_tk_pending_callbacks(
 
 
 def test_cancel_widget_after_callbacks_ignores_tcl_errors_and_continues() -> None:
-    helper = _helper()
     widget = _DummyWidget(
         tracked_after=("tracked-1",),
         pending_after=("tk-1", "tk-2"),
         raise_on_cancel=("tracked-1", "tk-1"),
     )
+    widget._app_destroying = True
+    helper = AppRuntimeHelper(widget)
 
     helper.cancel_widget_after_callbacks(widget)
 
@@ -79,10 +82,24 @@ def test_cancel_widget_after_callbacks_ignores_tcl_errors_and_continues() -> Non
 
 
 def test_cancel_widget_after_callbacks_returns_when_tk_call_unavailable() -> None:
-    helper = _helper()
     widget = _DummyWidget(
         tracked_after=("tracked-1",),
         raise_on_call=True,
+    )
+    widget._app_destroying = True
+    helper = AppRuntimeHelper(widget)
+
+    helper.cancel_widget_after_callbacks(widget)
+
+    assert widget._acr_after_ids == set()
+    assert widget.cancelled == ["tracked-1"]
+
+
+def test_cancel_widget_after_callbacks_does_not_drain_global_queue_for_non_host_widget() -> None:
+    helper = _helper()
+    widget = _DummyWidget(
+        tracked_after=("tracked-1",),
+        pending_after=("tk-1", "tk-2"),
     )
 
     helper.cancel_widget_after_callbacks(widget)
